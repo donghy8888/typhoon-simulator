@@ -28,15 +28,18 @@
 
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
     if (edge != null) {
-      // 跨越北缘约 1° 的窄过渡，以北即满西风
+      // 西风带仅在副高北缘（绿线）以北：南侧绝不掺入西风。
+      // 刚越过北缘约 0.3° 内极窄过渡，以北即满西风。
       const northOf = lat - edge;
-      if (northOf >= 0) {
-        u = cfg.westerlyU;
-        v = 1.6 + Math.max(0, cfg.westerlyU) * 0.08;
-      } else if (northOf > -1.0) {
-        const w = (northOf + 1.0) / 1.0; // -1→0，0→1
-        u = u * (1 - w) + cfg.westerlyU * w;
-        v = v * (1 - w) + (1.6 + Math.max(0, cfg.westerlyU) * 0.08) * w;
+      const wU = cfg.westerlyU;
+      const wV = 1.6 + Math.max(0, cfg.westerlyU) * 0.08;
+      if (northOf >= 0.3) {
+        u = wU;
+        v = wV;
+      } else if (northOf >= 0) {
+        const w = northOf / 0.3; // 0→0，0.3→1（仅北侧）
+        u = u * (1 - w) + wU * w;
+        v = v * (1 - w) + wV * w;
       }
     } else if (lat >= 32) {
       u = cfg.westerlyU;
@@ -143,12 +146,13 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 副高北缘进入西风带：柔和拐弯（不再在贴边处二次猛推）
+    // 进入西风带后的 NE 拐弯增强：仅当 lat > 北缘（绿线以北），
+    // 且不在副高实体内；贴边/南侧 deep=0，不给额外推。
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
-    if (edge != null && lat >= edge - 0.4 && !G.inFugenSolid(lon, lat, fugenList, hole)) {
+    if (edge != null && lat > edge && !G.inFugenSolid(lon, lat, fugenList, hole)) {
       const deep = clamp((lat - edge) / 8, 0, 1);
-      u += 0.8 + 1.6 * deep;
-      v += 0.5 + 1.0 * deep;
+      u += (0.8 + 1.6 * deep) * deep;
+      v += (0.5 + 1.0 * deep) * deep;
     }
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);

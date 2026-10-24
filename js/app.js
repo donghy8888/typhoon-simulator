@@ -412,6 +412,20 @@
     layerGroups.steer.clearLayers();
     if (!state.layers.steer) return;
     const cfg = cfgFromUI();
+
+    // 西风带南界（副高北缘）：整条虚线以北均为西风带
+    const edgePts = [];
+    for (let lon = 105; lon <= 175; lon += 2) {
+      const edge = G.northernFugenEdgeLat(lon, state.fugen, state.hole);
+      if (edge != null) edgePts.push([edge, lon]);
+    }
+    if (edgePts.length >= 2) {
+      L.polyline(edgePts, {
+        color: '#1a7f4b', weight: 2, dashArray: '8 6', opacity: 0.85
+      }).bindTooltip('西风带南界（副高北缘以北整片为西风带）', { sticky: true })
+        .addTo(layerGroups.steer);
+    }
+
     const stepLon = 8, stepLat = 5;
     for (let lat = 5; lat <= 45; lat += stepLat) {
       for (let lon = 105; lon <= 175; lon += stepLon) {
@@ -421,11 +435,13 @@
         const v = st.v + beta.v * 0.5;
         const spd = Math.hypot(u, v);
         if (spd < 0.3) continue;
+        const inWest = G.inWesterlyBelt(lon, lat, state.fugen, state.hole);
+        const col = inWest ? '#1a7f4b' : '#2c3e50';
         const scale = 0.35;
         const endLat = lat + v * scale * 0.15;
         const endLon = lon + u * scale * 0.15 / Math.cos(lat * Math.PI / 180);
         L.polyline([[lat, lon], [endLat, endLon]], {
-          color: '#2c3e50', weight: 1, opacity: 0.65
+          color: col, weight: inWest ? 1.4 : 1, opacity: 0.7
         }).addTo(layerGroups.steer);
         const ang = Math.atan2(v, u);
         const ah = 0.35;
@@ -434,7 +450,7 @@
         const p1 = [endLat + Math.sin(a1) * ah * 0.4, endLon + Math.cos(a1) * ah * 0.4 / Math.cos(lat * Math.PI / 180)];
         const p2 = [endLat + Math.sin(a2) * ah * 0.4, endLon + Math.cos(a2) * ah * 0.4 / Math.cos(lat * Math.PI / 180)];
         L.polyline([p1, [endLat, endLon], p2], {
-          color: '#2c3e50', weight: 1, opacity: 0.65
+          color: col, weight: inWest ? 1.4 : 1, opacity: 0.7
         }).addTo(layerGroups.steer);
       }
     }

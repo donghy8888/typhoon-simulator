@@ -281,16 +281,46 @@
     return { inside: c === 1, gx, gy };
   }
 
-  /** 副高北缘纬度（对当前位置附近）— 用于西风带判定 */
+  /**
+   * 副高北缘纬度（西风带南界）。
+   * 规则：副高北边整片都是西风带——若副高北缘伸到长江以南，
+   * 则长江以北（北缘以北）全部按西风带处理。
+   * 在附近经度上取副高实体的最北缘，避免“只在某一经线有副高”时漏判。
+   */
   function northernFugenEdgeLat(lon, fugenList, hole) {
+    if (!fugenList || !fugenList.length) return null;
     let maxLat = null;
-    for (let lat = DOMAIN.latMax; lat >= DOMAIN.latMin; lat -= 0.5) {
-      if (inFugenSolid(lon, lat, fugenList, hole)) {
-        maxLat = lat;
-        break;
+    const dlonList = [0, -1.5, 1.5, -3, 3, -5, 5, -8, 8];
+    for (const dlon of dlonList) {
+      const x = lon + dlon;
+      if (x < DOMAIN.lonMin || x > DOMAIN.lonMax) continue;
+      for (let lat = DOMAIN.latMax; lat >= DOMAIN.latMin; lat -= 0.35) {
+        if (inFugenSolid(x, lat, fugenList, hole)) {
+          if (maxLat == null || lat > maxLat) maxLat = lat;
+          break;
+        }
       }
     }
+    // 再用多边形顶点包络兜底（略外扩），防止采样漏掉北缘
+    let ringMax = null;
+    for (const f of fugenList) {
+      for (const pt of f.ring) {
+        if (Math.abs(pt[0] - lon) > 12) continue;
+        if (ringMax == null || pt[1] > ringMax) ringMax = pt[1];
+      }
+    }
+    if (ringMax != null) {
+      if (maxLat == null || ringMax > maxLat) maxLat = ringMax;
+    }
     return maxLat;
+  }
+
+  /** 是否位于副高以北的西风带（不含副高实体内部） */
+  function inWesterlyBelt(lon, lat, fugenList, hole) {
+    if (inFugenSolid(lon, lat, fugenList, hole)) return false;
+    const edge = northernFugenEdgeLat(lon, fugenList, hole);
+    if (edge == null) return lat >= 32; // 无副高时的弱兜底
+    return lat >= edge;
   }
 
   /** 7 级风圈半径（度）：由最大风速估算外缘 */
@@ -371,6 +401,7 @@
     inFugenSolid,
     fugenGradient,
     northernFugenEdgeLat,
+    inWesterlyBelt,
     windRadiusDeg,
     windRadiiForGrades,
     holeRadiusDeg,

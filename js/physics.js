@@ -18,7 +18,9 @@
   }
 
   /**
-   * 引导气流：基础场 + 副高北侧西风带
+   * 引导气流：基础场 + 副高北边整片西风带
+   * 副高北缘以南：用基础引导；北缘以北（不含副高实体）：整片西风带。
+   * 例：副高伸到长江以南 → 长江以北全是西风带，不再拖到更高纬度才起作用。
    */
   function steeringAt(lon, lat, cfg, fugenList, hole) {
     let u = cfg.steerU;
@@ -26,16 +28,19 @@
 
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
     if (edge != null) {
+      // 跨越北缘约 1° 的窄过渡，以北即满西风
       const northOf = lat - edge;
-      if (northOf > -1.5) {
-        const w = clamp((northOf + 1.5) / 4, 0, 1);
+      if (northOf >= 0) {
+        u = cfg.westerlyU;
+        v = 1.6 + Math.max(0, cfg.westerlyU) * 0.08;
+      } else if (northOf > -1.0) {
+        const w = (northOf + 1.0) / 1.0; // -1→0，0→1
         u = u * (1 - w) + cfg.westerlyU * w;
-        v = v * (1 - w) + (1.8 + cfg.westerlyU * 0.05) * w;
+        v = v * (1 - w) + (1.6 + Math.max(0, cfg.westerlyU) * 0.08) * w;
       }
-    } else if (lat > 30) {
-      const w = clamp((lat - 28) / 8, 0, 1);
-      u = u * (1 - w) + cfg.westerlyU * w;
-      v = v * (1 - 0.5 * w) + 1.5 * w;
+    } else if (lat >= 32) {
+      u = cfg.westerlyU;
+      v = 1.5;
     }
 
     if (G.inFugenSolid(lon, lat, fugenList, hole)) {
@@ -107,13 +112,12 @@
       v -= ny * 1.2;
     }
 
-    // 北缘拐弯
+    // 副高北缘进入西风带：加速向东北拐弯（整片北侧都属西风带）
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
-    if (edge != null && lat >= edge - 1.0 && lat <= edge + 3.0) {
-      if (!G.inFugenSolid(lon, lat + 0.5, fugenList, hole)) {
-        u += 2.0;
-        v += 1.5;
-      }
+    if (edge != null && lat >= edge - 0.5 && !G.inFugenSolid(lon, lat, fugenList, hole)) {
+      const deep = clamp((lat - edge) / 6, 0, 1); // 越往北西风影响越稳
+      u += 1.2 + 2.2 * deep;
+      v += 0.8 + 1.4 * deep;
     }
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);

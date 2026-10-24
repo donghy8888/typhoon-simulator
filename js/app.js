@@ -26,6 +26,7 @@
       ensemble: true
     },
     selectedFugen: null,
+    _draggingVertex: false,
     timer: null
   };
 
@@ -130,29 +131,42 @@
         selectFugen(idx);
       });
 
-      // 可拖角点（简单编辑）
-      if (state.selectedFugen === idx) {
+      // 可拖角点：用 draggable marker，拖动时只改多边形顶点，不整页重绘（避免抢地图平移）
+      if (state.selectedFugen === idx && !state._draggingVertex) {
         f.ring.forEach((pt, pi) => {
-          const marker = L.circleMarker([pt[1], pt[0]], {
-            radius: 5, color: '#333', fillColor: '#fff', fillOpacity: 1, weight: 1
+          const marker = L.marker([pt[1], pt[0]], {
+            draggable: true,
+            autoPan: false,
+            zIndexOffset: 1000,
+            icon: L.divIcon({
+              className: 'fugen-vertex',
+              iconSize: [14, 14],
+              iconAnchor: [7, 7]
+            })
           }).addTo(layerGroups.fugen);
-          marker.on('mousedown', function (ev) {
-            L.DomEvent.stopPropagation(ev);
+          L.DomEvent.disableClickPropagation(marker.getElement());
+          marker.on('dragstart', function (ev) {
+            state._draggingVertex = true;
             map.dragging.disable();
-            function onMove(e2) {
-              const ll = e2.latlng;
-              f.ring[pi] = [ll.lng, ll.lat];
-              redrawFugen();
-              renderFugenList();
+            map.doubleClickZoom.disable();
+            L.DomEvent.stop(ev);
+          });
+          marker.on('drag', function (ev) {
+            const ll = ev.target.getLatLng();
+            f.ring[pi] = [ll.lng, ll.lat];
+            const outer = ringToLatLng(f.ring);
+            let latlngs = outer;
+            if (state.hole && state.hole.fugenId === f.id) {
+              latlngs = [outer, circleHoleLatLngs(state.hole)];
             }
-            function onUp() {
-              map.off('mousemove', onMove);
-              map.off('mouseup', onUp);
-              map.dragging.enable();
-              redrawFugen();
-            }
-            map.on('mousemove', onMove);
-            map.on('mouseup', onUp);
+            poly.setLatLngs(latlngs);
+          });
+          marker.on('dragend', function () {
+            state._draggingVertex = false;
+            map.dragging.enable();
+            map.doubleClickZoom.enable();
+            redrawFugen();
+            renderFugenList();
           });
         });
       }

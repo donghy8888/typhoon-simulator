@@ -135,11 +135,11 @@
       }
       const selected = state.selectedFugen === idx;
       const poly = L.polygon(latlngs, {
-        color: selected ? '#5a3d7a' : '#7a5a9e',
+        color: selected ? '#922b21' : '#c0392b',
         weight: selected ? 2.5 : 2,
-        opacity: 0.85,
-        fillColor: '#c9a0dc',
-        fillOpacity: selected ? 0.48 : 0.38,
+        opacity: 0.9,
+        fillColor: '#e74c3c',
+        fillOpacity: selected ? 0.42 : 0.32,
         className: selected ? 'fugen-draggable-fill' : '',
         bubblingMouseEvents: false
       }).addTo(layerGroups.fugen);
@@ -268,7 +268,7 @@
     if (state.hole && state.layers.fugen) {
       L.circle([state.hole.lat, state.hole.lon], {
         radius: state.hole.radiusDeg * 111320,
-        color: '#8e44ad',
+        color: '#922b21',
         weight: 2,
         dashArray: '6 4',
         fillOpacity: 0
@@ -467,14 +467,18 @@
         L.polyline(latlngs, { color: '#2980b9', weight: 2.5 }).addTo(layerGroups.track);
       }
       if (main.alive || main.vmax >= P.DISSIPATE_MS) {
-        const rDeg = G.windRadiusDeg(main.vmax);
-        L.circle([main.lat, main.lon], {
-          radius: rDeg * 111320,
-          color: '#2980b9',
-          weight: 2,
-          fillColor: '#3498db',
-          fillOpacity: 0.15
-        }).addTo(layerGroups.track);
+        // 由外到内：7级、10级、12级风圈（达该强度才显示）
+        const rings = G.windRadiiForGrades(main.vmax);
+        rings.forEach(function (ring) {
+          L.circle([main.lat, main.lon], {
+            radius: ring.radiusDeg * 111320,
+            color: ring.color,
+            weight: ring.weight,
+            fillColor: ring.fill,
+            fillOpacity: ring.fillOpacity
+          }).bindTooltip(ring.label + ' · 当前 ' + G.gradeLabel(main.vmax), { sticky: true })
+            .addTo(layerGroups.track);
+        });
       }
     }
 

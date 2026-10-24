@@ -293,14 +293,28 @@
     return maxLat;
   }
 
-  /** 风圈半径（度）：由最大风速估算外缘（约 7 级风圈） */
+  /** 7 级风圈半径（度）：由最大风速估算外缘 */
   function windRadiusDeg(vmaxMs) {
-    // 经验：更强 → 更大风圈；约 1.2°–4.5°
+    // 经验：更强 → 更大风圈；约 0.9°–4.5°
     const r = 0.8 + (Math.max(0, vmaxMs - 14) / 50) * 3.5;
     return Math.min(4.5, Math.max(0.9, r));
   }
 
-  /** 空圈半径略大于风圈 */
+  /**
+   * 同时给出 7 / 10 / 12 级风圈半径（度）。
+   * 外圈=7级，中圈=10级，内圈=12级；若当前最大风速未达该等级则不返回该项。
+   */
+  function windRadiiForGrades(vmaxMs) {
+    // 始终同时画出 7 / 10 / 12 三级风圈（外→内），半径随强度缩放
+    const r7 = windRadiusDeg(vmaxMs);
+    return [
+      { grade: 7, radiusDeg: r7, color: '#2980b9', fill: '#3498db', fillOpacity: 0.05, weight: 2, label: '7级风圈' },
+      { grade: 10, radiusDeg: Math.max(0.35, r7 * 0.58), color: '#e67e22', fill: '#f39c12', fillOpacity: 0.07, weight: 2, label: '10级风圈' },
+      { grade: 12, radiusDeg: Math.max(0.2, r7 * 0.34), color: '#c0392b', fill: '#e74c3c', fillOpacity: 0.1, weight: 2.5, label: '12级风圈' }
+    ];
+  }
+
+  /** 空圈半径略大于 7 级风圈 */
   function holeRadiusDeg(vmaxMs) {
     return windRadiusDeg(vmaxMs) * 1.25 + 0.15;
   }
@@ -358,6 +372,7 @@
     fugenGradient,
     northernFugenEdgeLat,
     windRadiusDeg,
+    windRadiiForGrades,
     holeRadiusDeg,
     degPerHourFromMs,
     beaufortGrade,

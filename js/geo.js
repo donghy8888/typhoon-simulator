@@ -86,25 +86,101 @@
   }
 
   /**
-   * 默认副高：若干矩形/多边形块（lngLat 环，[lon, lat]）
-   * 北部大块 + 东部延伸
+   * Chaikin 角点切削：使多边形边缘更顺滑。
+   * ring = [[lon,lat],...]，首尾可闭合（末点≈首点）或开放。
+   * 返回闭合环（末点重复首点）。
+   */
+  function chaikinSmooth(ring, iterations) {
+    iterations = iterations == null ? 1 : iterations;
+    let pts = ring.slice();
+    // 去掉闭合重复点
+    if (pts.length >= 2) {
+      const a = pts[0], b = pts[pts.length - 1];
+      if (Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9) {
+        pts = pts.slice(0, -1);
+      }
+    }
+    for (let iter = 0; iter < iterations; iter++) {
+      const next = [];
+      const n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const p0 = pts[i];
+        const p1 = pts[(i + 1) % n];
+        next.push([
+          0.75 * p0[0] + 0.25 * p1[0],
+          0.75 * p0[1] + 0.25 * p1[1]
+        ]);
+        next.push([
+          0.25 * p0[0] + 0.75 * p1[0],
+          0.25 * p0[1] + 0.75 * p1[1]
+        ]);
+      }
+      pts = next;
+    }
+    pts.push([pts[0][0], pts[0][1]]);
+    return pts;
+  }
+
+  /**
+   * 生成圆角矩形 / 卵形副高环（[lon,lat]）。
+   * 沿边界均匀取 n 点，四角用四分之一椭圆过渡，整体呈顺滑 blob。
+   */
+  function roundedRectRing(lon0, lon1, lat0, lat1, n, cornerFrac) {
+    n = n || 20;
+    cornerFrac = cornerFrac == null ? 0.28 : cornerFrac;
+    const w = lon1 - lon0;
+    const h = lat1 - lat0;
+    const rx = Math.min(w, h) * cornerFrac * 0.5 + w * cornerFrac * 0.25;
+    const ry = Math.min(w, h) * cornerFrac * 0.5 + h * cornerFrac * 0.25;
+    const cx = (lon0 + lon1) / 2;
+    const cy = (lat0 + lat1) / 2;
+    // 半轴略大于矩形半宽，略扁椭圆 + 轻微起伏，更像副高脊
+    const a = w / 2;
+    const b = h / 2;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const t = (i / n) * Math.PI * 2;
+      // 超椭圆近似 (p≈2.4) + 轻微方位调制，避免正椭圆过于规整
+      const p = 2.35;
+      const c = Math.cos(t);
+      const s = Math.sin(t);
+      const r = 1 / Math.pow(
+        Math.pow(Math.abs(c), p) + Math.pow(Math.abs(s), p),
+        1 / p
+      );
+      const wobble = 1 + 0.04 * Math.sin(2 * t) + 0.025 * Math.cos(3 * t);
+      const lon = cx + a * r * c * wobble;
+      const lat = cy + b * r * s * wobble * (1 + 0.03 * Math.sin(t));
+      pts.push([lon, lat]);
+    }
+    pts.push([pts[0][0], pts[0][1]]);
+    return chaikinSmooth(pts, 1);
+  }
+
+  /**
+   * 在地图中心附近生成一块新的顺滑副高环。
+   */
+  function makeSmoothFugenRing(lonC, latC, halfW, halfH, n) {
+    halfW = halfW == null ? 6 : halfW;
+    halfH = halfH == null ? 3.5 : halfH;
+    n = n || 12;
+    return roundedRectRing(lonC - halfW, lonC + halfW, latC - halfH, latC + halfH, n, 0.32);
+  }
+
+  /**
+   * 默认副高：顺滑卵形块（多顶点 + Chaikin），覆盖典型西北太副高位置
    */
   function defaultFugen() {
     return [
       {
         id: 'wnp_main',
         name: '西北太主副高',
-        // 顺时针环 [lon, lat]
-        ring: [
-          [125, 22], [155, 20], [170, 25], [172, 32], [160, 36], [140, 35], [128, 30], [125, 22]
-        ]
+        ring: roundedRectRing(126, 168, 21, 35, 12, 0.3)
       },
       {
         id: 'wnp_east',
         name: '东伸脊',
-        ring: [
-          [155, 18], [175, 16], [178, 22], [170, 26], [158, 24], [155, 18]
-        ]
+        ring: roundedRectRing(154, 176, 16, 25, 10, 0.35)
       }
     ];
   }
@@ -271,6 +347,9 @@
     MOUNTAIN_POLYS,
     defaultSstRegions,
     defaultFugen,
+    roundedRectRing,
+    makeSmoothFugenRing,
+    chaikinSmooth,
     pointInRing,
     isLand,
     isMountain,

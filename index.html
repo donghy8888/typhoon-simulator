@@ -16,123 +16,149 @@
 
   <div class="layout">
     <aside class="sidebar">
-      <h2>初始设置</h2>
-      <div class="form-row">
-        <label for="initLon">经度</label>
-        <input type="number" id="initLon" value="140" step="0.1" min="100" max="180" />
-        <span class="unit">°E</span>
-      </div>
-      <div class="form-row">
-        <label for="initLat">纬度</label>
-        <input type="number" id="initLat" value="15" step="0.1" min="0" max="50" />
-        <span class="unit">°N</span>
-      </div>
-      <div class="form-row">
-        <label for="initWind">最大风速</label>
-        <input type="number" id="initWind" value="35" step="0.5" min="14" max="70" />
-        <span class="unit">m/s</span>
-      </div>
-      <div class="form-row">
-        <label for="initWindGrade">或风力等级</label>
-        <select id="initWindGrade">
-          <option value="">— 对照选择 —</option>
-          <option value="17.2">8级 (17.2 m/s)</option>
-          <option value="20.8">9级 (20.8 m/s)</option>
-          <option value="24.5">10级 (24.5 m/s)</option>
-          <option value="28.5">11级 (28.5 m/s)</option>
-          <option value="32.7">12级 (32.7 m/s)</option>
-          <option value="37.0">13级 (37.0 m/s)</option>
-          <option value="41.5">14级 (41.5 m/s)</option>
-          <option value="46.2">15级 (46.2 m/s)</option>
-          <option value="51.0">16级 (51.0 m/s)</option>
-          <option value="56.1">17级 (56.1 m/s)</option>
-        </select>
-      </div>
-      <p style="font-size:12px;color:#666;margin:4px 0 8px;">也可在地图上点击放置台风中心。</p>
 
-      <div class="btn-row">
-        <button type="button" class="primary" id="btnStart">开始</button>
-        <button type="button" id="btnPause" disabled>暂停</button>
-        <button type="button" id="btnReset">重置</button>
-      </div>
-      <div class="form-row">
-        <label for="simSpeed">播放速度</label>
-        <input type="range" id="simSpeed" min="1" max="20" value="4" />
-        <span class="val" id="simSpeedVal">4×</span>
-      </div>
-      <div class="form-row">
-        <label for="ensembleN">集合成员</label>
-        <input type="number" id="ensembleN" value="1" min="1" max="20" step="1" />
-        <span class="unit">个</span>
-      </div>
+      <section class="panel" id="panel-init">
+        <h2 class="panel-title">初始条件 <span class="badge">台风中心</span></h2>
+        <div class="form-row">
+          <label for="initLon">经度</label>
+          <input type="number" id="initLon" value="140" step="0.1" min="100" max="180" title="东经 100–180°" />
+          <span class="unit">°E</span>
+        </div>
+        <div class="form-row">
+          <label for="initLat">纬度</label>
+          <input type="number" id="initLat" value="15" step="0.1" min="0" max="50" title="北纬 0–50°" />
+          <span class="unit">°N</span>
+        </div>
+        <div class="form-row">
+          <label for="initWind">最大风速</label>
+          <input type="number" id="initWind" value="35" step="0.5" min="14" max="70" />
+          <span class="unit">m/s</span>
+        </div>
+        <div class="form-row">
+          <label for="initWindGrade">或风力等级</label>
+          <select id="initWindGrade" title="按中国风力等级对照填入风速">
+            <option value="">— 对照选择 —</option>
+            <option value="17.2">8级 (17.2 m/s)</option>
+            <option value="20.8">9级 (20.8 m/s)</option>
+            <option value="24.5">10级 (24.5 m/s)</option>
+            <option value="28.5">11级 (28.5 m/s)</option>
+            <option value="32.7">12级 (32.7 m/s)</option>
+            <option value="37.0">13级 (37.0 m/s)</option>
+            <option value="41.5">14级 (41.5 m/s)</option>
+            <option value="46.2">15级 (46.2 m/s)</option>
+            <option value="51.0">16级 (51.0 m/s)</option>
+            <option value="56.1">17级 (56.1 m/s)</option>
+          </select>
+        </div>
+        <p class="hint"><strong>放置台风：</strong>在右侧地图上点击即可设定中心位置；也可直接改上方经纬度。</p>
+      </section>
 
-      <h2>实时状态</h2>
-      <div class="status-panel" id="statusPanel">
-        <div>时间：<span id="stTime">—</span></div>
-        <div>位置：<span id="stPos">—</span></div>
-        <div>最大风速：<span id="stWind">—</span></div>
-        <div>海温（SST）：<span id="stSst">—</span></div>
-        <div>阶段：<span class="phase" id="stPhase">待启动</span></div>
-        <div>引导气流：<span id="stSteer">—</span></div>
-      </div>
+      <section class="panel panel-sticky" id="panel-run">
+        <h2 class="panel-title">运行控制</h2>
+        <div class="btn-row">
+          <button type="button" class="primary" id="btnStart" title="开始或继续模拟">开始</button>
+          <button type="button" class="secondary" id="btnPause" disabled title="暂停 / 继续">暂停</button>
+          <button type="button" class="secondary" id="btnReset" title="清空路径并回到待启动">重置</button>
+        </div>
+        <div class="form-row">
+          <label for="simSpeed">播放速度</label>
+          <input type="range" id="simSpeed" min="1" max="20" value="4" />
+          <span class="val" id="simSpeedVal">4×</span>
+        </div>
+        <div class="form-row">
+          <label for="ensembleN">集合成员</label>
+          <input type="number" id="ensembleN" value="1" min="1" max="20" step="1" title="1–20；大于 1 时叠加扰动路径" />
+          <span class="unit">个</span>
+        </div>
+      </section>
 
-      <h2>图层</h2>
-      <div class="checkbox-list" id="layerToggles">
-        <label><input type="checkbox" data-layer="fugen" checked /> 副热带高压</label>
-        <label><input type="checkbox" data-layer="sst" checked /> 海温关键等值线 (26.5 / 28℃)</label>
-        <label><input type="checkbox" data-layer="steer" checked /> 引导风向箭头</label>
-        <label><input type="checkbox" data-layer="terrain" checked /> 陆地 / 山地示意</label>
-        <label><input type="checkbox" data-layer="track" checked /> 台风路径与风圈</label>
-        <label><input type="checkbox" data-layer="ensemble" checked /> 集合预报路径</label>
-      </div>
+      <section class="panel" id="panel-status">
+        <h2 class="panel-title">实时状态</h2>
+        <div class="status-panel" id="statusPanel">
+          <div class="st-row"><span class="st-label">时间</span><span class="st-value" id="stTime">—</span></div>
+          <div class="st-row"><span class="st-label">位置</span><span class="st-value" id="stPos">—</span></div>
+          <div class="st-row"><span class="st-label">最大风速</span><span class="st-value" id="stWind">—</span></div>
+          <div class="st-row"><span class="st-label">海温（SST）</span><span class="st-value" id="stSst">—</span></div>
+          <div class="st-row"><span class="st-label">阶段</span><span class="st-value phase" id="stPhase">待启动</span></div>
+          <div class="st-row"><span class="st-label">引导气流</span><span class="st-value" id="stSteer">—</span></div>
+        </div>
+      </section>
 
-      <h2>区域海温 (SST)</h2>
-      <div id="sstControls"></div>
-      <p style="font-size:12px;color:#666;">规则：&lt;26.5℃ 趋于减弱；≥28℃ 且环境尚可时易快速增强。</p>
+      <section class="panel" id="panel-layers">
+        <h2 class="panel-title">图层</h2>
+        <div class="checkbox-list" id="layerToggles">
+          <label title="副热带高压多边形，可拖动编辑"><input type="checkbox" data-layer="fugen" checked /> 副热带高压</label>
+          <label title="各海域海温填色与 26.5 / 28℃ 阈值边框"><input type="checkbox" data-layer="sst" checked /> 海温关键等值线 (26.5 / 28℃)</label>
+          <label title="大尺度引导风向示意箭头"><input type="checkbox" data-layer="steer" checked /> 引导风向箭头</label>
+          <label title="陆地轮廓与山地示意（影响摩擦衰减）"><input type="checkbox" data-layer="terrain" checked /> 陆地 / 山地示意</label>
+          <label title="主台风路径与风圈"><input type="checkbox" data-layer="track" checked /> 台风路径与风圈</label>
+          <label title="集合成员扰动路径（意大利面条图）"><input type="checkbox" data-layer="ensemble" checked /> 集合预报路径</label>
+        </div>
+        <p class="hint">勾选后在地图上显示对应图层；副高选中后可拖动整块或拖顶点改形。</p>
+      </section>
 
-      <h2>副热带高压</h2>
-      <div class="btn-row">
-        <button type="button" id="btnAddFugen">添加副高块</button>
-        <button type="button" id="btnResetFugen">恢复默认副高</button>
-      </div>
-      <div class="fugen-list" id="fugenList"></div>
-      <p style="font-size:12px;color:#666;">台风不能穿越副高内部，只能沿其外围移动。选中后可拖动角点调整。</p>
+      <section class="panel" id="panel-sst">
+        <h2 class="panel-title">海温 <span class="badge">SST</span></h2>
+        <div id="sstControls"></div>
+        <p class="hint">规则：&lt;26.5℃ 趋于减弱；≥28℃ 且环境尚可时易快速增强。</p>
+      </section>
 
-      <h2>引导气流</h2>
-      <div class="form-row">
-        <label for="steerU">纬向 u（东向为正）</label>
-        <input type="range" id="steerU" min="-12" max="12" value="-3" step="0.5" />
-        <span class="val" id="steerUVal">-3</span>
-      </div>
-      <div class="form-row">
-        <label for="steerV">经向 v（北向为正）</label>
-        <input type="range" id="steerV" min="-8" max="8" value="1.5" step="0.5" />
-        <span class="val" id="steerVVal">1.5</span>
-      </div>
-      <div class="form-row">
-        <label for="westerlyU">副高北侧西风 u</label>
-        <input type="range" id="westerlyU" min="0" max="20" value="8" step="0.5" />
-        <span class="val" id="westerlyUVal">8</span>
-      </div>
-      <div class="form-row">
-        <label for="betaStrength">β 漂移强度</label>
-        <input type="range" id="betaStrength" min="0" max="2" value="1" step="0.1" />
-        <span class="val" id="betaStrengthVal">1.0</span>
-      </div>
-      <p style="font-size:12px;color:#666;">单位约 m/s。北半球 β 漂移使台风有向西北移动的倾向。走到副高北缘后会受西风影响向东北拐弯（ recurvature ）。</p>
+      <section class="panel" id="panel-fugen">
+        <h2 class="panel-title">副热带高压</h2>
+        <div class="btn-row tight">
+          <button type="button" class="secondary" id="btnAddFugen" title="在地图中心添加一块顺滑副高">添加副高块</button>
+          <button type="button" class="secondary" id="btnResetFugen" title="恢复默认两块副高">恢复默认</button>
+        </div>
+        <div class="fugen-list" id="fugenList"></div>
+        <p class="hint">
+          <strong>编辑：</strong>点「选中」或点地图上的副高 → 拖动<strong>内部</strong>可整体平移；拖动<strong>圆点</strong>可改形状。台风不能穿越副高实体，只能沿外围移动。
+        </p>
+      </section>
 
-      <h2>说明</h2>
-      <div class="help-box">
-        <strong>副高空圈规则：</strong>若台风初始位置落在副高内部，会在该副高上“挖”出一个略大于风圈的圆形空洞（空洞内不算副高）。空洞半径随风圈（强度）增大或缩小而同步变化。台风在空洞内按引导气流与 β 漂移移动，仍不能穿入空洞外的副高实体。<br /><br />
-        <strong>强度阈值：</strong>海温 26.5℃ 为维持下限，28℃ 为快速增强阈值。登陆后地面摩擦使强度下降，山地（中国东部/台湾/日本/菲律宾示意）加快衰减。当最大风速降至<strong>7级以下</strong>（约 &lt;13.9 m/s）时模拟结束并判定消亡。<br /><br />
-        <strong>集合预报：</strong>可设 1–20 个成员，对初始位置、强度与引导气流作小扰动，叠加显示“意大利面条”路径。
-      </div>
+      <section class="panel" id="panel-steer">
+        <h2 class="panel-title">引导气流</h2>
+        <div class="form-row">
+          <label for="steerU">纬向 u（东向为正）</label>
+          <input type="range" id="steerU" min="-12" max="12" value="-3" step="0.5" />
+          <span class="val" id="steerUVal">-3.0</span>
+        </div>
+        <div class="form-row">
+          <label for="steerV">经向 v（北向为正）</label>
+          <input type="range" id="steerV" min="-8" max="8" value="1.5" step="0.5" />
+          <span class="val" id="steerVVal">1.5</span>
+        </div>
+        <div class="form-row">
+          <label for="westerlyU">副高北侧西风 u</label>
+          <input type="range" id="westerlyU" min="0" max="20" value="8" step="0.5" />
+          <span class="val" id="westerlyUVal">8.0</span>
+        </div>
+        <div class="form-row">
+          <label for="betaStrength">β 漂移强度</label>
+          <input type="range" id="betaStrength" min="0" max="2" value="1" step="0.1" />
+          <span class="val" id="betaStrengthVal">1.0</span>
+        </div>
+        <p class="hint">单位约 m/s。北半球 β 漂移使台风有向西北移动的倾向；走到副高北缘后受西风影响可向东北拐弯（recurvature）。</p>
+      </section>
+
+      <section class="panel" id="panel-help">
+        <h2 class="panel-title">帮助说明</h2>
+        <div class="help-box">
+          <p><strong>副高空圈规则：</strong>若台风初始位置落在副高内部，会在该副高上“挖”出一个略大于风圈的圆形空洞（空洞内不算副高）。空洞半径随风圈（强度）增大或缩小而同步变化。台风在空洞内按引导气流与 β 漂移移动，仍不能穿入空洞外的副高实体。</p>
+          <p><strong>强度阈值：</strong>海温 26.5℃ 为维持下限，28℃ 为快速增强阈值。登陆后地面摩擦使强度下降，山地（中国东部/台湾/日本/菲律宾示意）加快衰减。当最大风速降至<strong>7级以下</strong>（约 &lt;13.9 m/s）时模拟结束并判定消亡。</p>
+          <p><strong>集合预报：</strong>可设 1–20 个成员，对初始位置、强度与引导气流作小扰动，叠加显示“意大利面条”路径。</p>
+        </div>
+      </section>
+
     </aside>
 
     <div class="map-wrap">
       <div id="map"></div>
+      <div class="map-toolbar" id="mapToolbar" title="操作提示">
+        点击地图放置台风 · 选中副高后拖内部平移、拖圆点改形
+      </div>
       <div class="clock-bar" id="clockBar">模拟时钟：未开始 · 点击地图放置台风后按「开始」</div>
       <div class="map-legend">
+        <div class="legend-title">图例</div>
         <div><span class="swatch" style="background:#c9a0dc;opacity:0.55"></span>副热带高压</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #e67e22"></span>SST 26.5℃</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #c0392b"></span>SST 28℃</div>

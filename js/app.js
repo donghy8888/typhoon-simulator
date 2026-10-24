@@ -27,6 +27,7 @@
     },
     selectedFugen: null,
     _draggingVertex: false,
+    _draggingBlock: false,
     timer: null
   };
 
@@ -58,7 +59,7 @@
 
   // 域边框
   L.rectangle([[G.DOMAIN.latMin, G.DOMAIN.lonMin], [G.DOMAIN.latMax, G.DOMAIN.lonMax]], {
-    color: '#666', weight: 1, fill: false, dashArray: '4 3'
+    color: '#888', weight: 1, fill: false, dashArray: '4 3', opacity: 0.7
   }).addTo(map);
 
   function cfgFromUI() {
@@ -86,7 +87,7 @@
     });
   }
 
-  // —— 副高绘制（含空洞近似：用 polygon with hole 若支持） ——
+  // —— 副高绘制 ——
   let fugenPolygons = [];
 
   function ringToLatLng(ring) {
@@ -105,6 +106,22 @@
     return pts;
   }
 
+  function applyPolyLatLngs(poly, f) {
+    const outer = ringToLatLng(f.ring);
+    let latlngs = outer;
+    if (state.hole && state.hole.fugenId === f.id) {
+      latlngs = [outer, circleHoleLatLngs(state.hole)];
+    }
+    poly.setLatLngs(latlngs);
+  }
+
+  function translateRing(ring, dLon, dLat) {
+    for (let i = 0; i < ring.length; i++) {
+      ring[i][0] += dLon;
+      ring[i][1] += dLat;
+    }
+  }
+
   function redrawFugen() {
     layerGroups.fugen.clearLayers();
     fugenPolygons = [];
@@ -113,53 +130,127 @@
     state.fugen.forEach((f, idx) => {
       const outer = ringToLatLng(f.ring);
       let latlngs = outer;
-      // Leaflet polygon with hole: [outer, hole1, ...]
       if (state.hole && state.hole.fugenId === f.id) {
         latlngs = [outer, circleHoleLatLngs(state.hole)];
       }
+      const selected = state.selectedFugen === idx;
       const poly = L.polygon(latlngs, {
-        color: '#6b3fa0',
-        weight: 1.5,
+        color: selected ? '#5a3d7a' : '#7a5a9e',
+        weight: selected ? 2.5 : 2,
+        opacity: 0.85,
         fillColor: '#c9a0dc',
-        fillOpacity: 0.4,
-        pmIgnore: false
+        fillOpacity: selected ? 0.48 : 0.38,
+        className: selected ? 'fugen-draggable-fill' : '',
+        bubblingMouseEvents: false
       }).addTo(layerGroups.fugen);
 
-      poly.bindTooltip(f.name, { sticky: true });
+      poly.bindTooltip(
+        f.name + (selected ? '（拖内部平移 · 拖圆点改形）' : '（点击选中）'),
+        { sticky: true, opacity: 0.92 }
+      );
+
       poly.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
         selectFugen(idx);
       });
 
-      // 可拖角点：用 draggable marker，拖动时只改多边形顶点，不整页重绘（避免抢地图平移）
-      if (state.selectedFugen === idx && !state._draggingVertex) {
-        f.ring.forEach((pt, pi) => {
+      // 整块拖动：选中后在填充区按下并拖动（非顶点）
+      if (selected) {
+        poly.on('mousedown', function (e) {
+          if (state._draggingVertex) return;
+          // 仅左键
+          if (e.originalEvent && e.originalEvent.button !== 0) return;
+          L.DomEvent.stopPropagation(e);
+          L.DomEvent.preventDefault(e);
+
+          state._draggingBlock = true;
+          map.dragging.disable();
+          map.doubleClickZoom.disable();
+
+          const start = e.latlng;
+          let last = start;
+
+          function onMove(ev) {
+            if (!state._draggingBlock) return;
+            const ll = ev.latlng;
+            const dLon = ll.lng - last.lng;
+            const dLat = ll.lat - last.lat;
+            if (dLon === 0 && dLat === 0) return;
+            translateRing(f.ring, dLon, dLat);
+            last = ll;
+            applyPolyLatLngs(poly, f);
+            // 同步顶点 marker 位置
+            layerGroups.fugen.eachLayer(function (ly) {
+              if (ly instanceof L.Marker && ly._fugenVertexIndex != null) {
+                const pt = f.ring[ly._fugenVertexIndex];
+                if (pt) ly.setLatLng([pt[1], pt[0]]);
+              }
+            });
+          }
+
+          function onUp() {
+            state._draggingBlock = false;
+            map.off('mousemove', onMove);
+            map.off('mouseup', onUp);
+            map.dragging.enable();
+            map.doubleClickZoom.enable();
+            redrawFugen();
+            renderFugenList();
+          }
+
+          map.on('mousemove', onMove);
+          map.on('mouseup', onUp);
+        });
+      }
+
+      // 可拖角点：draggable marker；拖动时只改多边形顶点
+      if (selected && !state._draggingVertex) {
+        // 去掉闭合重复末点，避免叠两个手柄
+        const ringPts = f.ring.slice();
+        if (ringPts.length >= 2) {
+          const a = ringPts[0], b = ringPts[ringPts.length - 1];
+          if (Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9) {
+            ringPts.pop();
+          }
+        }
+        // 若顶点过多，仍全部可拖（顺滑环约 20–40 点）
+        ringPts.forEach((pt, pi) => {
           const marker = L.marker([pt[1], pt[0]], {
             draggable: true,
             autoPan: false,
             zIndexOffset: 1000,
             icon: L.divIcon({
               className: 'fugen-vertex',
-              iconSize: [14, 14],
-              iconAnchor: [7, 7]
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
             })
           }).addTo(layerGroups.fugen);
-          L.DomEvent.disableClickPropagation(marker.getElement());
+          marker._fugenVertexIndex = pi;
+          const el = marker.getElement();
+          if (el) {
+            L.DomEvent.disableClickPropagation(el);
+            el.title = '拖动改形';
+          }
           marker.on('dragstart', function (ev) {
             state._draggingVertex = true;
+            state._draggingBlock = false;
             map.dragging.disable();
             map.doubleClickZoom.disable();
             L.DomEvent.stop(ev);
           });
           marker.on('drag', function (ev) {
             const ll = ev.target.getLatLng();
+            // 写回开放环；若原 ring 闭合则同步末点
+            const closed = f.ring.length >= 2 &&
+              Math.abs(f.ring[0][0] - f.ring[f.ring.length - 1][0]) < 1e-9 &&
+              Math.abs(f.ring[0][1] - f.ring[f.ring.length - 1][1]) < 1e-9;
+            const openLen = closed ? f.ring.length - 1 : f.ring.length;
+            if (pi >= openLen) return;
             f.ring[pi] = [ll.lng, ll.lat];
-            const outer = ringToLatLng(f.ring);
-            let latlngs = outer;
-            if (state.hole && state.hole.fugenId === f.id) {
-              latlngs = [outer, circleHoleLatLngs(state.hole)];
+            if (closed) {
+              f.ring[f.ring.length - 1] = [f.ring[0][0], f.ring[0][1]];
             }
-            poly.setLatLngs(latlngs);
+            applyPolyLatLngs(poly, f);
           });
           marker.on('dragend', function () {
             state._draggingVertex = false;
@@ -194,37 +285,73 @@
   function renderFugenList() {
     const el = document.getElementById('fugenList');
     el.innerHTML = '';
+    if (!state.fugen.length) {
+      const empty = document.createElement('p');
+      empty.className = 'hint';
+      empty.textContent = '暂无副高块，可点「添加副高块」或「恢复默认」。';
+      el.appendChild(empty);
+      return;
+    }
     state.fugen.forEach((f, idx) => {
       const div = document.createElement('div');
-      div.className = 'fugen-item';
-      div.innerHTML = '<span>' + (state.selectedFugen === idx ? '▶ ' : '') + f.name + '</span>';
+      div.className = 'fugen-item' + (state.selectedFugen === idx ? ' selected' : '');
+
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      div.appendChild(dot);
+
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.className = 'fugen-name-input';
+      nameInput.value = f.name;
+      nameInput.title = '可改名称';
+      nameInput.onclick = (e) => e.stopPropagation();
+      nameInput.onchange = () => {
+        const v = nameInput.value.trim();
+        if (v) f.name = v;
+        else nameInput.value = f.name;
+        redrawFugen();
+      };
+      div.appendChild(nameInput);
+
       const btnSel = document.createElement('button');
       btnSel.type = 'button';
-      btnSel.textContent = '选中';
-      btnSel.onclick = () => selectFugen(idx);
+      btnSel.className = 'small' + (state.selectedFugen === idx ? ' primary' : ' secondary');
+      btnSel.textContent = state.selectedFugen === idx ? '已选' : '选中';
+      btnSel.title = '选中后可拖动整块或顶点';
+      btnSel.onclick = (e) => {
+        e.stopPropagation();
+        selectFugen(idx);
+      };
+
       const btnDel = document.createElement('button');
       btnDel.type = 'button';
+      btnDel.className = 'small danger';
       btnDel.textContent = '删除';
-      btnDel.onclick = () => {
+      btnDel.title = '删除此副高块';
+      btnDel.onclick = (e) => {
+        e.stopPropagation();
         state.fugen.splice(idx, 1);
         if (state.selectedFugen === idx) state.selectedFugen = null;
+        else if (state.selectedFugen != null && state.selectedFugen > idx) state.selectedFugen--;
         renderFugenList();
         redrawFugen();
       };
+
       div.appendChild(btnSel);
       div.appendChild(btnDel);
+      div.onclick = () => selectFugen(idx);
       el.appendChild(div);
     });
   }
 
-  // —— SST 等值线（按区域框画 26.5 / 28 边界示意） ——
+  // —— SST 等值线 ——
   function redrawSst() {
     layerGroups.sst.clearLayers();
     if (!state.layers.sst) return;
 
     state.sstRegions.forEach(r => {
       const bounds = [[r.lat0, r.lon0], [r.lat1, r.lon1]];
-      // 区域淡色
       let fill = '#aed6f1';
       if (r.sst >= 28) fill = '#f5b7b1';
       else if (r.sst >= 26.5) fill = '#f9e79f';
@@ -233,7 +360,6 @@
         color: '#888', weight: 0.5, fillColor: fill, fillOpacity: 0.18
       }).bindTooltip(r.name + ' ' + r.sst.toFixed(1) + '℃').addTo(layerGroups.sst);
 
-      // 关键等值线：用区域边框颜色表示阈值
       if (r.sst >= 28) {
         L.rectangle(bounds, {
           color: '#c0392b', weight: 2, fill: false, dashArray: '2 2'
@@ -253,7 +379,7 @@
       const wrap = document.createElement('div');
       wrap.className = 'sst-block';
       wrap.innerHTML = '<div class="name">' + r.name +
-        ' <span style="font-weight:normal;color:#666">(' +
+        ' <span style="font-weight:normal;color:#6a7a8a">(' +
         r.lon0 + '–' + r.lon1 + '°E, ' + r.lat0 + '–' + r.lat1 + '°N)</span></div>';
       const row = document.createElement('div');
       row.className = 'form-row';
@@ -291,7 +417,7 @@
       for (let lon = 105; lon <= 175; lon += stepLon) {
         const st = P.steeringAt(lon, lat, cfg, state.fugen, state.hole);
         const beta = P.betaDrift(lat, cfg.betaStrength);
-        const u = st.u + beta.u * 0.5; // 箭头略含 β
+        const u = st.u + beta.u * 0.5;
         const v = st.v + beta.v * 0.5;
         const spd = Math.hypot(u, v);
         if (spd < 0.3) continue;
@@ -301,7 +427,6 @@
         L.polyline([[lat, lon], [endLat, endLon]], {
           color: '#2c3e50', weight: 1, opacity: 0.65
         }).addTo(layerGroups.steer);
-        // 箭头尖
         const ang = Math.atan2(v, u);
         const ah = 0.35;
         const a1 = ang + Math.PI * 0.8;
@@ -325,7 +450,6 @@
 
     const main = state.members[0];
 
-    // 集合路径
     if (state.layers.ensemble && state.members.length > 1) {
       for (let i = 1; i < state.members.length; i++) {
         const m = state.members[i];
@@ -337,13 +461,11 @@
       }
     }
 
-    // 主路径
     if (state.layers.track && main.track.length >= 1) {
       const latlngs = main.track.map(p => [p.lat, p.lon]);
       if (latlngs.length >= 2) {
         L.polyline(latlngs, { color: '#2980b9', weight: 2.5 }).addTo(layerGroups.track);
       }
-      // 风圈
       if (main.alive || main.vmax >= P.DISSIPATE_MS) {
         const rDeg = G.windRadiusDeg(main.vmax);
         L.circle([main.lat, main.lon], {
@@ -356,16 +478,13 @@
       }
     }
 
-    // 中心符号
-    if (main.track.length || true) {
-      const icon = L.divIcon({
-        className: '',
-        html: '<div style="width:18px;height:18px;border:2px solid #c0392b;border-radius:50%;background:rgba(231,76,60,0.35);text-align:center;line-height:14px;font-size:12px;color:#922;font-weight:bold">台</div>',
-        iconSize: [18, 18],
-        iconAnchor: [9, 9]
-      });
-      L.marker([main.lat, main.lon], { icon }).addTo(layerGroups.storm);
-    }
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="width:20px;height:20px;border:2px solid #c0392b;border-radius:50%;background:rgba(231,76,60,0.4);text-align:center;line-height:16px;font-size:12px;color:#922;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">台</div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10]
+    });
+    L.marker([main.lat, main.lon], { icon }).addTo(layerGroups.storm);
   }
 
   function updateStatus() {
@@ -419,7 +538,6 @@
     state.members = [];
 
     const init = { lon, lat, vmax };
-    // 主成员：无扰动
     const main = {
       lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
       phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
@@ -449,20 +567,16 @@
       return;
     }
 
-    const dt = 1.0; // 1 小时一步
+    const dt = 1.0;
     const cfg = cfgFromUI();
     const main = state.members[0];
 
-    // 更新空圈
     if (state.hole) {
       P.updateHole(state.hole, main.lon, main.lat, main.vmax);
-      // 若中心已离开原副高实体范围且空洞不再需要——仍保持跟随直到风暴离开该副高环
       const stillInParent = state.fugen.some(f =>
         f.id === state.hole.fugenId && G.pointInRing(main.lon, main.lat, f.ring)
       );
-      // 保持空洞直到消亡；中心移出多边形后可清除
       if (!stillInParent && !G.inFugenSolid(main.lon, main.lat, state.fugen, null)) {
-        // 离开母体多边形后保留空洞一会无妨；简化：移出后清除
         const parent = state.fugen.find(f => f.id === state.hole.fugenId);
         if (parent && !G.pointInRing(main.lon, main.lat, parent.ring)) {
           state.hole = null;
@@ -476,7 +590,6 @@
 
     state.hours += dt;
 
-    // 每步刷新显示（速度高时可降采样，这里简单每步刷）
     redrawFugen();
     redrawStorm();
     updateStatus();
@@ -494,7 +607,6 @@
       placeStorm(lon, lat);
     }
     if (!state.members[0].alive) {
-      // 重新放置
       const lon = parseFloat(document.getElementById('initLon').value);
       const lat = parseFloat(document.getElementById('initLat').value);
       placeStorm(lon, lat);
@@ -507,7 +619,7 @@
     document.getElementById('btnPause').textContent = '暂停';
 
     if (state.timer) clearInterval(state.timer);
-    const baseMs = 400; // 1× 时每步间隔
+    const baseMs = 400;
     const interval = Math.max(40, baseMs / state.speed);
     state.timer = setInterval(tick, interval);
     updateStatus();
@@ -544,6 +656,7 @@
 
   // —— 事件 ——
   map.on('click', function (e) {
+    if (state._draggingBlock || state._draggingVertex) return;
     if (state.running && !state.paused) return;
     const lon = e.latlng.lng;
     const lat = e.latlng.lat;
@@ -602,17 +715,10 @@
   document.getElementById('btnAddFugen').onclick = () => {
     const c = map.getCenter();
     const id = 'user_' + Date.now();
-    const d = 4;
     state.fugen.push({
       id,
-      name: '自定义副高' + state.fugen.length,
-      ring: [
-        [c.lng - d, c.lat - d * 0.6],
-        [c.lng + d, c.lat - d * 0.6],
-        [c.lng + d, c.lat + d * 0.6],
-        [c.lng - d, c.lat + d * 0.6],
-        [c.lng - d, c.lat - d * 0.6]
-      ]
+      name: '自定义副高' + (state.fugen.length + 1),
+      ring: G.makeSmoothFugenRing(c.lng, c.lat, 5.5, 3.2, 12)
     });
     selectFugen(state.fugen.length - 1);
   };

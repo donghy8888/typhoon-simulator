@@ -1,0 +1,213 @@
+/* 西北太平洋台风模拟器 — 普通气象科普网站风格 */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", SimHei, sans-serif;
+  font-size: 14px;
+  color: #222;
+  background: #f0f0f0;
+}
+a { color: #0645ad; }
+header.site-header {
+  background: #fff;
+  border-bottom: 1px solid #ccc;
+  padding: 10px 16px;
+}
+header.site-header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: bold;
+  color: #1a1a1a;
+}
+header.site-header .subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #666;
+}
+.layout {
+  display: flex;
+  height: calc(100% - 58px);
+  min-height: 480px;
+}
+.sidebar {
+  width: 320px;
+  min-width: 280px;
+  max-width: 360px;
+  background: #fff;
+  border-right: 1px solid #ccc;
+  overflow-y: auto;
+  padding: 10px 12px 24px;
+}
+.sidebar h2 {
+  margin: 14px 0 8px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #333;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 4px;
+}
+.sidebar h2:first-child { margin-top: 0; }
+.form-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+  gap: 6px;
+}
+.form-row label {
+  width: 88px;
+  flex-shrink: 0;
+  color: #444;
+}
+.form-row input[type="number"],
+.form-row input[type="text"],
+.form-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid #aaa;
+  background: #fff;
+  font-size: 13px;
+}
+.form-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.form-row .unit {
+  width: 36px;
+  color: #666;
+  font-size: 12px;
+}
+.form-row .val {
+  width: 42px;
+  text-align: right;
+  color: #333;
+  font-size: 12px;
+}
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+button, .btn {
+  padding: 5px 12px;
+  border: 1px solid #888;
+  background: #f5f5f5;
+  color: #222;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+button:hover { background: #e8e8e8; }
+button:active { background: #ddd; }
+button.primary {
+  background: #2a6ebb;
+  color: #fff;
+  border-color: #1e5a9a;
+}
+button.primary:hover { background: #245fa3; }
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.checkbox-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  width: auto;
+  cursor: pointer;
+}
+.checkbox-list input { margin: 0; }
+.help-box {
+  background: #fafafa;
+  border: 1px solid #ddd;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #444;
+  margin-top: 8px;
+}
+.help-box strong { color: #222; }
+.status-panel {
+  background: #f8f8f8;
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.status-panel .phase {
+  font-weight: bold;
+  color: #1a5a9a;
+}
+.sst-block {
+  border: 1px solid #ddd;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: #fafafa;
+}
+.sst-block .name { font-weight: bold; font-size: 12px; margin-bottom: 4px; }
+.fugen-list {
+  font-size: 12px;
+  margin: 6px 0;
+}
+.fugen-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px dotted #ddd;
+}
+.fugen-item span { flex: 1; }
+.map-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+#map {
+  width: 100%;
+  height: 100%;
+  background: #d4e6f1;
+}
+.map-legend {
+  position: absolute;
+  bottom: 24px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid #999;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  max-width: 200px;
+}
+.map-legend .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid #666;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.clock-bar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #999;
+  padding: 4px 14px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+footer.site-footer {
+  display: none;
+}
+@media (max-width: 800px) {
+  .layout { flex-direction: column; height: auto; }
+  .sidebar { width: 100%; max-width: none; max-height: 40vh; }
+  .map-wrap { height: 55vh; min-height: 320px; }
+}

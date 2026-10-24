@@ -56,27 +56,84 @@
     return { u: -0.75 * speed, v: 0.85 * speed };
   }
 
-  /** 从副高实体内推出 */
+  /** 从副高实体内小步推出（步长小，避免贴边弹跳锯齿） */
   function pushOutOfFugen(lon, lat, fugenList, hole, maxIter) {
-    maxIter = maxIter || 12;
+    maxIter = maxIter || 20;
     for (let k = 0; k < maxIter; k++) {
       if (!G.inFugenSolid(lon, lat, fugenList, hole)) break;
       const gg = G.fugenGradient(lon, lat, fugenList, hole);
       let gl = Math.hypot(gg.gx, gg.gy);
       if (gl < 1e-6) {
-        // 深陷内部：向南偏西退出（副高南缘通常开口）
-        lon -= 0.35;
-        lat -= 0.25;
+        lon -= 0.12;
+        lat -= 0.08;
       } else {
-        lon -= (gg.gx / gl) * 0.4;
-        lat -= (gg.gy / gl) * 0.4;
+        lon -= (gg.gx / gl) * 0.12;
+        lat -= (gg.gy / gl) * 0.12;
       }
     }
     return { lon, lat };
   }
 
-  function moveStep(lon, lat, vmax, dtHours, cfg, fugenList, hole) {
-    // 先保证不在实体内
+  /** 贴边时只去掉穿入分量，保留原引导风切向，轻微外推——避免巨尺状折线 */
+  function slideAlongFugen(lon, lat, u, v, fugenList, hole) {
+    const probes = [0.25, 0.55, 0.9];
+    let hit = false;
+    for (const probe of probes) {
+      const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);
+      if (G.inFugenSolid(lon + dlon * probe, lat + dlat * probe, fugenList, hole)) {
+        hit = true;
+        break;
+      }
+    }
+    // 已贴在外侧很近时也软修正
+    const near = G.inFugenSolid(lon, lat + 0.15, fugenList, hole) ||
+      G.inFugenSolid(lon + 0.15, lat, fugenList, hole) ||
+      G.inFugenSolid(lon - 0.15, lat, fugenList, hole) ||
+      G.inFugenSolid(lon, lat - 0.15, fugenList, hole);
+
+    if (!hit && !near) return { u, v };
+
+    const g = G.fugenGradient(lon, lat, fugenList, hole);
+    const g2 = G.fugenGradient(lon + 0.2, lat, fugenList, hole);
+    const g3 = G.fugenGradient(lon, lat + 0.2, fugenList, hole);
+    let gx = g.gx + 0.5 * g2.gx + 0.5 * g3.gx;
+    let gy = g.gy + 0.5 * g2.gy + 0.5 * g3.gy;
+    let gl = Math.hypot(gx, gy);
+    if (gl < 1e-6) return { u, v };
+    const nx = gx / gl, ny = gy / gl; // 指向副高内部
+
+    // 去掉向内法向分量
+    const into = u * nx + v * ny;
+    if (into > 0) {
+      u -= into * nx;
+      v -= into * ny;
+    }
+    // 轻微外推，幅度远小于旧版，避免折返
+    u -= nx * 0.35;
+    v -= ny * 0.35;
+
+    // 切向：保持原速度在切向上的投影，不强制改写方向
+    const tx = -ny, ty = nx;
+    let along = u * tx + v * ty;
+    // 若几乎卡住，给一点沿切向的引导（取与原引导同号）
+    if (Math.abs(along) < 0.4) {
+      const stSign = (Math.abs(u) + Math.abs(v)) > 0.01 ? 1 : 1;
+      along = 1.2 * (along >= 0 ? 1 : -1) * stSign;
+      u = tx * along - nx * 0.35;
+      v = ty * along - ny * 0.35;
+    }
+
+    // 限速，防止单步飞出造成巨尺折线
+    const spd = Math.hypot(u, v);
+    const maxSpd = 14;
+    if (spd > maxSpd) {
+      u *= maxSpd / spd;
+      v *= maxSpd / spd;
+    }
+    return { u, v };
+  }
+
+  function moveStepOnce(lon, lat, vmax, dtHours, cfg, fugenList, hole) {
     ({ lon, lat } = pushOutOfFugen(lon, lat, fugenList, hole));
 
     const st = steeringAt(lon, lat, cfg, fugenList, hole);
@@ -84,51 +141,50 @@
     let u = st.u + beta.u;
     let v = st.v + beta.v;
 
-    // 采样前向点，禁止穿入
-    const probe = 0.6;
-    const { dlon: pLon, dlat: pLat } = G.degPerHourFromMs(u, v, lat);
-    const flon = lon + pLon * probe;
-    const flat = lat + pLat * probe;
-    if (G.inFugenSolid(flon, flat, fugenList, hole)) {
-      const g = G.fugenGradient(lon, lat, fugenList, hole);
-      // 也看前向梯度
-      const g2 = G.fugenGradient(flon, flat, fugenList, hole);
-      const gx = g.gx + g2.gx, gy = g.gy + g2.gy;
-      const gl = Math.hypot(gx, gy) || 1;
-      const nx = gx / gl, ny = gy / gl;
-      const into = u * nx + v * ny;
-      if (into > 0) {
-        u -= into * nx;
-        v -= into * ny;
-      }
-      // 沿边界切向滑动（使环流更顺）
-      const tx = -ny, ty = nx;
-      const along = u * tx + v * ty;
-      const prefer = along >= 0 ? 1 : -1;
-      u = tx * Math.max(1.5, Math.abs(along)) * prefer;
-      v = ty * Math.max(1.5, Math.abs(along)) * prefer;
-      // 略微外推
-      u -= nx * 1.2;
-      v -= ny * 1.2;
-    }
+    ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 副高北缘进入西风带：加速向东北拐弯（整片北侧都属西风带）
+    // 副高北缘进入西风带：柔和拐弯（不再在贴边处二次猛推）
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
-    if (edge != null && lat >= edge - 0.5 && !G.inFugenSolid(lon, lat, fugenList, hole)) {
-      const deep = clamp((lat - edge) / 6, 0, 1); // 越往北西风影响越稳
-      u += 1.2 + 2.2 * deep;
-      v += 0.8 + 1.4 * deep;
+    if (edge != null && lat >= edge - 0.4 && !G.inFugenSolid(lon, lat, fugenList, hole)) {
+      const deep = clamp((lat - edge) / 8, 0, 1);
+      u += 0.8 + 1.6 * deep;
+      v += 0.5 + 1.0 * deep;
     }
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);
-    let nlon = lon + dlon * dtHours;
-    let nlat = lat + dlat * dtHours;
+    // 单步位移上限（度），抑制锯齿
+    let stepLon = dlon * dtHours;
+    let stepLat = dlat * dtHours;
+    const stepLim = 0.55;
+    const stepMag = Math.hypot(stepLon, stepLat);
+    if (stepMag > stepLim) {
+      stepLon *= stepLim / stepMag;
+      stepLat *= stepLim / stepMag;
+    }
+    let nlon = lon + stepLon;
+    let nlat = lat + stepLat;
     ({ lon: nlon, lat: nlat } = pushOutOfFugen(nlon, nlat, fugenList, hole));
 
     nlon = clamp(nlon, G.DOMAIN.lonMin + 0.2, G.DOMAIN.lonMax - 0.2);
     nlat = clamp(nlat, G.DOMAIN.latMin + 0.2, G.DOMAIN.latMax - 0.2);
 
     return { lon: nlon, lat: nlat, u, v, steer: st };
+  }
+
+  function moveStep(lon, lat, vmax, dtHours, cfg, fugenList, hole) {
+    // 大时间步拆成子步，贴边更顺滑
+    const n = Math.max(1, Math.min(6, Math.ceil(dtHours / 0.75)));
+    const sub = dtHours / n;
+    let u = 0, v = 0, st = null;
+    for (let i = 0; i < n; i++) {
+      const r = moveStepOnce(lon, lat, vmax, sub, cfg, fugenList, hole);
+      lon = r.lon;
+      lat = r.lat;
+      u = r.u;
+      v = r.v;
+      st = r.steer;
+    }
+    return { lon, lat, u, v, steer: st };
   }
 
   function intensityTendency(lon, lat, vmax, sst) {

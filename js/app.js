@@ -31,18 +31,26 @@
     timer: null
   };
 
-  // —— 地图 ——
+  // —— 地图（Canvas 渲染，缩放更顺）——
   const map = L.map('map', {
     center: [22, 135],
     zoom: 4,
     minZoom: 3,
     maxZoom: 8,
-    worldCopyJump: false
+    worldCopyJump: false,
+    preferCanvas: true,
+    zoomAnimation: true,
+    markerZoomAnimation: false,
+    fadeAnimation: false
   });
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 8
+    maxZoom: 8,
+    updateWhenZooming: false,
+    updateWhenIdle: true,
+    keepBuffer: 2,
+    maxNativeZoom: 8
   }).addTo(map);
 
   map.setMaxBounds([[-5, 95], [55, 185]]);
@@ -274,6 +282,7 @@
         fillOpacity: 0
       }).bindTooltip('副高空圈（随风圈变化）').addTo(layerGroups.fugen);
     }
+    redrawSteerSoon();
   }
 
   function selectFugen(idx) {
@@ -407,13 +416,20 @@
     });
   }
 
-  // —— 引导风箭头 ——
+  // —— 引导风箭头（更密、更大；Canvas 下缩放更顺）——
+  let _steerTimer = null;
+  function redrawSteerSoon() {
+    if (_steerTimer) clearTimeout(_steerTimer);
+    _steerTimer = setTimeout(redrawSteer, 80);
+  }
+
   function redrawSteer() {
     layerGroups.steer.clearLayers();
     if (!state.layers.steer) return;
     const cfg = cfgFromUI();
+    const canvas = L.canvas({ padding: 0.5 });
 
-    // 西风带南界（副高北缘）：整条虚线以北均为西风带
+    // 西风带南界
     const edgePts = [];
     for (let lon = 105; lon <= 175; lon += 2) {
       const edge = G.northernFugenEdgeLat(lon, state.fugen, state.hole);
@@ -421,38 +437,54 @@
     }
     if (edgePts.length >= 2) {
       L.polyline(edgePts, {
-        color: '#1a7f4b', weight: 2, dashArray: '8 6', opacity: 0.85
+        color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
+        renderer: canvas
       }).bindTooltip('西风带南界（副高北缘以北整片为西风带）', { sticky: true })
         .addTo(layerGroups.steer);
     }
 
-    const stepLon = 8, stepLat = 5;
+    const stepLon = 4, stepLat = 3;
+    const westSegs = [];
+    const baseSegs = [];
     for (let lat = 5; lat <= 45; lat += stepLat) {
       for (let lon = 105; lon <= 175; lon += stepLon) {
+        if (G.inFugenSolid(lon, lat, state.fugen, state.hole)) continue;
         const st = P.steeringAt(lon, lat, cfg, state.fugen, state.hole);
         const beta = P.betaDrift(lat, cfg.betaStrength);
         const u = st.u + beta.u * 0.5;
         const v = st.v + beta.v * 0.5;
         const spd = Math.hypot(u, v);
-        if (spd < 0.3) continue;
+        if (spd < 0.25) continue;
         const inWest = G.inWesterlyBelt(lon, lat, state.fugen, state.hole);
-        const col = inWest ? '#1a7f4b' : '#2c3e50';
-        const scale = 0.35;
-        const endLat = lat + v * scale * 0.15;
-        const endLon = lon + u * scale * 0.15 / Math.cos(lat * Math.PI / 180);
-        L.polyline([[lat, lon], [endLat, endLon]], {
-          color: col, weight: inWest ? 1.4 : 1, opacity: 0.7
-        }).addTo(layerGroups.steer);
+        // 箭头更长更大
+        const scale = 0.55 + Math.min(0.35, spd * 0.03);
+        const coslat = Math.cos(lat * Math.PI / 180) || 0.2;
+        const endLat = lat + v * scale * 0.22;
+        const endLon = lon + u * scale * 0.22 / coslat;
         const ang = Math.atan2(v, u);
-        const ah = 0.35;
-        const a1 = ang + Math.PI * 0.8;
-        const a2 = ang - Math.PI * 0.8;
-        const p1 = [endLat + Math.sin(a1) * ah * 0.4, endLon + Math.cos(a1) * ah * 0.4 / Math.cos(lat * Math.PI / 180)];
-        const p2 = [endLat + Math.sin(a2) * ah * 0.4, endLon + Math.cos(a2) * ah * 0.4 / Math.cos(lat * Math.PI / 180)];
-        L.polyline([p1, [endLat, endLon], p2], {
-          color: col, weight: inWest ? 1.4 : 1, opacity: 0.7
-        }).addTo(layerGroups.steer);
+        const ah = 0.55;
+        const a1 = ang + Math.PI * 0.78;
+        const a2 = ang - Math.PI * 0.78;
+        const p1 = [endLat + Math.sin(a1) * ah * 0.55, endLon + Math.cos(a1) * ah * 0.55 / coslat];
+        const p2 = [endLat + Math.sin(a2) * ah * 0.55, endLon + Math.cos(a2) * ah * 0.55 / coslat];
+        const shaft = [[lat, lon], [endLat, endLon]];
+        const head = [p1, [endLat, endLon], p2];
+        if (inWest) {
+          westSegs.push(shaft, head);
+        } else {
+          baseSegs.push(shaft, head);
+        }
       }
+    }
+    if (baseSegs.length) {
+      L.polyline(baseSegs, {
+        color: '#2c3e50', weight: 1.8, opacity: 0.75, renderer: canvas
+      }).addTo(layerGroups.steer);
+    }
+    if (westSegs.length) {
+      L.polyline(westSegs, {
+        color: '#1a7f4b', weight: 2.1, opacity: 0.8, renderer: canvas
+      }).addTo(layerGroups.steer);
     }
   }
 

@@ -181,6 +181,12 @@
         id: 'wnp_east',
         name: '东伸脊',
         ring: roundedRectRing(154, 176, 16, 25, 10, 0.35)
+      },
+      {
+        id: 'scs',
+        name: '南海副高段',
+        // 覆盖南海及其北缘附近，边缘顺滑
+        ring: roundedRectRing(108, 121, 12, 22, 14, 0.38)
       }
     ];
   }

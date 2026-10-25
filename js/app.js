@@ -549,17 +549,20 @@
     // 复用模块级 steerRenderer，切勿每次 new L.canvas()
     const canvas = steerRenderer;
 
-    // 西风带南界
+    // 副高北缘绿线 = 与 physics 相同的 guidingNorthernEdgeLat（无北偏）
+    // 仅在本经有红区北缘处落点，避免西侧 look-east 把线拉平延伸
     const edgePts = [];
     for (let lon = 105; lon <= 175; lon += 2) {
-      const edge = G.northernFugenEdgeLat(lon, state.fugen, state.hole);
+      const local = G.northernFugenEdgeLat(lon, state.fugen, state.hole);
+      if (local == null) continue;
+      const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
       if (edge != null) edgePts.push([edge, lon]);
     }
     if (edgePts.length >= 2) {
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('副高北缘/西风带南界（贴红区北缘；以南≈0.9°往北，以北往东北）', { sticky: true })
+      }).bindTooltip('副高北缘（绿线=红区北缘）；以南≈100km往北，以北立即往东北', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

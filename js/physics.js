@@ -33,13 +33,13 @@
   }
 
   /**
-   * 引导气流：两区制
-   *   1) 绿线以南 APPROACH_NORTH_BAND_DEG（≈0.9°≈100km）缓冲带：主要往北，不掺西风 NE
-   *   2) 绿线以北（副高以北 / 西风带）：大半圆航向 Bezier 再折向东北
-   * 绿线以南更远区域保持基础引导场，绝不提前满西风东北折向。
+   * 引导气流：两区制（绿线 = 副高北缘）
+   *   1) 绿线以南 APPROACH_NORTH_BAND_DEG（≈0.9°≈100km）：主要往北，不掺西风 NE
+   *   2) 绿线处及以北：立即往东北（onset@edge），短半圆光滑过渡到满西风 NE
+   *      ——不得在越过绿线后继续纯北，也不得把 NE 推迟到 edge+数度。
    */
-  // 转向弧空间尺度（度纬度）：越大路径半圆幅度越大
-  const RECURVE_ARC_DEG = 9.0;
+  // 绿线以北完成「半圆→满 NE」的纬度尺度；短，避免西风带「看起来太北」
+  const RECURVE_ARC_DEG = 2.8;
 
   function steeringAt(lon, lat, cfg, fugenList, hole) {
     let u = cfg.steerU;
@@ -50,27 +50,31 @@
     if (edge != null) {
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
-      // 略抬高目标北分，使终点更偏 NE 而非纯东
+      // 目标 NE：东向西风 + 适度北分
       const wV = 2.2 + Math.max(0, cfg.westerlyU) * 0.08;
       if (northOf >= RECURVE_ARC_DEG) {
-        // 西风带深处：满西风 + 东北分量
+        // 弧已完成：满西风 NE
         u = wU;
         v = wV;
       } else if (northOf >= 0) {
-        // 绿线以北：承接南侧「往北」带，大半圆再折向东北（勿在绿线处弹回基础场）
+        // 绿线处即开始往东北：t=0 已有显著东向，不再纯北/略西
         const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
-        const ang0 = Math.PI / 2 + 0.18; // ~北略偏西，与接近带出口连续
-        const spd0 = 4.5;
-        // 顶点：正北偏西北 ~110°，制造大半圆北凸
-        const ang1 = Math.PI / 2 + 0.35;
-        const ang2 = Math.atan2(wV, wU);
-        const ang = bezierHeading(ang0, ang1, ang2, t);
+        // 前载：东分量在弧前段就抬升，onset 贴绿线
+        const te = 1 - Math.pow(1 - t, 1.7);
+        const angNE = Math.atan2(wV, Math.max(0.01, wU));
+        // 绿线 onset：已是 NE（约 50–60°），不是 π/2 纯北
+        const ang0 = Math.atan2(wV * 0.9 + 2.4, Math.max(0.8, wU * 0.55));
+        // 中段略抬北向，做短半圆，随即收向满 NE
+        const ang1 = Math.atan2(wV + 1.6, Math.max(0.01, wU * 0.85));
+        const ang2 = angNE;
+        const ang = bezierHeading(ang0, ang1, ang2, te);
         const spdW = Math.hypot(wU, wV);
-        const spd = spd0 * (1 - t) + spdW * t;
-        // 弧中段额外北向鼓包，加大半圆振幅（非直角急转）
-        const midBulge = 4 * t * (1 - t); // 峰值在 t=0.5
+        const spd0 = Math.hypot(wU * 0.55, wV * 0.9 + 2.4);
+        const spd = spd0 * (1 - te) + spdW * te;
+        // 轻量中段北鼓包（短弧），不再用大尺度把路径拽到更北
+        const midBulge = 2.2 * te * (1 - te);
         u = Math.cos(ang) * spd;
-        v = Math.sin(ang) * spd + midBulge * 1.8;
+        v = Math.sin(ang) * spd + midBulge;
       } else if (northOf > -band) {
         // 绿线以南 ~100km：往北接近带，禁止满西风 NE
         const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
@@ -185,15 +189,16 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 两区强化：南侧接近带只加北向；绿线以北才做大半圆东北转向鼓包。
+    // 两区强化：南≈100km 只加北向；绿线处及以北立即加东/NE，不再用北鼓包把转向推迟到更北。
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
     const band = G.APPROACH_NORTH_BAND_DEG;
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
-      if (lat > edge) {
+      if (lat >= edge) {
         const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
-        const bulge = Math.sin(Math.PI * t); // 0→1→0，中段最大
-        u += -0.35 * (1 - t) * bulge + 1.6 * t * t; // 前段略保西残量，后段东向
-        v += 2.2 * bulge; // 中段强北向 → 大半圆振幅
+        const te = 1 - Math.pow(1 - t, 1.7); // 与 steeringAt 同前载
+        // onset@edge：立刻东向；短弧中略保北分
+        u += 1.35 * (0.55 + 0.45 * te);
+        v += 0.95 * (1 - 0.35 * te);
       } else if (lat > edge - band) {
         // ≈100km 南缓冲：往北，不加东向 NE
         const t = clamp((lat - (edge - band)) / band, 0, 1);

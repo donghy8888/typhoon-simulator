@@ -288,12 +288,15 @@
   }
 
   /**
-   * 副高北缘纬度（西风带南界 / 绿线）——中间档：
-   *   - 以本经线为主，仅 ±1° 邻经做轻度加权软混合（非 soft-max / ringMax，非 ±3/±8）
-   *   - WESTERLY_EDGE_NORTH_OFFSET = 0.5°：在混合北缘上再北偏 0.5°
+   * 副高北缘纬度（西风带南界 / 绿线）——贴红区北缘：
+   *   - 以本经线为主，仅 ±1° 邻经做轻度加权软混合（消毛刺）
+   *   - 无北偏：绿线 = 混合后的局地北缘本身（不再 +0.5°）
    * 绿线、inWesterlyBelt、steeringAt 共用此 northernFugenEdgeLat。
+   *
+   * APPROACH_NORTH_BAND_DEG ≈ 0.9° lat（约 100 km）：绿线以南该带宽内为「往北」引导区；
+   * 绿线以北为西风带「往东北」大半圆转向区。
    */
-  const WESTERLY_EDGE_NORTH_OFFSET = 0.5;
+  const APPROACH_NORTH_BAND_DEG = 0.9;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺
   const WESTERLY_EDGE_BLEND = [[0, 0.7], [-1, 0.15], [1, 0.15]];
 
@@ -328,13 +331,26 @@
       wSum += w;
     }
     if (wSum <= 0) return null;
-    return sum / wSum + WESTERLY_EDGE_NORTH_OFFSET;
+    return sum / wSum; // 贴副高北缘，无北偏
+  }
+
+  /**
+   * 引导用北缘：本经线贴边；若本经无副高（西侧沿脊），向东（再向西）取最近北缘。
+   * 使西侧外围台风仍按「脊北缘以南≈0.9°往北 / 以北往东北」两区制转向。
+   */
+  const GUIDING_EDGE_LOOK_DLONS = [0, 1, 2, 3, 4, 5, 6, 8, 10, -1, -2, -3];
+  function guidingNorthernEdgeLat(lon, fugenList, hole) {
+    for (const dlon of GUIDING_EDGE_LOOK_DLONS) {
+      const e = northernFugenEdgeLat(lon + dlon, fugenList, hole);
+      if (e != null) return e;
+    }
+    return null;
   }
 
   /** 是否位于副高以北的西风带（不含副高实体内部） */
   function inWesterlyBelt(lon, lat, fugenList, hole) {
     if (inFugenSolid(lon, lat, fugenList, hole)) return false;
-    const edge = northernFugenEdgeLat(lon, fugenList, hole);
+    const edge = guidingNorthernEdgeLat(lon, fugenList, hole);
     if (edge == null) return lat >= 32; // 无副高时的弱兜底
     return lat >= edge;
   }
@@ -423,6 +439,8 @@
     inFugenSolid,
     fugenGradient,
     northernFugenEdgeLat,
+    guidingNorthernEdgeLat,
+    APPROACH_NORTH_BAND_DEG,
     inWesterlyBelt,
     windRadiusDeg,
     windRadiiForGrades,

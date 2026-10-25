@@ -559,7 +559,7 @@
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('西风带南界（本经线为主±1°软混合 + 北偏 0.5°；以北为西风带）', { sticky: true })
+      }).bindTooltip('副高北缘/西风带南界（贴红区北缘；以南≈0.9°往北，以北往东北）', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

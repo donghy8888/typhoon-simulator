@@ -560,7 +560,7 @@
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('副高北缘（绿线=引导北缘）；以南 fringe 中等转向弧→近线满ENE，剩余南带≈0.3°纯北；以北立即满ENE无弧；两脊空档北侧亦为西风带', { sticky: true })
+      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈0.15°严格往北；以北 due-N→大振幅ENE半弧后收束；两脊空档北侧亦为西风带', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

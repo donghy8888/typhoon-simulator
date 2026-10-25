@@ -294,8 +294,8 @@
    * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（本经贴边；空档最高连接；开阔 look-east）。
    *
    * APPROACH_NORTH_BAND_DEG = 0.15° lat（≈50 km 量级）：弧窗内仍明显往北的参考距离。
-   * 所有接近绿线的路径（开阔洋/gap/fringe）在 NORTH_LEG≈1.15° 窗内完成 N→ENE 大半圆 Bezier；
-   * APPROACH 处偏北，edge 处满 ENE；绿线以北立即满 ENE（弧不在绿北开始）。
+   * 所有接近绿线的路径（开阔洋/gap/fringe）在 NORTH_LEG≈2.5° 窗内完成 N→ENE 大半圆 Bezier；
+   * APPROACH 处仍往北，edge 处满 ENE；绿线以北立即满 ENE（弧不在绿北开始）。
    */
   const APPROACH_NORTH_BAND_DEG = 0.15;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺

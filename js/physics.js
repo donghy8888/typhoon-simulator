@@ -25,7 +25,7 @@
     return a + d * t;
   }
 
-  /** 二次 Bezier 航向：起点 due-N → 偏北 NE 顶点（中等弧振幅）→ 满 ENE（在副高北缘/绿线处完成） */
+  /** 二次 Bezier 航向：起点 due-N → 深 NE 顶点（大半圆弧振幅）→ 满 ENE（在副高北缘/绿线处完成） */
   function bezierHeading(a0, a1, a2, t) {
     const ab = lerpAngle(a0, a1, t);
     const bc = lerpAngle(a1, a2, t);
@@ -51,50 +51,71 @@
 
   /**
    * 引导气流（绿线 = guidingNorthernEdgeLat，与绘制一致）
-   *   A) [edge−NORTH_LEG≈1.15°, edge)：所有路径 N→ENE 大半圆 Bezier（开阔洋/gap/fringe）
-   *      ——不再 fringe-only（否则 gap/开阔洋 due-N→ENE ~70° 尖角，弧永不显示）
-   *      ——APPROACH≈0.15° 处仍明显往北；edge 处已满 ENE；midBulge 中等偏大有幅度
-   *      ——FORBIDDEN：弧在绿线以北才开始；lat≥edge 保持 ENE
+   *   A) [edge−NORTH_LEG≈2.5°, edge)：所有路径 N→ENE 大半圆 Bezier（开阔洋/gap/fringe）
+   *      ——APPROACH≈0.15° 处仍明显往北（teHold）；其后平滑收束到绿线满 ENE
+   *      ——ang1 深 NE + midEast 东鼓 → 路径可见大半圆（非竖直贴线后尖折）
+   *      ——FORBIDDEN：弧在绿线以北才开始；lat≥edge 保持 ENE；禁绿线 tip 角
    *   B) lat >= edge：满东北偏东（ENE = wU,wVE），无新弧、无北鼓
    *   C) 更南开阔洋：基础引导场 only（杀东向）
    *   F) 深 fringe（仍南于 NORTH_LEG）：预备抬向 due-N，不覆盖开阔洋
    */
-  // 弧窗：绿线以南 ~1.15° 完成可见大半圆 N→ENE（含 ~0.15° APPROACH 北向段）
-  const NORTH_LEG_DEG = 1.15;
+  // 弧窗加宽：绿线以南 ~2.5° 走完可见大半圆（含 ~0.15° APPROACH 仍往北）
+  const NORTH_LEG_DEG = 2.5;
   // 深 fringe 预备弧（仅 onFringe）；开阔洋不用
   const RECURVE_ARC_DEG = 7.0;
+  // APPROACH 处 Bezier 进度上限：仍明显往北，再在最后 0.15° 收束到 ENE
+  const APPROACH_TE_HOLD = 0.42;
+
+  /**
+   * 弧窗进度：南段缓入到 teHold（APPROACH 仍往北），末 0.15° 平滑 → 1（满 ENE，无尖角）。
+   */
+  function approachTe(t, arcDeg) {
+    const approach = (typeof G !== 'undefined' && G.APPROACH_NORTH_BAND_DEG) ? G.APPROACH_NORTH_BAND_DEG : 0.15;
+    const tHold = 1 - approach / Math.max(approach + 0.05, arcDeg);
+    const teHold = APPROACH_TE_HOLD;
+    if (t <= tHold) {
+      return Math.pow(t / Math.max(1e-9, tHold), 1.22) * teHold;
+    }
+    return teHold + (1 - teHold) * Math.pow((t - tHold) / Math.max(1e-9, 1 - tHold), 1.12);
+  }
 
   /**
    * 通用 N→ENE 大半圆 Bezier —— 所有接近绿线的路径（开阔洋/gap/fringe）。
-   * 弧窗 = NORTH_LEG_DEG（~1.15°）：南端 due-N，绿线满 ENE；~0.15°（APPROACH）处仍明显偏北。
-   * midBulge 中等偏大 → 路径大半圆弧感；te→1 连续收束，禁绿线尖角。
+   * 弧窗 = NORTH_LEG_DEG（~2.5°）：南端 due-N；APPROACH(~0.15°) 仍往北；edge 满 ENE。
+   * ang1 深 NE + midEast 东向鼓包 → 地图上大半圆弧；te→1 连续收束，禁绿线尖角。
    */
   function approachBendUV(northOf, arcDeg, wU, wVE, spdW) {
     const t = clamp((northOf + arcDeg) / arcDeg, 0, 1); // 0@edge−arc → 1@edge
-    // 前段 due-N 腿，后段转向；完成于 edge（te→1 = 满 ENE）
-    const te = Math.pow(t, 2.15);
+    const te = approachTe(t, arcDeg);
     const ang0 = Math.PI * 0.5; // due north
-    // 顶点深北鼓偏 NE，拉出大半圆（禁尖角/微弧）
-    const ang1 = Math.atan2(Math.max(7.2, wU * 1.25), Math.max(1.25, wU * 0.22));
+    // 顶点深 NE（~45–55°）：拉开大半圆；过北的 ang1 会把路径压成竖线+尖折
+    const ang1 = Math.atan2(Math.max(5.6, wU * 0.78), Math.max(4.2, wU * 0.55));
     const angENE = Math.atan2(wVE, Math.max(0.01, wU));
     const ang = bezierHeading(ang0, ang1, angENE, te);
-    const spd0 = Math.max(5.0, spdW * 0.55);
+    // 南段稍慢以便东鼓拉开大半圆；APPROACH 处 v 仍明显（往北），末段收满 ENE
+    const spd0 = Math.max(4.0, spdW * 0.42);
     const spd = spd0 * (1 - te) + spdW * te;
-    const midBulge = 5.2 * Math.sin(Math.PI * te) * (1 - 0.08 * te);
-    let u = Math.cos(ang) * spd;
+    const midEast = 11.5 * Math.sin(Math.PI * te) * (0.35 + 0.65 * te);
+    const midBulge = 6.5 * Math.sin(Math.PI * te) * (1 - 0.22 * te);
+    let u = Math.cos(ang) * spd + midEast;
     let v = Math.sin(ang) * spd + midBulge;
-    if (te < 0.06) u = 0;
-    if (te >= 0.38 && u < 1.2) u = 1.2 + (te - 0.38) / 0.62 * Math.max(0, wU - 1.2);
-    if (te >= 0.82) {
-      const s = (te - 0.82) / 0.18; // 近绿线贴满 ENE，消 Δhdg 尖角
+    if (te < 0.05) u = 0;
+    if (te >= 0.18 && u < 2.2) u = 2.2 + (te - 0.18) / 0.82 * Math.max(0, wU - 2.2);
+    // APPROACH 附近：禁止已接近 ENE（保“仍往北”）；中段允许 NE 以拉开振幅
+    if (te >= APPROACH_TE_HOLD - 0.04 && te <= APPROACH_TE_HOLD + 0.03) {
+      const maxU = Math.max(2.0, v * Math.tan(38 * Math.PI / 180)); // hdg >= ~52°
+      if (u > maxU) u = maxU;
+      if (v < Math.max(6.5, u * 1.05)) v = Math.max(6.5, u * 1.05);
+    }
+    if (te >= 0.84) {
+      const s = (te - 0.84) / 0.16; // 近绿线贴满 ENE，消 Δhdg 尖角
       u = u * (1 - s) + wU * s;
       v = v * (1 - s) + wVE * s;
     }
     if (v < 0) v = 0;
-    // 仅在东分量已明显时限高北鼓，避免 u 刚离零时 hLim 把 v 掐出折痕
-    if (te >= 0.28 && u > 1.0) {
-      const hLim = Math.tan(82 * Math.PI / 180);
-      if (v > u * hLim) v = u * hLim;
+    if (te >= 0.88 && u > 2.0) {
+      const hLim = Math.tan(58 * Math.PI / 180);
+      if (v > u * hLim + 1.2) v = u * hLim + 1.2;
     }
     return { u, v, te, t };
   }
@@ -137,8 +158,8 @@
       if (northOf < 0) {
         if (northOf >= -NORTH_LEG_DEG) {
           const tGate = clamp((northOf + NORTH_LEG_DEG) / NORTH_LEG_DEG, 0, 1);
-          const teGate = Math.pow(tGate, 2.15);
-          if (teGate < 0.06) u = 0;
+          const teGate = approachTe(tGate, NORTH_LEG_DEG);
+          if (teGate < 0.05) u = 0;
         } else if (onFringe && northOf >= -RECURVE_ARC_DEG) {
           u = Math.min(u, 0);
         } else {
@@ -182,8 +203,13 @@
     return { lon, lat };
   }
 
-  /** 贴边时只去掉穿入分量，保留原引导风切向，轻微外推——避免巨尺状折线 */
+  /** 贴边时只去掉穿入分量，保留原引导风切向，轻微外推——避免巨尺状折线。
+   *  关键：绿线以南的北缘接近（N→ENE 弧窗）不得被 lat+ε “near” 探测掐掉北向，
+   *  否则主脊下路径会竖直贴边后尖折成 ENE，大半圆永远看不见。
+   */
   function slideAlongFugen(lon, lat, u, v, fugenList, hole) {
+    const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    const southOfGreen = edge != null && lat < edge;
     const probes = [0.25, 0.55, 0.9];
     let hit = false;
     for (const probe of probes) {
@@ -193,11 +219,13 @@
         break;
       }
     }
-    // 已贴在外侧很近时也软修正
-    const near = G.inFugenSolid(lon, lat + 0.15, fugenList, hole) ||
+    // 绿线以南：只用真实将穿入的 hit；勿用 lat+0.15 near 软修正（那会剥掉往北弧）
+    const near = !southOfGreen && (
+      G.inFugenSolid(lon, lat + 0.15, fugenList, hole) ||
       G.inFugenSolid(lon + 0.15, lat, fugenList, hole) ||
       G.inFugenSolid(lon - 0.15, lat, fugenList, hole) ||
-      G.inFugenSolid(lon, lat - 0.15, fugenList, hole);
+      G.inFugenSolid(lon, lat - 0.15, fugenList, hole)
+    );
 
     if (!hit && !near) return { u, v };
 
@@ -266,19 +294,26 @@
         ) + Math.abs(beta.v) * 0.35;
         if (v > eneVcap + 0.35) v = eneVcap + 0.35;
       } else if (northOf >= -NORTH_LEG_DEG) {
-        // A) 全路径弧窗：北鼓 + 抬东，与 steeringAt Bezier 同相
+        // A) 全路径弧窗：东鼓为主 + 适度北鼓，与 steeringAt Bezier 同相（可见大半圆）
         const t = clamp((northOf + NORTH_LEG_DEG) / NORTH_LEG_DEG, 0, 1);
-        const te = Math.pow(t, 2.15);
-        if (te < 0.06) {
+        const te = approachTe(t, NORTH_LEG_DEG);
+        if (te < 0.05) {
           u = 0;
-          v += 2.8 * Math.max(te, 0.02);
+          v += 2.2 * Math.max(te, 0.02);
         } else {
-          u += 2.85 * (0.50 + 0.50 * te) * te;
-          v += 3.55 * Math.sin(Math.PI * Math.max(te, 0.06)) * (0.65 + 0.35 * (1 - te));
-          if (te >= 0.38 && u < 1.2) u = 1.2;
-          if (te >= 0.28 && u > 1.0) {
-            const hLim = Math.tan(82 * Math.PI / 180);
-            if (v > u * hLim) v = u * hLim;
+          // 补偿 β 西漂并抬东鼓；APPROACH 处抬北保“仍往北”
+          u += 4.8 * (0.35 + 0.65 * te) * te;
+          v += 3.2 * Math.sin(Math.PI * Math.max(te, 0.05)) * (0.75 + 0.25 * (1 - te));
+          if (te >= APPROACH_TE_HOLD - 0.04 && te <= APPROACH_TE_HOLD + 0.03) {
+            const maxU = Math.max(2.0, v * Math.tan(38 * Math.PI / 180));
+            if (u > maxU) u = maxU;
+            if (v < Math.max(6.5, u * 1.05)) v = Math.max(6.5, u * 1.05);
+          } else if (te >= 0.18 && u < 2.2) {
+            u = 2.2;
+          }
+          if (te >= 0.88 && u > 2.0) {
+            const hLim = Math.tan(58 * Math.PI / 180);
+            if (v > u * hLim + 1.2) v = u * hLim + 1.2;
           }
         }
         if (v < 0) v = 0;
@@ -293,8 +328,8 @@
       const northOf = lat - edge;
       if (northOf >= -NORTH_LEG_DEG) {
         const tGate = clamp((northOf + NORTH_LEG_DEG) / NORTH_LEG_DEG, 0, 1);
-        const teGate = Math.pow(tGate, 2.15);
-        if (teGate < 0.06) u = 0;
+        const teGate = approachTe(tGate, NORTH_LEG_DEG);
+        if (teGate < 0.05) u = 0;
       } else {
         u = Math.min(u, 0);
       }
@@ -308,8 +343,8 @@
     if (edge != null) {
       const dist = Math.abs(lat - edge);
       if (dist <= band + 0.05) stepLim = 0.022;
-      else if (dist <= NORTH_LEG_DEG + 0.15) stepLim = 0.06;
-      else if (dist <= 2.0) stepLim = 0.14;
+      else if (dist <= NORTH_LEG_DEG + 0.2) stepLim = 0.10;
+      else if (dist <= 3.0) stepLim = 0.16;
     }
     const stepMag = Math.hypot(stepLon, stepLat);
     if (stepMag > stepLim) {
@@ -333,7 +368,7 @@
     if (edge != null) {
       const dist = Math.abs(lat - edge);
       if (dist <= G.APPROACH_NORTH_BAND_DEG + 0.08) n = Math.max(n, Math.min(16, Math.ceil(dtHours / 0.12)));
-      else if (dist <= NORTH_LEG_DEG + 0.2) n = Math.max(n, Math.min(10, Math.ceil(dtHours / 0.28)));
+      else if (dist <= NORTH_LEG_DEG + 0.25) n = Math.max(n, Math.min(12, Math.ceil(dtHours / 0.22)));
     }
     const sub = dtHours / n;
     let u = 0, v = 0, st = null;

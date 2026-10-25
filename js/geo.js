@@ -293,9 +293,9 @@
    *   - 无北偏：绿线 = 混合后的局地北缘本身（不再 +0.5°）
    * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（本经贴边；空档最高连接；开阔 look-east）。
    *
-   * APPROACH_NORTH_BAND_DEG = 0.15° lat（≈17 km；一百公里尺度之半）：绿线以南开阔洋面纯北接近带（u=0）。
-   * 转向 Bezier 弧仅在副高北缘 fringe（inFugen / 贴红）内、仍南于绿线时完成；
-   * 绿线以北立即满东北偏东（ENE），无过渡弧；开阔洋面禁刷 7° NE。
+   * APPROACH_NORTH_BAND_DEG = 0.15° lat（≈50 km 量级）：弧窗内仍明显往北的参考距离。
+   * 所有接近绿线的路径（开阔洋/gap/fringe）在 NORTH_LEG≈1.15° 窗内完成 N→ENE 大半圆 Bezier；
+   * APPROACH 处偏北，edge 处满 ENE；绿线以北立即满 ENE（弧不在绿北开始）。
    */
   const APPROACH_NORTH_BAND_DEG = 0.15;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺

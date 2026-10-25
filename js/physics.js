@@ -33,10 +33,11 @@
   }
 
   /**
-   * 引导气流：两区制（绿线 = 副高北缘）
-   *   1) 绿线以南 APPROACH_NORTH_BAND_DEG（≈0.9°≈100km）：主要往北，不掺西风 NE
-   *   2) 绿线处及以北：立即往东北（onset@edge），短半圆光滑过渡到满西风 NE
-   *      ——不得在越过绿线后继续纯北，也不得把 NE 推迟到 edge+数度。
+   * 引导气流：两区制（绿线 = guidingNorthernEdgeLat，与绘制一致）
+   *   A) edge-0.9° < lat < edge：纯往北（u≤0），禁止任何东向/西风 NE / Bezier
+   *   B) lat >= edge：立即往东北（onset@edge）
+   *   C) lat <= edge-0.9°：基础引导场 only
+   * 所有 westerly / Bezier / NE 项必须门控在 lat >= edge。
    */
   // 绿线以北完成「半圆→满 NE」的纬度尺度；短，避免西风带「看起来太北」
   const RECURVE_ARC_DEG = 2.8;
@@ -50,40 +51,38 @@
     if (edge != null) {
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
-      // 目标 NE：东向西风 + 适度北分
+      // 目标 NE：东向西风 + 适度北分（仅 lat >= edge 使用）
       const wV = 2.2 + Math.max(0, cfg.westerlyU) * 0.08;
       if (northOf >= RECURVE_ARC_DEG) {
         // 弧已完成：满西风 NE
         u = wU;
         v = wV;
       } else if (northOf >= 0) {
-        // 绿线处即开始往东北：t=0 已有显著东向，不再纯北/略西
+        // B) 绿线处即往东北：t=0 已有显著东向
         const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
-        // 前载：东分量在弧前段就抬升，onset 贴绿线
         const te = 1 - Math.pow(1 - t, 1.7);
         const angNE = Math.atan2(wV, Math.max(0.01, wU));
-        // 绿线 onset：已是 NE（约 50–60°），不是 π/2 纯北
         const ang0 = Math.atan2(wV * 0.9 + 2.4, Math.max(0.8, wU * 0.55));
-        // 中段略抬北向，做短半圆，随即收向满 NE
         const ang1 = Math.atan2(wV + 1.6, Math.max(0.01, wU * 0.85));
         const ang2 = angNE;
         const ang = bezierHeading(ang0, ang1, ang2, te);
         const spdW = Math.hypot(wU, wV);
         const spd0 = Math.hypot(wU * 0.55, wV * 0.9 + 2.4);
         const spd = spd0 * (1 - te) + spdW * te;
-        // 轻量中段北鼓包（短弧），不再用大尺度把路径拽到更北
         const midBulge = 2.2 * te * (1 - te);
         u = Math.cos(ang) * spd;
         v = Math.sin(ang) * spd + midBulge;
       } else if (northOf > -band) {
-        // 绿线以南 ~100km：往北接近带，禁止满西风 NE
+        // A) 绿线以南 ~100km：纯往北。禁止东向 tip / 西风 NE / 早期 Bezier
         const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
-        const targetU = Math.min(u, 0) * 0.45; // 压掉东向，保留弱西残量
-        const targetV = 4.6; // 主导北向
-        u = u * (1 - t) + targetU * t;
-        v = v * (1 - t) + targetV * t;
+        const westOnly = Math.min(u, 0); // 杀掉基础场东向残量
+        u = westOnly * (1 - t); // → 0 @绿线南侧，绝不 > 0
+        v = v * (1 - t) + 4.6 * t; // 主导北向
       }
-      // northOf <= -band：基础场，无西风、无接近带加成
+      // C) northOf <= -band：基础场，无西风、无接近带加成
+
+      // 硬门控：绿线以南任何路径都不得带东向（防 slide/混合泄漏）
+      if (northOf < 0) u = Math.min(u, 0);
     } else if (lat >= 32) {
       u = cfg.westerlyU;
       v = 1.5;
@@ -189,23 +188,25 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 两区强化：南≈100km 只加北向；绿线处及以北立即加东/NE，不再用北鼓包把转向推迟到更北。
+    // 两区强化：NE/东向加成仅 lat >= edge；南≈100km 只加北向。
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
     const band = G.APPROACH_NORTH_BAND_DEG;
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
       if (lat >= edge) {
         const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
         const te = 1 - Math.pow(1 - t, 1.7); // 与 steeringAt 同前载
-        // onset@edge：立刻东向；短弧中略保北分
+        // B) onset@edge：立刻东向；短弧中略保北分
         u += 1.35 * (0.55 + 0.45 * te);
         v += 0.95 * (1 - 0.35 * te);
       } else if (lat > edge - band) {
-        // ≈100km 南缓冲：往北，不加东向 NE
+        // A) ≈100km 南缓冲：纯往北，零东向 tip
         const t = clamp((lat - (edge - band)) / band, 0, 1);
-        u += -0.25 * t; // 轻西，避免提前东折
+        u += -0.25 * t; // 轻西
         v += 1.9 * t;   // 北向加成
       }
     }
+    // 硬门控：绿线以南杀掉一切东向（slideAlongFugen / 残留 NE boost）
+    if (edge != null && lat < edge) u = Math.min(u, 0);
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);
     // 单步位移上限（度），抑制锯齿

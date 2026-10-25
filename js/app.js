@@ -549,12 +549,10 @@
     // 复用模块级 steerRenderer，切勿每次 new L.canvas()
     const canvas = steerRenderer;
 
-    // 副高北缘绿线 = 与 physics 相同的 guidingNorthernEdgeLat（无北偏）
-    // 仅在本经有红区北缘处落点，避免西侧 look-east 把线拉平延伸
+    // 绿线 = physics 的 guidingNorthernEdgeLat（含西侧 look-east），
+    // 与 NE onset 同一条边，避免「绿线西侧/南侧已往东北」。
     const edgePts = [];
     for (let lon = 105; lon <= 175; lon += 2) {
-      const local = G.northernFugenEdgeLat(lon, state.fugen, state.hole);
-      if (local == null) continue;
       const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
       if (edge != null) edgePts.push([edge, lon]);
     }
@@ -562,7 +560,7 @@
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('副高北缘（绿线=红区北缘）；以南≈100km往北，以北立即往东北', { sticky: true })
+      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈100km纯往北，以北立即往东北', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

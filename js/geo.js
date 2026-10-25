@@ -291,10 +291,10 @@
    * 副高北缘纬度（西风带南界 / 绿线）——贴红区北缘：
    *   - 以本经线为主，仅 ±1° 邻经做轻度加权软混合（消毛刺）
    *   - 无北偏：绿线 = 混合后的局地北缘本身（不再 +0.5°）
-   * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 在有红区处一致。
+   * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（含西侧 look-east）。
    *
-   * APPROACH_NORTH_BAND_DEG ≈ 0.9° lat（约 100 km）：绿线以南该带宽内为「往北」；
-   * 绿线处及以北立即「往东北」（onset@edge，不再纯北拖延）。
+   * APPROACH_NORTH_BAND_DEG ≈ 0.9° lat（约 100 km）：绿线以南该带宽内纯「往北」（u≤0）；
+   * 绿线处及以北立即「往东北」（onset@edge）。
    */
   const APPROACH_NORTH_BAND_DEG = 0.9;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺

@@ -35,12 +35,13 @@
   /**
    * 引导气流：两区制（绿线 = guidingNorthernEdgeLat，与绘制一致）
    *   A) edge-0.9° < lat < edge：纯往北（u≤0），禁止任何东向/西风 NE / Bezier
-   *   B) lat >= edge：立即往东北（onset@edge）
+   *   B) lat >= edge：开始大半圆 Bezier 转向——先北/略西北鼓包，再缓入满 NE
+   *      （绿线处航向≈纯北，与接近带连续；禁止在绿线瞬时弹 NE 直角）
    *   C) lat <= edge-0.9°：基础引导场 only
-   * 所有 westerly / Bezier / NE 项必须门控在 lat >= edge。
+   * 所有 westerly / Bezier / NE 项必须门控在 lat >= edge。弧只发生在绿线以北。
    */
-  // 绿线以北完成「半圆→满 NE」的纬度尺度；短，避免西风带「看起来太北」
-  const RECURVE_ARC_DEG = 2.8;
+  // 绿线以北完成「大半圆→满 NE」的纬度尺度；大弧，避免直角急转
+  const RECURVE_ARC_DEG = 9.0;
 
   function steeringAt(lon, lat, cfg, fugenList, hole) {
     let u = cfg.steerU;
@@ -58,20 +59,20 @@
         u = wU;
         v = wV;
       } else if (northOf >= 0) {
-        // B) 绿线处即往东北：t=0 已有显著东向
+        // B) 绿线以北：承接接近带「纯北」，大半圆再折 NE（t=0 仍≈北，非瞬时 NE）
         const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
-        const te = 1 - Math.pow(1 - t, 1.7);
-        const angNE = Math.atan2(wV, Math.max(0.01, wU));
-        const ang0 = Math.atan2(wV * 0.9 + 2.4, Math.max(0.8, wU * 0.55));
-        const ang1 = Math.atan2(wV + 1.6, Math.max(0.01, wU * 0.85));
-        const ang2 = angNE;
-        const ang = bezierHeading(ang0, ang1, ang2, te);
+        const ang0 = Math.PI / 2 + 0.18; // ~北略偏西，与接近带出口连续
+        const spd0 = 4.5;
+        // 顶点：正北偏西北 ~110°，制造大半圆北凸
+        const ang1 = Math.PI / 2 + 0.35;
+        const ang2 = Math.atan2(wV, Math.max(0.01, wU));
+        const ang = bezierHeading(ang0, ang1, ang2, t);
         const spdW = Math.hypot(wU, wV);
-        const spd0 = Math.hypot(wU * 0.55, wV * 0.9 + 2.4);
-        const spd = spd0 * (1 - te) + spdW * te;
-        const midBulge = 2.2 * te * (1 - te);
+        const spd = spd0 * (1 - t) + spdW * t;
+        // 弧中段北向鼓包：加大半圆振幅，禁止直角急转
+        const midBulge = 4 * t * (1 - t);
         u = Math.cos(ang) * spd;
-        v = Math.sin(ang) * spd + midBulge;
+        v = Math.sin(ang) * spd + midBulge * 1.8;
       } else if (northOf > -band) {
         // A) 绿线以南 ~100km：纯往北。禁止东向 tip / 西风 NE / 早期 Bezier
         const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
@@ -188,16 +189,16 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 两区强化：NE/东向加成仅 lat >= edge；南≈100km 只加北向。
+    // 两区强化：绿线以北才做大半圆东北鼓包；南≈100km 只加北向。
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
     const band = G.APPROACH_NORTH_BAND_DEG;
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
       if (lat >= edge) {
         const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
-        const te = 1 - Math.pow(1 - t, 1.7); // 与 steeringAt 同前载
-        // B) onset@edge：立刻东向；短弧中略保北分
-        u += 1.35 * (0.55 + 0.45 * te);
-        v += 0.95 * (1 - 0.35 * te);
+        const bulge = Math.sin(Math.PI * t); // 0→1→0，中段最大
+        // B) 前段略保西/北鼓包，后段才缓加东向——大半圆后再 NE，非绿线直角
+        u += -0.35 * (1 - t) * bulge + 1.6 * t * t;
+        v += 2.2 * bulge;
       } else if (lat > edge - band) {
         // A) ≈100km 南缓冲：纯往北，零东向 tip
         const t = clamp((lat - (edge - band)) / band, 0, 1);

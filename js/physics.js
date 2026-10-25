@@ -284,6 +284,11 @@
 
     const t0 = m.track.length ? m.track[m.track.length - 1].t : 0;
     m.track.push({ lon: m.lon, lat: m.lat, vmax: m.vmax, t: t0 + dtHours });
+    // 限制路径点数量，避免长时间运行数组无限增长导致 OOM
+    const MAX_TRACK_POINTS = 1000;
+    if (m.track.length > MAX_TRACK_POINTS) {
+      m.track.splice(0, m.track.length - MAX_TRACK_POINTS);
+    }
 
     if (m.vmax < DISSIPATE_MS) {
       m.alive = false;

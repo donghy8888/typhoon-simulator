@@ -70,6 +70,30 @@
     color: '#888', weight: 1, fill: false, dashArray: '4 3', opacity: 0.7
   }).addTo(map);
 
+  // 引导风箭头共用一个 Canvas renderer。
+  // clearLayers() 不会从地图移除 canvas renderer；每次 redraw 新建 L.canvas()
+  // 会堆积孤儿 canvas → 内存暴涨 / 崩溃。务必单例复用。
+  const steerRenderer = L.canvas({ padding: 0.5 });
+
+  // 副高空圈与风暴图层的可复用引用（tick 时原地更新，避免每小时 clear+重建）
+  let holeCircleLayer = null;
+  const stormRefs = {
+    trackLine: null,
+    ensembleLines: [],
+    windCircles: {},
+    marker: null
+  };
+
+  function clearStormRefs() {
+    layerGroups.track.clearLayers();
+    layerGroups.ensemble.clearLayers();
+    layerGroups.storm.clearLayers();
+    stormRefs.trackLine = null;
+    stormRefs.ensembleLines = [];
+    stormRefs.windCircles = {};
+    stormRefs.marker = null;
+  }
+
   function cfgFromUI() {
     return {
       steerU: parseFloat(document.getElementById('steerU').value),
@@ -130,10 +154,15 @@
     }
   }
 
-  function redrawFugen() {
+  function redrawFugen(opts) {
+    opts = opts || {};
     layerGroups.fugen.clearLayers();
     fugenPolygons = [];
-    if (!state.layers.fugen) return;
+    holeCircleLayer = null;
+    if (!state.layers.fugen) {
+      if (opts.refreshSteer !== false) redrawSteerSoon();
+      return;
+    }
 
     state.fugen.forEach((f, idx) => {
       const outer = ringToLatLng(f.ring);
@@ -274,7 +303,7 @@
 
     // 空洞描边提示
     if (state.hole && state.layers.fugen) {
-      L.circle([state.hole.lat, state.hole.lon], {
+      holeCircleLayer = L.circle([state.hole.lat, state.hole.lon], {
         radius: state.hole.radiusDeg * 111320,
         color: '#922b21',
         weight: 2,
@@ -282,7 +311,40 @@
         fillOpacity: 0
       }).bindTooltip('副高空圈（随风圈变化）').addTo(layerGroups.fugen);
     }
-    redrawSteerSoon();
+    // 用户编辑 / 选中 / 增删时立即刷新引导风；tick 路径不走这里
+    if (opts.refreshSteer !== false) redrawSteerSoon();
+  }
+
+  /** tick 时原地更新空圈与副高挖洞，避免 clearLayers + 重建 */
+  function updateHoleVisualInPlace() {
+    if (!state.layers.fugen) return;
+
+    state.fugen.forEach(function (f, idx) {
+      const poly = fugenPolygons[idx];
+      if (poly) applyPolyLatLngs(poly, f);
+    });
+
+    if (state.hole) {
+      const latlng = [state.hole.lat, state.hole.lon];
+      const radiusM = state.hole.radiusDeg * 111320;
+      if (holeCircleLayer && layerGroups.fugen.hasLayer(holeCircleLayer)) {
+        holeCircleLayer.setLatLng(latlng);
+        holeCircleLayer.setRadius(radiusM);
+      } else {
+        holeCircleLayer = L.circle(latlng, {
+          radius: radiusM,
+          color: '#922b21',
+          weight: 2,
+          dashArray: '6 4',
+          fillOpacity: 0
+        }).bindTooltip('副高空圈（随风圈变化）').addTo(layerGroups.fugen);
+      }
+    } else if (holeCircleLayer) {
+      if (layerGroups.fugen.hasLayer(holeCircleLayer)) {
+        layerGroups.fugen.removeLayer(holeCircleLayer);
+      }
+      holeCircleLayer = null;
+    }
   }
 
   function selectFugen(idx) {
@@ -418,16 +480,74 @@
 
   // —— 引导风箭头（更密、更大；Canvas 下缩放更顺）——
   let _steerTimer = null;
+  let _steerThrottleTimer = null;
+  let _lastSteerAt = 0;
+  const STEER_THROTTLE_MS = 750;
+  // 空圈半径变化超过此阈值才因几何变化触发引导风刷新（tick 中的 lat 微调不算）
+  const STEER_HOLE_RADIUS_EPS = 0.05;
+  let _lastSteerHoleRadius = null;
+  let _lastSteerHolePresent = false;
+
   function redrawSteerSoon() {
     if (_steerTimer) clearTimeout(_steerTimer);
     _steerTimer = setTimeout(redrawSteer, 80);
+  }
+
+  /** 模拟运行中节流刷新引导风（~750ms），避免每物理小时重建 */
+  function redrawSteerThrottled() {
+    const now = Date.now();
+    if (now - _lastSteerAt >= STEER_THROTTLE_MS) {
+      if (_steerThrottleTimer) {
+        clearTimeout(_steerThrottleTimer);
+        _steerThrottleTimer = null;
+      }
+      _lastSteerAt = now;
+      redrawSteer();
+      return;
+    }
+    // 已安排尾随刷新则不再重置，防止高频 tick 饿死回调
+    if (_steerThrottleTimer) return;
+    const wait = STEER_THROTTLE_MS - (now - _lastSteerAt);
+    _steerThrottleTimer = setTimeout(function () {
+      _steerThrottleTimer = null;
+      _lastSteerAt = Date.now();
+      redrawSteer();
+    }, wait);
+  }
+
+  /**
+   * tick 后：仅在空圈出现/消失，或半径跨阈值时考虑刷新引导风；
+   * 运行中走节流，避免每次 lat 微移都重绘。
+   */
+  function maybeRefreshSteerAfterTick(holeJustChangedPresence) {
+    if (!state.layers.steer) return;
+    const present = !!state.hole;
+    const radius = present ? state.hole.radiusDeg : null;
+    let geometryChanged = holeJustChangedPresence;
+    if (present && _lastSteerHoleRadius != null &&
+        Math.abs(radius - _lastSteerHoleRadius) >= STEER_HOLE_RADIUS_EPS) {
+      geometryChanged = true;
+    }
+    if (present !== _lastSteerHolePresent) geometryChanged = true;
+    _lastSteerHolePresent = present;
+    if (radius != null) _lastSteerHoleRadius = radius;
+    else _lastSteerHoleRadius = null;
+
+    if (holeJustChangedPresence) {
+      redrawSteerSoon();
+      return;
+    }
+    if (!present) return;
+    // 有空圈时节流刷新（空圈移动会改引导场）；半径阈值变化同样走节流
+    if (geometryChanged || present) redrawSteerThrottled();
   }
 
   function redrawSteer() {
     layerGroups.steer.clearLayers();
     if (!state.layers.steer) return;
     const cfg = cfgFromUI();
-    const canvas = L.canvas({ padding: 0.5 });
+    // 复用模块级 steerRenderer，切勿每次 new L.canvas()
+    const canvas = steerRenderer;
 
     // 西风带南界
     const edgePts = [];
@@ -489,54 +609,100 @@
   }
 
   // —— 风暴与路径 ——
-  function redrawStorm() {
-    layerGroups.track.clearLayers();
-    layerGroups.ensemble.clearLayers();
-    layerGroups.storm.clearLayers();
+  function stormIcon() {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:20px;height:20px;border:2px solid #c0392b;border-radius:50%;background:rgba(231,76,60,0.4);text-align:center;line-height:16px;font-size:12px;color:#922;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">台</div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10]
+    });
+  }
 
-    if (!state.members.length) return;
+  /** 完整重建（放置 / 重置 / 图层开关） */
+  function redrawStorm() {
+    clearStormRefs();
+    updateStormInPlace();
+  }
+
+  /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
+  function updateStormInPlace() {
+    if (!state.members.length) {
+      clearStormRefs();
+      return;
+    }
 
     const main = state.members[0];
 
     if (state.layers.ensemble && state.members.length > 1) {
       for (let i = 1; i < state.members.length; i++) {
         const m = state.members[i];
-        if (m.track.length < 2) continue;
-        const latlngs = m.track.map(p => [p.lat, p.lon]);
-        L.polyline(latlngs, {
-          color: '#95a5a6', weight: 1.5, opacity: 0.7
-        }).addTo(layerGroups.ensemble);
+        const latlngs = m.track.map(function (p) { return [p.lat, p.lon]; });
+        const ei = i - 1;
+        if (stormRefs.ensembleLines[ei]) {
+          if (latlngs.length >= 2) stormRefs.ensembleLines[ei].setLatLngs(latlngs);
+        } else if (latlngs.length >= 2) {
+          stormRefs.ensembleLines[ei] = L.polyline(latlngs, {
+            color: '#95a5a6', weight: 1.5, opacity: 0.7
+          }).addTo(layerGroups.ensemble);
+        }
       }
     }
 
     if (state.layers.track && main.track.length >= 1) {
-      const latlngs = main.track.map(p => [p.lat, p.lon]);
+      const latlngs = main.track.map(function (p) { return [p.lat, p.lon]; });
       if (latlngs.length >= 2) {
-        L.polyline(latlngs, { color: '#2980b9', weight: 2.5 }).addTo(layerGroups.track);
+        if (stormRefs.trackLine) {
+          stormRefs.trackLine.setLatLngs(latlngs);
+        } else {
+          stormRefs.trackLine = L.polyline(latlngs, {
+            color: '#2980b9', weight: 2.5
+          }).addTo(layerGroups.track);
+        }
       }
-      if (main.alive || main.vmax >= P.DISSIPATE_MS) {
-        // 由外到内：7级、10级、12级风圈（达该强度才显示）
-        const rings = G.windRadiiForGrades(main.vmax);
-        rings.forEach(function (ring) {
-          L.circle([main.lat, main.lon], {
+
+      const rings = (main.alive || main.vmax >= P.DISSIPATE_MS)
+        ? G.windRadiiForGrades(main.vmax)
+        : [];
+      const seen = {};
+      rings.forEach(function (ring) {
+        seen[ring.grade] = true;
+        const existing = stormRefs.windCircles[ring.grade];
+        const tip = ring.label + ' · 当前 ' + G.gradeLabel(main.vmax);
+        if (existing) {
+          existing.setLatLng([main.lat, main.lon]);
+          existing.setRadius(ring.radiusDeg * 111320);
+          existing.setStyle({
+            color: ring.color,
+            weight: ring.weight,
+            fillColor: ring.fill,
+            fillOpacity: ring.fillOpacity
+          });
+          if (existing.setTooltipContent) existing.setTooltipContent(tip);
+          else if (existing.getTooltip()) existing.getTooltip().setContent(tip);
+        } else {
+          stormRefs.windCircles[ring.grade] = L.circle([main.lat, main.lon], {
             radius: ring.radiusDeg * 111320,
             color: ring.color,
             weight: ring.weight,
             fillColor: ring.fill,
             fillOpacity: ring.fillOpacity
-          }).bindTooltip(ring.label + ' · 当前 ' + G.gradeLabel(main.vmax), { sticky: true })
-            .addTo(layerGroups.track);
-        });
-      }
+          }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
+        }
+      });
+      Object.keys(stormRefs.windCircles).forEach(function (g) {
+        if (!seen[g]) {
+          layerGroups.track.removeLayer(stormRefs.windCircles[g]);
+          delete stormRefs.windCircles[g];
+        }
+      });
     }
 
-    const icon = L.divIcon({
-      className: '',
-      html: '<div style="width:20px;height:20px;border:2px solid #c0392b;border-radius:50%;background:rgba(231,76,60,0.4);text-align:center;line-height:16px;font-size:12px;color:#922;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">台</div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10]
-    });
-    L.marker([main.lat, main.lon], { icon }).addTo(layerGroups.storm);
+    if (stormRefs.marker) {
+      stormRefs.marker.setLatLng([main.lat, main.lon]);
+    } else {
+      stormRefs.marker = L.marker([main.lat, main.lon], { icon: stormIcon() })
+        .addTo(layerGroups.storm);
+    }
   }
 
   function updateStatus() {
@@ -623,6 +789,7 @@
     const cfg = cfgFromUI();
     const main = state.members[0];
 
+    const hadHole = !!state.hole;
     if (state.hole) {
       P.updateHole(state.hole, main.lon, main.lat, main.vmax);
       const stillInParent = state.fugen.some(f =>
@@ -642,8 +809,11 @@
 
     state.hours += dt;
 
-    redrawFugen();
-    redrawStorm();
+    // 原地更新空圈 / 路径 / 风圈 / 标记；不每小时 clearLayers+重建
+    const holePresenceChanged = hadHole !== !!state.hole;
+    updateHoleVisualInPlace();
+    updateStormInPlace();
+    maybeRefreshSteerAfterTick(holePresenceChanged);
     updateStatus();
 
     if (!state.members[0].alive) {
@@ -698,11 +868,16 @@
 
   function resetSim() {
     stopSim();
+    if (_steerTimer) { clearTimeout(_steerTimer); _steerTimer = null; }
+    if (_steerThrottleTimer) { clearTimeout(_steerThrottleTimer); _steerThrottleTimer = null; }
     state.hours = 0;
     state.members = [];
     state.hole = null;
+    _lastSteerHoleRadius = null;
+    _lastSteerHolePresent = false;
+    clearStormRefs();
+    // 副高全量重绘（会清 holeCircleLayer）；共用 steerRenderer，无孤儿 canvas
     redrawFugen();
-    redrawStorm();
     updateStatus();
   }
 

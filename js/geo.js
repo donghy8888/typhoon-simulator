@@ -288,14 +288,19 @@
   }
 
   /**
-   * 副高北缘纬度（西风带南界）——按当前经度的局地北缘。
-   * 规则：该经线上副高实体以北整片为西风带。
-   * 仅在本经线附近（±0.5°）采样，不再取 ±8° 全域最大值或 ringMax 顶点包络，
-   * 避免绿线/西风起始被抬到副高实际北缘以北。
+   * 副高北缘纬度（西风带南界 / 绿线）。
+   * 有效边界 = 温和邻经线 soft-max + 北向小偏置：
+   *   - 邻经线采样 dlon ∈ {0, ±1.5, ±3}（不做旧版 ±8° + ringMax，避免过北）
+   *   - WESTERLY_EDGE_NORTH_OFFSET = 1.5°：在 soft-max 之上再北移 1.5°，
+   *     使西风起效略高于局地北缘毛刺，又明显低于旧“过北”行为。
+   * 绿线与 inWesterlyBelt / steering 共用此有效边界。
    */
-  function northernFugenEdgeLat(lon, fugenList, hole) {
-    if (!fugenList || !fugenList.length) return null;
-    // 仅本经线：粗扫找到实体后二分逼近北缘；不做跨经度抬高
+  const WESTERLY_EDGE_NORTH_OFFSET = 1.5;
+  const WESTERLY_EDGE_NEIGHBOR_DLONS = [0, -1.5, 1.5, -3, 3];
+
+  /** 单经线上的原始局地北缘（二分），无偏置 */
+  function rawLocalFugenEdgeLat(lon, fugenList, hole) {
+    if (lon < DOMAIN.lonMin || lon > DOMAIN.lonMax) return null;
     let approx = null;
     for (let lat = DOMAIN.latMax; lat >= DOMAIN.latMin; lat -= 0.15) {
       if (inFugenSolid(lon, lat, fugenList, hole)) {
@@ -312,6 +317,18 @@
       else hi = mid;
     }
     return lo;
+  }
+
+  function northernFugenEdgeLat(lon, fugenList, hole) {
+    if (!fugenList || !fugenList.length) return null;
+    let softMax = null;
+    for (const dlon of WESTERLY_EDGE_NEIGHBOR_DLONS) {
+      const e = rawLocalFugenEdgeLat(lon + dlon, fugenList, hole);
+      if (e == null) continue;
+      softMax = softMax == null ? e : Math.max(softMax, e);
+    }
+    if (softMax == null) return null;
+    return softMax + WESTERLY_EDGE_NORTH_OFFSET;
   }
 
   /** 是否位于副高以北的西风带（不含副高实体内部） */

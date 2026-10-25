@@ -17,31 +17,58 @@
     return 40 + (sst - 28) * 6; // 28℃→40, 30℃→52
   }
 
+  /** 最短路径角度插值（弧度） */
+  function lerpAngle(a, b, t) {
+    let d = b - a;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return a + d * t;
+  }
+
+  /** 二次 Bezier 航向：起点 → 北/略西北顶点 → 东北终点 */
+  function bezierHeading(a0, a1, a2, t) {
+    const ab = lerpAngle(a0, a1, t);
+    const bc = lerpAngle(a1, a2, t);
+    return lerpAngle(ab, bc, t);
+  }
+
   /**
-   * 引导气流：基础场 + 副高北边整片西风带
-   * 副高北缘以南：用基础引导；北缘以北（不含副高实体）：整片西风带。
-   * 例：副高伸到长江以南 → 长江以北全是西风带，不再拖到更高纬度才起作用。
+   * 引导气流：基础场 + 副高北边整片西风带。
+   * 进入西风带时不做瞬时 u/v 切换，也不用窄 smoothstep；
+   * 在约 RECURVE_ARC_DEG 纬度上按航向 Bezier 经北/略西北绕大半圆再折向东北
+   * （经典转折：先偏北/西北，再东北）。
    */
+  // 转向弧空间尺度（度纬度）：越大路径半圆幅度越大
+  const RECURVE_ARC_DEG = 9.0;
+
   function steeringAt(lon, lat, cfg, fugenList, hole) {
     let u = cfg.steerU;
     let v = cfg.steerV;
 
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
     if (edge != null) {
-      // 西风带仅在副高北缘（绿线）以北：南侧绝不掺入西风（避免过早 NE）。
-      // 北侧用约 2.8° 纬度的 smoothstep 缓入，形成可见但不过大的弧形转向。
+      // 南侧绝不掺入西风（避免过早 NE）。北侧用大尺度航向弧转入西风。
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
-      const wV = 1.2 + Math.max(0, cfg.westerlyU) * 0.06;
-      const BLEND_DEG = 2.8;
-      if (northOf >= BLEND_DEG) {
+      // 略抬高目标北分，使终点更偏 NE 而非纯东
+      const wV = 2.2 + Math.max(0, cfg.westerlyU) * 0.08;
+      if (northOf >= RECURVE_ARC_DEG) {
         u = wU;
         v = wV;
       } else if (northOf >= 0) {
-        const t = northOf / BLEND_DEG;
-        const w = t * t * (3 - 2 * t); // smoothstep 0→1
-        u = u * (1 - w) + wU * w;
-        v = v * (1 - w) + wV * w;
+        const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
+        const ang0 = Math.atan2(v, u);
+        const spd0 = Math.hypot(u, v) || 3;
+        // 顶点：正北偏西北 ~110°（从东逆时针），制造大半圆北凸
+        const ang1 = Math.PI / 2 + 0.35;
+        const ang2 = Math.atan2(wV, wU);
+        const ang = bezierHeading(ang0, ang1, ang2, t);
+        const spdW = Math.hypot(wU, wV);
+        const spd = spd0 * (1 - t) + spdW * t;
+        // 弧中段额外北向鼓包，加大半圆振幅（非直角急转）
+        const midBulge = 4 * t * (1 - t); // 峰值在 t=0.5
+        u = Math.cos(ang) * spd;
+        v = Math.sin(ang) * spd + midBulge * 1.8;
       }
     } else if (lat >= 32) {
       u = cfg.westerlyU;
@@ -148,14 +175,14 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 进入西风带后的 NE 拐弯增强：仅 lat > 北缘；南侧 deep=0。
-    // 在约 4° 纬度内 smoothstep 缓入，中等幅度弧线（非直角急转、非大回环）。
+    // 转向弧强化（与 steeringAt 同尺度 RECURVE_ARC_DEG）：仅 lat > 绿线。
+    // 弧中段大幅加北向鼓包，后段再缓加东向——大半圆后再东北，非突然拐弯。
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
     if (edge != null && lat > edge && !G.inFugenSolid(lon, lat, fugenList, hole)) {
-      const t = clamp((lat - edge) / 4.0, 0, 1);
-      const w = t * t * (3 - 2 * t);
-      u += 1.15 * w;
-      v += 0.85 * w;
+      const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
+      const bulge = Math.sin(Math.PI * t); // 0→1→0，中段最大
+      u += -0.35 * (1 - t) * bulge + 1.6 * t * t; // 前段略保西残量，后段东向
+      v += 2.2 * bulge; // 中段强北向 → 大半圆振幅
     }
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);

@@ -293,10 +293,10 @@
    *   - 无北偏：绿线 = 混合后的局地北缘本身（不再 +0.5°）
    * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（含西侧 look-east）。
    *
-   * APPROACH_NORTH_BAND_DEG ≈ 0.45° lat（约 50 km）：绿线以南该带宽内纯「往北」（u≤0）；
-   * 绿线处及以北立即「往东北」（onset@edge）。绝不用 ~0.9°/100km 或 ~9°/1000km。
+   * APPROACH_NORTH_BAND_DEG = 0.3° lat（≈1/3 of 0.9°；用户「一百公里只有你以为的三分之一大」）：
+   * 绿线以南该带宽内纯「往北」（u≤0，禁东/NE）；绿线处以北全部东北偏东（ENE）。
    */
-  const APPROACH_NORTH_BAND_DEG = 0.45;
+  const APPROACH_NORTH_BAND_DEG = 0.3;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺
   const WESTERLY_EDGE_BLEND = [[0, 0.7], [-1, 0.15], [1, 0.15]];
 
@@ -336,7 +336,7 @@
 
   /**
    * 引导用北缘：本经线贴边；若本经无副高（西侧沿脊），向东（再向西）取最近北缘。
-   * 使西侧外围台风仍按「脊北缘以南≈0.45°往北 / 以北往东北」两区制转向。
+   * 使西侧外围台风仍按「脊北缘以南≈0.3°往北 / 以北东北偏东(ENE)」两区制转向。
    */
   const GUIDING_EDGE_LOOK_DLONS = [0, 1, 2, 3, 4, 5, 6, 8, 10, -1, -2, -3];
   function guidingNorthernEdgeLat(lon, fugenList, hole) {

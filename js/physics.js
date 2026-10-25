@@ -25,7 +25,7 @@
     return a + d * t;
   }
 
-  /** 二次 Bezier 航向：起点 NE → 偏北 NE 顶点（大弧振幅）→ 满 NE；禁止 NW 顶点 */
+  /** 二次 Bezier 航向：起点 ENE → 略偏北 ENE/NE 顶点（大弧振幅）→ 满 ENE；禁止纯北/NW 顶点 */
   function bezierHeading(a0, a1, a2, t) {
     const ab = lerpAngle(a0, a1, t);
     const bc = lerpAngle(a1, a2, t);
@@ -34,15 +34,16 @@
 
   /**
    * 引导气流：两区制（绿线 = guidingNorthernEdgeLat，与绘制一致）
-   *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.45°, edge)：纯往北（u≤0）
-   *      ——纯北带只在绿线以南；带宽≈50km；绝不用 edge+N° / 弧长 / ~9° 当南侧带宽
-   *   B) lat >= edge：立刻东北大弧（onset 已有东分量，航向已是 NE-ish）
-   *      ——大振幅 Bezier 缓入满 NE；禁止「绿线北侧继续纯北再折 NE」；禁止直角急转
-   *   C) lat <= edge−0.45°：基础引导场 only
-   * 所有 westerly / Bezier / NE 项必须门控在 lat >= edge。
-   * RECURVE_ARC_DEG 只描述绿线以北弧长，≠ 南侧 0.45° 接近带宽度。
+   *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.3°, edge)：纯往北（u≤0）
+   *      ——纯北带只在绿线以南；带宽=0.3°（≈1/3 of 0.9°）；绝不用 edge+N° / 弧长当南侧带宽
+   *      ——整带杀掉一切东/NE（u 必须 ≤0）；禁止往南
+   *   B) lat >= edge：从踏入绿线以北第一步起就是东北偏东（ENE），非「先北后 NE」
+   *      ——大振幅 Bezier 缓入满 ENE；onset 东分量已主导；禁止直角急转 / 纯北起点
+   *   C) lat <= edge−0.3°：基础引导场 only
+   * 所有 westerly / Bezier / ENE 项必须门控在 lat >= edge。
+   * RECURVE_ARC_DEG 只描述绿线以北弧长，≠ 南侧 0.3° 接近带宽度。
    */
-  // 绿线以北完成「大弧→满 NE」的纬度尺度（仅 lat≥edge）；与南侧 0.45° 带宽无关
+  // 绿线以北完成「大弧→满 ENE」的纬度尺度（仅 lat≥edge）；与南侧 0.3° 带宽无关
   const RECURVE_ARC_DEG = 7.0;
 
   function steeringAt(lon, lat, cfg, fugenList, hole) {
@@ -50,7 +51,7 @@
     let v = cfg.steerV;
 
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
-    const band = G.APPROACH_NORTH_BAND_DEG; // ≈0.45° ≈50 km；仅用于绿线以南
+    const band = G.APPROACH_NORTH_BAND_DEG; // ≈0.3°（1/3 of 0.9°）；仅用于绿线以南
     if (edge != null) {
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
@@ -61,31 +62,35 @@
         u = wU;
         v = wV;
       } else if (northOf >= 0) {
-        // B) 绿线处即往东北大弧：t=0 已有显著东向（NE-ish），非纯北/NW
+        // B) 绿线以北：从 onset 起东北偏东（ENE）。东分量主导，非先北后 NE / 纯北
         const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
-        const te = 1 - Math.pow(1 - t, 1.45); // 前载东分量，仍保持大弧光滑
-        const angNE = Math.atan2(wV, Math.max(0.01, wU));
-        // onset@edge：已是 NE（约 50–60°），东分量 > 0；绝不用 π/2+ 的 NW 起点
-        const ang0 = Math.atan2(wV * 0.85 + 2.8, Math.max(1.2, wU * 0.5));
-        // 顶点：仍偏 NE 但更北（大弧振幅），航向始终 < 90°（禁止 NW 顶点）
-        const ang1 = Math.atan2(wV + 3.5, Math.max(0.9, wU * 0.55));
-        const ang2 = angNE;
+        const te = 1 - Math.pow(1 - t, 1.35); // 前载东分量，大弧仍光滑
+        // 目标满 ENE：压低北分，使航向偏东（东北偏东 ≈ 15–28° from east）
+        const wVE = Math.min(wV, Math.max(0.01, wU) * 0.42); // ENE 终点北分上限
+        const angENE = Math.atan2(wVE, Math.max(0.01, wU));
+        // onset@edge：已是 ENE（约 22–32°），u>v；绝不用 π/2 / NE~50°+ 起点
+        const ang0 = Math.atan2(Math.max(1.0, wU * 0.28), Math.max(2.4, wU * 0.78));
+        // 顶点：略抬北做大弧振幅，但仍 <45°（禁纯北/NW）；保持 ENE 族
+        const ang1 = Math.atan2(Math.max(1.4, wU * 0.38), Math.max(2.0, wU * 0.72));
+        const ang2 = angENE;
         const ang = bezierHeading(ang0, ang1, ang2, te);
-        const spdW = Math.hypot(wU, wV);
-        const spd0 = Math.hypot(Math.max(1.2, wU * 0.5), wV * 0.85 + 2.8);
+        const spdW = Math.hypot(wU, wVE);
+        const spd0 = Math.hypot(Math.max(2.4, wU * 0.78), Math.max(1.0, wU * 0.28));
         const spd = spd0 * (1 - te) + spdW * te;
-        // 中段北鼓包加大弧振幅；不把航向拽到北/西北
-        const midBulge = 3.2 * te * (1 - te);
+        // 轻量中段北鼓包做大弧；绝不把航向拽过 NE 到纯北
+        const midBulge = 1.4 * te * (1 - te);
         u = Math.cos(ang) * spd;
         v = Math.sin(ang) * spd + midBulge;
-        // 硬：绿线以北第一步起就必须有东分量（防 beta/slide 把 onset 拽回纯北）
-        if (u < 0.55) u = 0.55 + te * Math.max(0, wU - 0.55);
+        // 硬：绿线以北第一步起东分量必须主导（ENE：u 显著 > 0，且不低于轻北分）
+        if (u < 1.6) u = 1.6 + te * Math.max(0, wU - 1.6);
+        // 保 ENE 族：onset/弧中 u 不得被北鼓包压成「偏北 NE」
+        if (v > u * 0.95) v = u * 0.95;
       } else if (northOf > -band) {
-        // A) 绿线以南 ~50km（仅 [edge−0.45, edge)）：纯往北。禁止东向 tip / 西风 NE / Bezier；禁止往南
+        // A) 绿线以南 [edge−0.3, edge)：纯往北。杀掉一切东/NE；禁止往南
         const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
         const westOnly = Math.min(u, 0); // 杀掉基础场东向残量
         u = westOnly * (1 - t); // → 0 @绿线南侧，绝不 > 0
-        v = v * (1 - t) + 4.6 * t; // 主导北向
+        v = Math.max(0, v * (1 - t) + 4.6 * t); // 主导北向，禁止往南
       }
       // C) northOf <= -band：基础场，无西风、无接近带加成
 
@@ -196,24 +201,27 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 两区强化：南≈0.45° 只加北向；绿线处以北立刻东/NE 大弧（不用西/北前段推迟 NE）。
+    // 两区强化：南≈0.3° 只加北向；绿线处以北立刻东/ENE 大弧（禁止先北后 NE）。
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
-    const band = G.APPROACH_NORTH_BAND_DEG; // 仅 [edge−0.45, edge)
+    const band = G.APPROACH_NORTH_BAND_DEG; // 仅 [edge−0.3, edge)
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
       if (lat >= edge) {
         const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
-        const te = 1 - Math.pow(1 - t, 1.45); // 与 steeringAt 同前载
-        // B) onset@edge 即东向；中段轻北鼓包做大弧振幅——禁止 early west / 先北后 NE
-        u += 1.55 * (0.62 + 0.38 * te);
-        v += 1.55 * Math.sin(Math.PI * Math.max(te, 0.08)) * (0.85 + 0.15 * (1 - te));
+        const te = 1 - Math.pow(1 - t, 1.35); // 与 steeringAt 同前载
+        // B) onset@edge 即东向 ENE；轻北鼓包做大弧——禁止 early west / 先北后 NE
+        u += 2.05 * (0.72 + 0.28 * te);
+        v += 0.85 * Math.sin(Math.PI * Math.max(te, 0.08)) * (0.55 + 0.45 * (1 - te));
+        // 保 ENE：加成后仍要东分量主导
+        if (v > u * 0.95) v = u * 0.95;
       } else if (lat > edge - band) {
-        // A) 仅绿线以南 ≈0.45°：纯往北，零东向 tip；禁止往南
+        // A) 仅绿线以南 ≈0.3°：纯往北，零东向 tip；禁止往南
         const t = clamp((lat - (edge - band)) / band, 0, 1);
-        u += -0.25 * t; // 轻西
-        v += 1.9 * t;   // 北向加成
+        u += -0.35 * t; // 轻西，杜绝东漏
+        v += 2.2 * t;   // 北向加成
+        if (v < 0) v = 0;
       }
     }
-    // 硬门控：绿线以南杀掉一切东向（slideAlongFugen / 残留 NE boost）
+    // 硬门控：绿线以南杀掉一切东向（slideAlongFugen / beta / 残留 ENE boost）
     if (edge != null && lat < edge) u = Math.min(u, 0);
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);

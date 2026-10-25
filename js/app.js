@@ -560,7 +560,7 @@
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈100km纯往北，以北立即往东北', { sticky: true })
+      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈50km纯往北，以北立即往东北', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

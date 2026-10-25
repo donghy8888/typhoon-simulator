@@ -34,15 +34,15 @@
 
   /**
    * 引导气流：两区制（绿线 = guidingNorthernEdgeLat，与绘制一致）
-   *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.9°, edge)：纯往北（u≤0）
-   *      ——纯北带只在绿线以南；绝不用 edge+N° / 弧长当南侧带宽
+   *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.45°, edge)：纯往北（u≤0）
+   *      ——纯北带只在绿线以南；带宽≈50km；绝不用 edge+N° / 弧长 / ~9° 当南侧带宽
    *   B) lat >= edge：立刻东北大弧（onset 已有东分量，航向已是 NE-ish）
    *      ——大振幅 Bezier 缓入满 NE；禁止「绿线北侧继续纯北再折 NE」；禁止直角急转
-   *   C) lat <= edge−0.9°：基础引导场 only
+   *   C) lat <= edge−0.45°：基础引导场 only
    * 所有 westerly / Bezier / NE 项必须门控在 lat >= edge。
-   * RECURVE_ARC_DEG 只描述绿线以北弧长，≠ 南侧 0.9° 接近带宽度。
+   * RECURVE_ARC_DEG 只描述绿线以北弧长，≠ 南侧 0.45° 接近带宽度。
    */
-  // 绿线以北完成「大弧→满 NE」的纬度尺度（仅 lat≥edge）；与南侧 0.9° 带宽无关
+  // 绿线以北完成「大弧→满 NE」的纬度尺度（仅 lat≥edge）；与南侧 0.45° 带宽无关
   const RECURVE_ARC_DEG = 7.0;
 
   function steeringAt(lon, lat, cfg, fugenList, hole) {
@@ -50,7 +50,7 @@
     let v = cfg.steerV;
 
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
-    const band = G.APPROACH_NORTH_BAND_DEG; // ≈0.9° ≈100 km；仅用于绿线以南
+    const band = G.APPROACH_NORTH_BAND_DEG; // ≈0.45° ≈50 km；仅用于绿线以南
     if (edge != null) {
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
@@ -81,7 +81,7 @@
         // 硬：绿线以北第一步起就必须有东分量（防 beta/slide 把 onset 拽回纯北）
         if (u < 0.55) u = 0.55 + te * Math.max(0, wU - 0.55);
       } else if (northOf > -band) {
-        // A) 绿线以南 ~100km（仅 [edge−0.9, edge)）：纯往北。禁止东向 tip / 西风 NE / Bezier
+        // A) 绿线以南 ~50km（仅 [edge−0.45, edge)）：纯往北。禁止东向 tip / 西风 NE / Bezier；禁止往南
         const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
         const westOnly = Math.min(u, 0); // 杀掉基础场东向残量
         u = westOnly * (1 - t); // → 0 @绿线南侧，绝不 > 0
@@ -196,9 +196,9 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 两区强化：南≈0.9° 只加北向；绿线处以北立刻东/NE 大弧（不用西/北前段推迟 NE）。
+    // 两区强化：南≈0.45° 只加北向；绿线处以北立刻东/NE 大弧（不用西/北前段推迟 NE）。
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
-    const band = G.APPROACH_NORTH_BAND_DEG; // 仅 [edge−0.9, edge)
+    const band = G.APPROACH_NORTH_BAND_DEG; // 仅 [edge−0.45, edge)
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
       if (lat >= edge) {
         const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
@@ -207,7 +207,7 @@
         u += 1.55 * (0.62 + 0.38 * te);
         v += 1.55 * Math.sin(Math.PI * Math.max(te, 0.08)) * (0.85 + 0.15 * (1 - te));
       } else if (lat > edge - band) {
-        // A) 仅绿线以南 ≈0.9°：纯往北，零东向 tip
+        // A) 仅绿线以南 ≈0.45°：纯往北，零东向 tip；禁止往南
         const t = clamp((lat - (edge - band)) / band, 0, 1);
         u += -0.25 * t; // 轻西
         v += 1.9 * t;   // 北向加成

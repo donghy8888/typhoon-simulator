@@ -552,7 +552,7 @@
 
   /**
    * 黄线 / 绿线：始终绘制到 guides pane（默认开，不随箭头层关闭）。
-   * yellowLat = greenEdge − 0.15°；同 lon 采样；亮黄 weight≥3；SVG 非 canvas，压在副高之上。
+   * yellowLat = greenEdge − 0.15°；同 lon 采样；亮黄 weight=3.5 同绿线；SVG 非 canvas，压在副高之上。
    */
   function redrawGuideLines() {
     layerGroups.guides.clearLayers();
@@ -576,15 +576,10 @@
       }).bindTooltip('绿线=引导北缘；以南黄→绿纯北；以北 NE≈45° fromN（小振幅）', { sticky: true })
         .addTo(layerGroups.guides);
     }
-    // 黄线后画、压在绿线上沿：亮黄 #ffff00 weight 4，永远可见
+    // 黄线后画、压在绿线上沿：亮黄 #ffff00 weight 3.5（与绿线同粗、无衬底）
     if (yellowPts.length >= 2) {
-      // 深色描边衬底，红副高填充上仍能辨认
       L.polyline(yellowPts, {
-        color: '#000000', weight: 7, opacity: 0.55, pane: 'guides',
-        interactive: false
-      }).addTo(layerGroups.guides);
-      L.polyline(yellowPts, {
-        color: '#ffff00', weight: 4, opacity: 1, pane: 'guides',
+        color: '#ffff00', weight: 3.5, opacity: 1, pane: 'guides',
         interactive: true
       }).bindTooltip('黄线 yellowLat=绿线南0.15°：以南轻度WNW；黄→绿 u≡0 纯北', { sticky: true })
         .addTo(layerGroups.guides);

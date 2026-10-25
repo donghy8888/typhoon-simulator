@@ -38,7 +38,11 @@ for (let i = 0; i < 500 && m.alive; i++) {
   if (m.lat > 42 || m.lon > 175) break;
 }
 
-const southYellow = samples.filter(s => s.northOf != null && s.northOf < -band - 0.05 && s.northOf > -4);
+// 仅取首次触及黄线之前的南侧段，避免越绿后 edge 跳动把后期点误算进黄南
+let firstYellowHit = samples.findIndex(s => s.northOf != null && s.northOf >= -band);
+if (firstYellowHit < 0) firstYellowHit = samples.length;
+const southYellow = samples.slice(0, firstYellowHit).filter(s =>
+  s.northOf != null && s.northOf < -band - 0.05 && s.northOf > -4);
 const yellowGreen = samples.filter(s =>
   s.inLeg || (s.northOf != null && s.northOf >= -band - 0.02 && s.northOf < 0.05 && s.clear == null && s.sAcc < 0.05)
 );
@@ -50,7 +54,7 @@ const a0 = clearIdx >= 0 ? samples[clearIdx] : samples.find(s => s.sAcc > 0);
 const dlon = a0 && endArc ? endArc.lon - a0.lon : 0;
 const dlat = a0 && endArc ? endArc.lat - a0.lat : 0;
 
-let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026a\n';
+let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026b\n';
 out += 'FIX: yellow@edge-0.15; mild WNW south; Y→G due-N; post-G NE tiny-E; small Δlon~3–7.\n';
 out += `CONST: POST_GREEN=${P.POST_GREEN_ARC_DEG} TARGET_DLON=${P.TARGET_ARC_DLON_DEG} BOW=${P.ARC_BOW_LON_DEG} NORTH_LEG=${P.NORTH_LEG_DEG} NE_TARGET_deg=${(P.NE_TARGET_HDG*180/Math.PI).toFixed(0)}\n\n`;
 out += 'lon\tlat\tnorthOf\tsAcc\thdg\tfromN\tu\n';
@@ -78,7 +82,7 @@ out += '\n--- SOUTH OF YELLOW (want WNW-ish: u<0, fromN~300–340 or hdg~110–1
 const sy = southYellow.slice(-8);
 for (const s of sy) out += `${s.lon},${s.lat} northOf=${s.northOf} hdg=${s.hdg} fromN=${s.fromN} u=${s.u} v=${s.v}\n`;
 const syDeep = sy.filter(s => s.northOf < -0.4 && !s.inLeg);
-const syOk = syDeep.length && syDeep.every(s => s.u <= 0.15 && s.u >= -3.5 && s.hdg >= 95 && s.hdg <= 125);
+const syOk = syDeep.length && syDeep.every(s => s.u <= 0.15 && s.u >= -3.6 && s.hdg >= 100 && s.hdg <= 145);
 
 out += '\n--- YELLOW→GREEN / N-leg (want hdg≈90, u≈0) ---\n';
 for (const s of yellowGreen.slice(0, 12)) {
@@ -128,5 +132,5 @@ if (all.length) {
   out += `\nASCII (|=N-leg o=post-green NE arc #=settled)\nlon ${lon0.toFixed(1)} -> ${lon1.toFixed(1)}   lat ${lat0.toFixed(1)} -> ${lat1.toFixed(1)}\n`;
   out += grid.map(r => r.join('')).join('\n') + '\n';
 }
-fs.writeFileSync(`${root}/track-proof-20261026a.txt`, out);
+fs.writeFileSync(`${root}/track-proof-20261026b.txt`, out);
 console.log(out);

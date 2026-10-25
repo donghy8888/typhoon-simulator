@@ -57,11 +57,11 @@
   /**
    * 引导气流（绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261026a）：
-   *   黄线以南 (northOf < −0.15)：往西北偏西（西+北分量）
-   *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，防圆角跳过）
-   *   绿线以北：往东北、稍微偏东（≈40–50° from N / atan2≈40–50°），
-   *             非东北偏东 / 非深 ENE；小转弯振幅 Δlon≈3–7°（轻微弧，非 tip kink）
+   * 分区（20261026b）：
+   *   黄线以南 (northOf < −0.15)：轻度 WNW（西+北）
+   *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿）
+   *   绿线以北：NE 稍微偏东 ≈45° from N；杀深 ENE / 大 u / 大 lon bow；
+   *             小真弯 Δlon≈3–6°（绿线处平滑弧，非 tip kink）
    *
    * 状态机（arcState）：
    *   A) 首次进入绿南 ~0.22°：legTargetLat=max(edge,lat+0.15)，u≡0 往北直到越过；
@@ -69,21 +69,21 @@
    */
   const NORTH_LEG_DEG = 0.15;
   const RECURVE_ARC_DEG = 7.0;
-  const POST_GREEN_ARC_DEG = 4.0;
-  const TARGET_ARC_DLON_DEG = 5;    // 小振幅 subtle ≈3–7°（非 20° 大弯）
-  const ARC_BOW_LON_DEG = 2.2;     // 小东鼓：地图上不明显大弯，但仍有轻微弧
-  /** atan2(v,u)≈44° → 地理约 46° from N（东北，稍微稍微偏东） */
-  const NE_TARGET_HDG = 44 * Math.PI / 180;
-  /** 下限：勿扁成东北偏东（atan2 过小 / fromN 过大） */
-  const NE_MIN_HDG = 40 * Math.PI / 180;
-  /** 上限：半弧后半勿一直贴正北 */
-  const NE_MAX_HDG = 55 * Math.PI / 180;
+  const POST_GREEN_ARC_DEG = 3.5;  // 短弧：绿后很快落到 ~45° fromN
+  const TARGET_ARC_DLON_DEG = 4;   // 小振幅 ≈3–6°（杀大 lon bow）
+  const ARC_BOW_LON_DEG = 1.2;     // 极小东鼓：可见轻弧，非大弯
+  /** atan2(v,u)≈45° → 地理约 45° from N（NE 稍微偏东） */
+  const NE_TARGET_HDG = 45 * Math.PI / 180;
+  /** 下限：勿扁成东北偏东（atan2 过小 / fromN 过大 / 深 ENE） */
+  const NE_MIN_HDG = 42 * Math.PI / 180;
+  /** 上限：半弧前半可略偏北，但尽快到 NE */
+  const NE_MAX_HDG = 52 * Math.PI / 180;
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
-  /** 越绿后几乎立刻开始 N→NE 弧（可见平滑弯，非 tip kink） */
-  const CLEAR_NORTH_DEG = 0.10;
+  /** 越绿后立刻开始 N→NE 平滑弧（小真弯，非 tip kink） */
+  const CLEAR_NORTH_DEG = 0.05;
   const CLEAR_LAT_MIN = 0;
-  const CLEAR_NORTHOF_MIN = 0.06;
+  const CLEAR_NORTHOF_MIN = 0.04;
 
   function approachNorthUV(northOf, band, spdW) {
     const u = 0;
@@ -103,7 +103,7 @@
     if (h < NE_MIN_HDG) {
       u = Math.cos(NE_MIN_HDG) * spd;
       v = Math.sin(NE_MIN_HDG) * spd;
-    } else if (s > 0.2 && h > NE_MAX_HDG) {
+    } else if (s > 0.12 && h > NE_MAX_HDG) {
       u = Math.cos(NE_MAX_HDG) * spd;
       v = Math.sin(NE_MAX_HDG) * spd;
     }
@@ -114,20 +114,20 @@
   function postGreenArcUV(sRaw, lat, wU, wVE, spdW) {
     const s = clamp(sRaw, 0, 1);
     const ang0 = Math.PI * 0.5; // due-N 接竖段
-    // 终点：东北稍微偏东（非深 ENE）；不收到 westerly 的 ~20° atan2
+    // 终点：NE ≈45° from N（非深 ENE）；不用 westerly 的 ~20° atan2
     const angEnd = NE_TARGET_HDG;
-    let ang = lerpAngle(ang0, angEnd, smoothstep(s));
-    if (s > 0.75) {
-      // 末端极轻偏东，仍贴近 NE（≥ NE_MIN）
-      const tip = Math.max(NE_MIN_HDG, NE_TARGET_HDG - 2 * Math.PI / 180);
-      ang = lerpAngle(angEnd, tip, smoothstep((s - 0.75) / 0.25));
-    }
-    const spd = Math.max(spdW * 0.9, 8.0);
+    // 平滑 N→NE：前半略快转入，避免 tip kink / 迟钝无弯
+    const te = smoothstep(Math.pow(s, 0.7)); // 更快转入 ~45° fromN，绿处可见小真弯
+    let ang = lerpAngle(ang0, angEnd, te);
+    const spd = Math.max(spdW * 0.85, 7.5);
     let u = Math.cos(ang) * spd;
     let v = Math.sin(ang) * spd;
-    // 小东鼓：轻微弧 Δlon≈3–7，非 z 版 ~20°，地图上勿显大弯
-    const bowU = (1.0 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * Math.pow(s, 0.95));
+    // 极小东鼓：轻弧 Δlon≈3–6，杀大 postGreenArc lon bow
+    const bowU = (0.7 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * Math.pow(s, 1.05));
     u += bowU;
+    // 硬顶：u 不得超过 NE 对应（杀深 ENE / 大 u）
+    const uCap = Math.cos(NE_MIN_HDG) * spd + ARC_BOW_LON_DEG * 0.5;
+    if (u > uCap) u = uCap;
     ({ u, v } = enforceNeHeading(u, v, s));
     return { u, v, s };
   }
@@ -214,9 +214,9 @@
           const span = Math.max(1e-3, clearLat - base);
           const tc = clamp((lat - base) / span, 0, 1);
           const spd = Math.max(spdW, 8.0);
-          // 净空段几乎正北，仅极微东偏，接上 NE 弧
-          u = spd * (0.02 + 0.12 * smoothstep(tc));
-          v = spd * (0.995 - 0.08 * smoothstep(tc));
+          // 极短净空：正北微东，立刻接 NE≈45° 平滑弧（小真弯）
+          u = spd * (0.01 + 0.08 * smoothstep(tc));
+          v = spd * (0.998 - 0.05 * smoothstep(tc));
         } else {
           const s = arcState
             ? arcProgress(lat, lon, arcState, false)
@@ -233,15 +233,16 @@
           }
         }
       } else if (northOf < -band) {
-        // 黄线以南：轻度西北偏西（小西分量 + 抬北），不要大西漂
+        // 黄线以南：轻度 WNW（西+北），非正北、非大西漂
         const t = clamp((northOf + RECURVE_ARC_DEG) / (RECURVE_ARC_DEG - band), 0, 1);
         const te = smoothstep(t);
-        // 基础场若东向则清零；西向收敛到温和 ~−1.2~−2.0
         let uBase = Math.min(u, 0);
-        if (uBase < -2.0) uBase = -2.0 + (uBase + 2.0) * 0.35;
-        u = uBase * (1 - 0.25 * te) - 0.6 * te;
-        v = Math.max(v, 0) * (1 - 0.55 * te) + (5.2 + 1.5 * te) * te;
-        if (u < -2.4) u = -2.4; // 硬顶：勿过偏西
+        if (uBase < -2.8) uBase = -2.8 + (uBase + 2.8) * 0.3;
+        // 目标约 fromN≈300–330°（轻度 WNW）：u≈−2.5~−3.6，v≈4.5~7
+        u = uBase * (1 - 0.15 * te) - 2.0 * te;
+        v = Math.max(v, 0) * (1 - 0.45 * te) + (4.5 + 1.6 * te) * te;
+        if (u < -3.4) u = -3.4;
+        if (u > -1.2 && te > 0.25) u = -1.2 - 1.0 * te; // 保证有西分量
       }
 
       if (inNorthLeg) {
@@ -408,11 +409,11 @@
           const span = Math.max(1e-3, clearLat - arcState.arcLat0);
           const tc = clamp((lat - arcState.arcLat0) / span, 0, 1);
           const spd = Math.max(spdW, 8.0);
-          // 极短净空：几乎正北，微东，立刻接 NE 弧
-          u = spd * (0.02 + 0.10 * smoothstep(tc));
-          v = Math.max(spd * (0.995 - 0.06 * smoothstep(tc)), 7.5);
+          // 极短净空：几乎正北，微东，立刻接 NE≈45° 弧
+          u = spd * (0.01 + 0.08 * smoothstep(tc));
+          v = Math.max(spd * (0.998 - 0.05 * smoothstep(tc)), 7.5);
           if (G.inFugenSolid(lon, lat, fugenList, hole) || northOf < 0.35) {
-            u = Math.min(u, spd * 0.12);
+            u = Math.min(u, spd * 0.10);
             v = Math.max(v, 9.0);
           }
         } else {
@@ -438,11 +439,11 @@
           }
         }
       } else if (northOf < -band) {
-        // 黄南：轻度西北偏西（小西 + 抬北）
+        // 黄南：轻度 WNW（小西 + 抬北）
         let uBase = Math.min(u, 0);
-        if (uBase < -2.0) uBase = -2.0 + (uBase + 2.0) * 0.35;
-        u = Math.max(uBase, -2.4) - 0.35;
-        if (u < -2.4) u = -2.4;
+        if (uBase < -2.8) uBase = -2.8 + (uBase + 2.8) * 0.3;
+        u = Math.min(Math.max(uBase, -3.4) - 1.2, -1.5);
+        if (u < -3.4) u = -3.4;
         v = Math.max(v + 1.0, 4.5);
       }
     }

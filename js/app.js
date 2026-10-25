@@ -55,11 +55,19 @@
 
   map.setMaxBounds([[-5, 95], [55, 185]]);
 
+  // 引导黄/绿线专用 pane：z 高于 overlay(400)，避免被副高 SVG 填充盖住
+  // （黄线在绿线南 0.15°，落在副高实体内侧，canvas 箭头层会被 SVG 副高盖死）
+  map.createPane('guides');
+  map.getPane('guides').style.zIndex = 450;
+  map.getPane('guides').style.pointerEvents = 'none';
+
   const layerGroups = {
     terrain: L.layerGroup().addTo(map),
     fugen: L.layerGroup().addTo(map),
     sst: L.layerGroup().addTo(map),
     steer: L.layerGroup().addTo(map),
+    // guides 永远在地图上（默认开），不随「引导风向箭头」开关关闭
+    guides: L.layerGroup({ pane: 'guides' }).addTo(map),
     track: L.layerGroup().addTo(map),
     ensemble: L.layerGroup().addTo(map),
     storm: L.layerGroup().addTo(map)
@@ -542,39 +550,54 @@
     if (geometryChanged || present) redrawSteerThrottled();
   }
 
+  /**
+   * 黄线 / 绿线：始终绘制到 guides pane（默认开，不随箭头层关闭）。
+   * yellowLat = greenEdge − 0.15°；同 lon 采样；亮黄 weight≥3；SVG 非 canvas，压在副高之上。
+   */
+  function redrawGuideLines() {
+    layerGroups.guides.clearLayers();
+    // FORCE ON: 黄绿引导线永不因 hidden layer flag 跳过
+    const edgePts = [];
+    const yellowPts = [];
+    const band = G.APPROACH_NORTH_BAND_DEG || 0.15;
+    for (let lon = 105; lon <= 175; lon += 0.5) {
+      const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
+      if (edge != null) {
+        const yellowLat = edge - band; // yellowLat = greenEdge - 0.15°
+        edgePts.push([edge, lon]);
+        yellowPts.push([yellowLat, lon]);
+      }
+    }
+    // 绿线先画
+    if (edgePts.length >= 2) {
+      L.polyline(edgePts, {
+        color: '#0a5c32', weight: 3.5, opacity: 1, pane: 'guides',
+        interactive: true
+      }).bindTooltip('绿线=引导北缘；以南黄→绿纯北；以北 NE≈45° fromN（小振幅）', { sticky: true })
+        .addTo(layerGroups.guides);
+    }
+    // 黄线后画、压在绿线上沿：亮黄 #ffff00 weight 4，永远可见
+    if (yellowPts.length >= 2) {
+      // 深色描边衬底，红副高填充上仍能辨认
+      L.polyline(yellowPts, {
+        color: '#000000', weight: 7, opacity: 0.55, pane: 'guides',
+        interactive: false
+      }).addTo(layerGroups.guides);
+      L.polyline(yellowPts, {
+        color: '#ffff00', weight: 4, opacity: 1, pane: 'guides',
+        interactive: true
+      }).bindTooltip('黄线 yellowLat=绿线南0.15°：以南轻度WNW；黄→绿 u≡0 纯北', { sticky: true })
+        .addTo(layerGroups.guides);
+    }
+  }
+
   function redrawSteer() {
+    redrawGuideLines();
     layerGroups.steer.clearLayers();
     if (!state.layers.steer) return;
     const cfg = cfgFromUI();
     // 复用模块级 steerRenderer，切勿每次 new L.canvas()
     const canvas = steerRenderer;
-
-    // 绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km（同 lon 采样）。
-    // 黄南轻度西北偏西；黄→绿纯北；绿北 NE 稍微偏东（小振幅轻弧）。1° 采样。
-    const edgePts = [];
-    const yellowPts = [];
-    const band = G.APPROACH_NORTH_BAND_DEG || 0.15;
-    for (let lon = 105; lon <= 175; lon += 1) {
-      const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
-      if (edge != null) {
-        edgePts.push([edge, lon]);
-        yellowPts.push([edge - band, lon]);
-      }
-    }
-    if (yellowPts.length >= 2) {
-      L.polyline(yellowPts, {
-        color: '#e6b800', weight: 2.5, dashArray: '8 6', opacity: 0.9,
-        renderer: canvas
-      }).bindTooltip('黄线=绿线南≈50km：以南往西北偏西；黄→绿纯往北（u≡0）', { sticky: true })
-        .addTo(layerGroups.steer);
-    }
-    if (edgePts.length >= 2) {
-      L.polyline(edgePts, {
-        color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
-        renderer: canvas
-      }).bindTooltip('副高北缘（绿线=引导北缘）；以南黄→绿纯往北；以北往东北稍微偏东（小振幅轻弧）；两脊空档北侧亦为西风带', { sticky: true })
-        .addTo(layerGroups.steer);
-    }
 
     const stepLon = 4, stepLat = 3;
     const westSegs = [];

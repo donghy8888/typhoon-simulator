@@ -85,17 +85,18 @@
         if (u < 1.6) u = 1.6 + te * Math.max(0, wU - 1.6);
         // 保 ENE 族：onset/弧中 u 不得被北鼓包压成「偏北 NE」
         if (v > u * 0.95) v = u * 0.95;
-      } else if (northOf > -band) {
+      } else if (northOf >= -band) {
         // A) 绿线以南 [edge−0.3, edge)：完全往北（due north）。u 必须 = 0，不是 ≤0／偏北
+        //    南界 inclusive：lat >= edge−band && lat < edge
         const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
         u = 0; // 强制纯北：禁东、禁西（u≤0 仍会露出 NW 偏北）
         v = Math.max(0, v * (1 - t) + 4.6 * t); // 主导北向，禁止往南
       }
-      // C) northOf <= -band：基础场，无西风、无接近带加成
+      // C) northOf < -band：基础场，无西风、无接近带加成
 
       // 硬门控：接近带内强制 u=0；带外以南只杀东向（防 slide/混合泄漏）
       if (northOf < 0) {
-        if (northOf > -band) u = 0;
+        if (northOf >= -band) u = 0;
         else u = Math.min(u, 0);
       }
     } else if (lat >= 32) {
@@ -215,17 +216,18 @@
         v += 0.85 * Math.sin(Math.PI * Math.max(te, 0.08)) * (0.55 + 0.45 * (1 - te));
         // 保 ENE：加成后仍要东分量主导
         if (v > u * 0.95) v = u * 0.95;
-      } else if (lat > edge - band) {
-        // A) 仅绿线以南 ≈0.3°：完全往北（u=0）；禁止偏北 NW / 东漏
+      } else if (lat >= edge - band) {
+        // A) 仅绿线以南 ≈0.3°：完全往北（u=0）；南界 inclusive；禁止偏北 NW / 东漏
         const t = clamp((lat - (edge - band)) / band, 0, 1);
         u = 0;          // 强制纯北：不做轻西加成（那会变成偏北）
         v += 2.2 * t;   // 北向加成
         if (v < 0) v = 0;
       }
     }
-    // 硬门控：接近带内 u=0（完全往北）；带外以南只杀东向
+    // 硬门控（必须在 beta + slideAlongFugen 之后）：接近带内 u=0；带外以南只杀东向
+    // slide 可能重新引入东向，故在此再杀一次
     if (edge != null && lat < edge) {
-      if (lat > edge - band) u = 0;
+      if (lat >= edge - band) u = 0;
       else u = Math.min(u, 0);
     }
 

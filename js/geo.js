@@ -335,16 +335,20 @@
   }
 
   /**
-   * 引导用北缘：本经线贴边；若本经无副高（西侧沿脊），向东（再向西）取最近北缘。
-   * 使西侧外围台风仍按「脊北缘以南≈0.3°往北 / 以北东北偏东(ENE)」两区制转向。
+   * 引导用北缘：在 look 窗口内取所有非空局地北缘的最北（max lat），
+   * 而非「第一个非空」。避免 lon≈121 南海低块(~18°)盖过东侧主脊北缘(~28–32°)，
+   * 否则 20–27°N 会被误判 lat>=edge → 全 ENE，而用户仍看到自己在主绿线以南。
+   * 绿线绘制与 physics 共用此函数，保持一致。
    */
   const GUIDING_EDGE_LOOK_DLONS = [0, 1, 2, 3, 4, 5, 6, 8, 10, -1, -2, -3];
   function guidingNorthernEdgeLat(lon, fugenList, hole) {
+    let best = null;
     for (const dlon of GUIDING_EDGE_LOOK_DLONS) {
       const e = northernFugenEdgeLat(lon + dlon, fugenList, hole);
-      if (e != null) return e;
+      if (e == null) continue;
+      if (best == null || e > best) best = e;
     }
-    return null;
+    return best;
   }
 
   /** 是否位于副高以北的西风带（不含副高实体内部） */

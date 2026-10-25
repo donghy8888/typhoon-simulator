@@ -25,7 +25,7 @@
     return a + d * t;
   }
 
-  /** 二次 Bezier 航向：起点已是 ENE（东重）→ 偏北 NE 顶点（大半圆弧振幅）→ 满 ENE；禁 ang0=π/2 */
+  /** 二次 Bezier 航向：起点 NNE（东北偏北）→ 偏北 NNE 顶点（大半圆弧振幅）→ 仍 NNE；禁 ang0=π/2 / 终点掉回 ENE */
   function bezierHeading(a0, a1, a2, t) {
     const ab = lerpAngle(a0, a1, t);
     const bc = lerpAngle(a1, a2, t);
@@ -37,14 +37,14 @@
    *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.3°, edge)：完全往北（u = 0）
    *      ——纯北带只在绿线以南；带宽=0.3°；绝不用 edge+N° / 弧长当南侧带宽
    *      ——整带强制 u = 0（不是 u≤0／偏北 NW）；禁止东/西分量；禁止往南
-   *   B) lat >= edge：全部东北偏东（ENE）——踏线起即有东分量，绝非「接近正北／先北后 NE」
-   *      ——onset@绿线已是东重 ENE（禁 ang0=π/2）；大半圆弧缓深到满 ENE（~RECURVE_ARC_DEG≈7°）
-   *      ——FORBIDDEN：踏线≈纯北再弧 / 直角尖叫拐 / 绿线以北再设纯北带 / 踏线即满 ENE 无幅度
+   *   B) lat >= edge：全部东北偏北（NNE）——踏线起即有东分量，绝非「纯北／偏北」
+   *      ——onset@绿线已是 NNE（禁 ang0=π/2）；大半圆弧振幅仍落在 NNE（~30–60°），绝不掉回 ENE
+   *      ——FORBIDDEN：绿线以北纯北/偏北 / 航向≈90° / 终点东重 ENE(~20°) / 直角尖叫拐
    *   C) lat <= edge−0.3°：基础引导场 only
-   * 所有 westerly / Bezier / ENE 项必须门控在 lat >= edge。
+   * 所有 westerly / Bezier / NNE 项必须门控在 lat >= edge。
    * RECURVE_ARC_DEG 只描述绿线以北弧长，≠ 南侧 0.3° 接近带宽度。
    */
-  // 绿线以北完成「大半圆弧 ENE→满 ENE」的纬度尺度（仅 lat≥edge）；与南侧 0.3° 带宽无关
+  // 绿线以北完成「大半圆弧 NNE（仍东北偏北）」的纬度尺度（仅 lat≥edge）；与南侧 0.3° 带宽无关
   const RECURVE_ARC_DEG = 7.0;
 
   function steeringAt(lon, lat, cfg, fugenList, hole) {
@@ -56,39 +56,40 @@
     if (edge != null) {
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
-      // 目标满 ENE：东向西风 + 适度北分（仅 lat >= edge 使用）
-      const wV = 2.2 + Math.max(0, cfg.westerlyU) * 0.08;
+      // 目标满 NNE（东北偏北）：东向西风 + 足够北分，航向约 35–55°（仅 lat >= edge）
+      // 注意：旧版 wV≈wU*0.08+2.2 → ~20° ENE，绿线以北会掉回「偏东」——禁止
+      const wV = Math.max(4.2, Math.max(0.01, wU) * 0.78); // ~38° NNE 终点
       if (northOf >= RECURVE_ARC_DEG) {
-        // 弧已完成：满西风 ENE
+        // 弧已完成：仍保持 NNE（东北偏北），绝不掉回 ENE/偏东
         u = wU;
         v = wV;
       } else if (northOf >= 0) {
-        // B) 绿线以北：踏线起全部 ENE（东重），大半圆弧缓深到满 ENE
-        //    禁 ang0=π/2（那是「绿线刚过接近正北」的旧 bug）
+        // B) 绿线以北：踏线起全部东北偏北（NNE），大半圆弧振幅仍落在 NNE
+        //    禁 ang0=π/2（纯北/偏北）；禁终点 ENE(~20°)
         const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
-        // 轻度前载：edge+0 / +0.2 已是 ENE；中段有大半圆弧振幅；终点满 ENE
-        const te = 1 - Math.pow(1 - t, 1.45);
-        const wVE = Math.min(wV, Math.max(0.01, wU) * 0.42); // ENE 终点北分上限
-        const angENE = Math.atan2(wVE, Math.max(0.01, wU));
-        // onset@edge：实质 ENE（东重，~28–38°），u 明显 >0；绝不用 π/2
-        const ang0 = Math.atan2(Math.max(2.2, wU * 0.48), Math.max(3.2, wU * 0.70));
-        // 顶点：偏北 NE 拉大半圆弧振幅（有幅度），但仍 <~65°（禁纯北/NW）
-        const ang1 = Math.atan2(Math.max(5.0, wU * 0.85), Math.max(2.4, wU * 0.48));
-        const ang2 = angENE;
+        // 轻度前载：edge+0 已是 NNE；中段大半圆弧鼓北；终点仍 NNE
+        const te = 1 - Math.pow(1 - t, 1.35);
+        const angNNE = Math.atan2(wV, Math.max(0.01, wU)); // ~38°
+        // onset@edge：NNE ~42–48°，u 明显 >0；绝不用 π/2
+        const ang0 = Math.atan2(Math.max(4.0, wU * 0.74), Math.max(3.8, wU * 0.70));
+        // 顶点：偏北拉大半圆弧振幅，但封顶 ~55–58°（禁纯北/偏北 ≥70°）
+        const ang1 = Math.atan2(Math.max(5.4, wU * 0.95), Math.max(3.5, wU * 0.62));
+        const ang2 = angNNE;
         const ang = bezierHeading(ang0, ang1, ang2, te);
-        const spdW = Math.hypot(wU, wVE);
-        const spd0 = Math.hypot(Math.max(3.2, wU * 0.70), Math.max(2.2, wU * 0.48));
+        const spdW = Math.hypot(wU, wV);
+        const spd0 = Math.hypot(Math.max(3.8, wU * 0.70), Math.max(4.0, wU * 0.74));
         const spd = spd0 * (1 - te) + spdW * te;
-        // 中段北鼓包放大路径弧幅；不把航向拽过 NE 到纯北
-        const midBulge = 2.8 * Math.sin(Math.PI * te) * (1 - 0.30 * te);
+        // 中段轻鼓包放大路径弧幅；随后硬封 NNE 航向带，避免被拽成偏北
+        const midBulge = 1.35 * Math.sin(Math.PI * te) * (1 - 0.25 * te);
         u = Math.cos(ang) * spd;
         v = Math.sin(ang) * spd + midBulge;
-        // 软保：绿线以北东分量必须明显 >0（ENE）；不用硬地板 1.6 / 硬 v 帽造平台或尖叫拐
-        // 大半圆弧振幅由 ang1+midBulge 承担；航向由 Bezier 连续，禁 flatten plateau
-        if (u < 1.2) u = 1.2 + te * Math.max(0, wU - 1.2);
-        // 仅防极端：航向不得 ≥80°（接近正北）；正常大半圆弧峰值 ~55–65°
-        const hLim = Math.tan(80 * Math.PI / 180); // ~5.67
-        if (u > 0 && v > u * hLim) v = u * hLim;
+        // 软保：绿线以北东分量必须明显 >0（NNE 不是偏北）
+        if (u < 1.6) u = 1.6 + te * Math.max(0, wU - 1.6);
+        // NNE 航向带：约 30–60°（atan2(v,u)）；禁 ≥62° 偏北、禁掉出东侧重 ENE
+        const hMax = Math.tan(60 * Math.PI / 180); // ~1.73 → 60°
+        const hMin = Math.tan(32 * Math.PI / 180); // ~0.62 → 32°
+        if (u > 0 && v > u * hMax) v = u * hMax;
+        if (u > 0 && v < u * hMin) v = u * hMin;
       } else if (northOf >= -band) {
         // A) 绿线以南 [edge−0.3, edge)：完全往北（due north）。u 必须 = 0，不是 ≤0／偏北
         //    南界 inclusive：lat >= edge−band && lat < edge
@@ -208,20 +209,22 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 两区强化：南≈0.3° 只加北向；绿线以北踏线即 ENE 大半圆弧（禁先北后 NE）。
+    // 两区强化：南≈0.3° 只加北向；绿线以北踏线即 NNE（东北偏北）大半圆弧（禁偏北/纯北）。
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
     const band = G.APPROACH_NORTH_BAND_DEG; // 仅 [edge−0.3, edge)
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
       if (lat >= edge) {
         const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
-        const te = 1 - Math.pow(1 - t, 1.45); // 与 steeringAt 同缓入
-        // B) onset@edge 即东向 ENE（非 te 从 0 起）；中段北鼓包做大半圆弧振幅
-        u += 2.05 * (0.70 + 0.30 * te);
-        v += 1.15 * Math.sin(Math.PI * Math.max(te, 0.12)) * (0.60 + 0.40 * (1 - te));
-        if (u < 1.2) u = 1.2;
-        // 仅防极端接近正北；大半圆弧由 steeringAt Bezier 主导
-        const hLim = Math.tan(80 * Math.PI / 180);
-        if (u > 0 && v > u * hLim) v = u * hLim;
+        const te = 1 - Math.pow(1 - t, 1.35); // 与 steeringAt 同缓入
+        // B) onset@edge 即东北偏北 NNE；中段轻鼓包做大半圆弧振幅（不拽成偏北）
+        u += 1.85 * (0.75 + 0.25 * te);
+        v += 1.55 * Math.sin(Math.PI * Math.max(te, 0.12)) * (0.55 + 0.45 * (1 - te));
+        if (u < 1.6) u = 1.6;
+        // NNE 航向带 30–60°；禁偏北(~90°) / 禁掉回过东 ENE
+        const hMax = Math.tan(60 * Math.PI / 180);
+        const hMin = Math.tan(32 * Math.PI / 180);
+        if (u > 0 && v > u * hMax) v = u * hMax;
+        if (u > 0 && v < u * hMin) v = u * hMin;
       } else if (lat >= edge - band) {
         // A) 仅绿线以南 ≈0.3°：完全往北（u=0）；南界 inclusive；禁止偏北 NW / 东漏
         const t = clamp((lat - (edge - band)) / band, 0, 1);

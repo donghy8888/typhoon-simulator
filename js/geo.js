@@ -294,7 +294,7 @@
    * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（含西侧 look-east）。
    *
    * APPROACH_NORTH_BAND_DEG = 0.3° lat（≈1/3 of 0.9°；用户「一百公里只有你以为的三分之一大」）：
-   * 绿线以南该带宽内完全往北（u=0，禁东/西／偏北）；绿线以北大半圆弧缓转入 ENE（~7°lat）。
+   * 绿线以南该带宽内完全往北（u=0，禁东/西／偏北）；绿线以北全部东北偏东（ENE），大半圆弧缓深到满 ENE（~7°lat）。
    */
   const APPROACH_NORTH_BAND_DEG = 0.3;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺

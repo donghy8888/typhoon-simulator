@@ -34,9 +34,9 @@
 
   /**
    * 引导气流：两区制（绿线 = guidingNorthernEdgeLat，与绘制一致）
-   *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.3°, edge)：纯往北（u≤0）
+   *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.3°, edge)：完全往北（u = 0）
    *      ——纯北带只在绿线以南；带宽=0.3°（≈1/3 of 0.9°）；绝不用 edge+N° / 弧长当南侧带宽
-   *      ——整带杀掉一切东/NE（u 必须 ≤0）；禁止往南
+   *      ——整带强制 u = 0（不是 u≤0／偏北 NW）；禁止东/西分量；禁止往南
    *   B) lat >= edge：从踏入绿线以北第一步起就是东北偏东（ENE），非「先北后 NE」
    *      ——大振幅 Bezier 缓入满 ENE；onset 东分量已主导；禁止直角急转 / 纯北起点
    *   C) lat <= edge−0.3°：基础引导场 only
@@ -86,16 +86,18 @@
         // 保 ENE 族：onset/弧中 u 不得被北鼓包压成「偏北 NE」
         if (v > u * 0.95) v = u * 0.95;
       } else if (northOf > -band) {
-        // A) 绿线以南 [edge−0.3, edge)：纯往北。杀掉一切东/NE；禁止往南
+        // A) 绿线以南 [edge−0.3, edge)：完全往北（due north）。u 必须 = 0，不是 ≤0／偏北
         const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
-        const westOnly = Math.min(u, 0); // 杀掉基础场东向残量
-        u = westOnly * (1 - t); // → 0 @绿线南侧，绝不 > 0
+        u = 0; // 强制纯北：禁东、禁西（u≤0 仍会露出 NW 偏北）
         v = Math.max(0, v * (1 - t) + 4.6 * t); // 主导北向，禁止往南
       }
       // C) northOf <= -band：基础场，无西风、无接近带加成
 
-      // 硬门控：绿线以南任何路径都不得带东向（防 slide/混合泄漏）
-      if (northOf < 0) u = Math.min(u, 0);
+      // 硬门控：接近带内强制 u=0；带外以南只杀东向（防 slide/混合泄漏）
+      if (northOf < 0) {
+        if (northOf > -band) u = 0;
+        else u = Math.min(u, 0);
+      }
     } else if (lat >= 32) {
       u = cfg.westerlyU;
       v = 1.5;
@@ -214,15 +216,18 @@
         // 保 ENE：加成后仍要东分量主导
         if (v > u * 0.95) v = u * 0.95;
       } else if (lat > edge - band) {
-        // A) 仅绿线以南 ≈0.3°：纯往北，零东向 tip；禁止往南
+        // A) 仅绿线以南 ≈0.3°：完全往北（u=0）；禁止偏北 NW / 东漏
         const t = clamp((lat - (edge - band)) / band, 0, 1);
-        u += -0.35 * t; // 轻西，杜绝东漏
+        u = 0;          // 强制纯北：不做轻西加成（那会变成偏北）
         v += 2.2 * t;   // 北向加成
         if (v < 0) v = 0;
       }
     }
-    // 硬门控：绿线以南杀掉一切东向（slideAlongFugen / beta / 残留 ENE boost）
-    if (edge != null && lat < edge) u = Math.min(u, 0);
+    // 硬门控：接近带内 u=0（完全往北）；带外以南只杀东向
+    if (edge != null && lat < edge) {
+      if (lat > edge - band) u = 0;
+      else u = Math.min(u, 0);
+    }
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);
     // 单步位移上限（度），抑制锯齿

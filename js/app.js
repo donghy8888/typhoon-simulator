@@ -549,18 +549,30 @@
     // 复用模块级 steerRenderer，切勿每次 new L.canvas()
     const canvas = steerRenderer;
 
-    // 绿线 = physics 的 guidingNorthernEdgeLat（本经贴边；空档取两侧最高连接；开阔 look-east max），
-    // 与满 ENE 门控同一条边（绿线以北立即 ENE）；1° 采样。
+    // 绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km（同 lon 采样）。
+    // 黄南轻度西北偏西；黄→绿纯北；绿北 NE 稍微偏东（小振幅轻弧）。1° 采样。
     const edgePts = [];
+    const yellowPts = [];
+    const band = G.APPROACH_NORTH_BAND_DEG || 0.15;
     for (let lon = 105; lon <= 175; lon += 1) {
       const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
-      if (edge != null) edgePts.push([edge, lon]);
+      if (edge != null) {
+        edgePts.push([edge, lon]);
+        yellowPts.push([edge - band, lon]);
+      }
+    }
+    if (yellowPts.length >= 2) {
+      L.polyline(yellowPts, {
+        color: '#e6b800', weight: 2.5, dashArray: '8 6', opacity: 0.9,
+        renderer: canvas
+      }).bindTooltip('黄线=绿线南≈50km：以南往西北偏西；黄→绿纯往北（u≡0）', { sticky: true })
+        .addTo(layerGroups.steer);
     }
     if (edgePts.length >= 2) {
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈0.15°严格往北；以北 due-N→大振幅ENE半弧后收束；两脊空档北侧亦为西风带', { sticky: true })
+      }).bindTooltip('副高北缘（绿线=引导北缘）；以南黄→绿纯往北；以北往东北稍微偏东（小振幅轻弧）；两脊空档北侧亦为西风带', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

@@ -55,30 +55,35 @@
   }
 
   /**
-   * 引导气流（绿线 = guidingNorthernEdgeLat，与绘制一致）
+   * 引导气流（绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 根因（20261025z）：
-   *   1) 西缘圆角绿线随经度抬升 → 路径贴边，[edge−0.15,edge) 被跳过，看不见往北；
-   *   2) northOf≈0 抖动使旧 arcProgress 反复清零 → 半弧/振幅起不来；
-   *   3) 绿北曾强制 u≥1.2 → 绿线处立刻 ENE。
+   * 分区（20261026a）：
+   *   黄线以南 (northOf < −0.15)：往西北偏西（西+北分量）
+   *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，防圆角跳过）
+   *   绿线以北：往东北、稍微偏东（≈40–50° from N / atan2≈40–50°），
+   *             非东北偏东 / 非深 ENE；小转弯振幅 Δlon≈3–7°（轻微弧，非 tip kink）
    *
    * 状态机（arcState）：
    *   A) 首次进入绿南 ~0.22°：legTargetLat=max(edge,lat+0.15)，u≡0 往北直到越过；
-   *   B) 越过后锁存 arcLat0，大振幅 ENE 半弧（不因 edge 回追重置）；s=0=due-N；
-   *      目标 Δlon≈20–25°+。C) 更南基础场；F) 深 fringe 预备。
+   *   B) 越过后锁存 arcLat0，平滑 N→NE 半弧（不因 edge 回追重置）；中等 Δlon。
    */
   const NORTH_LEG_DEG = 0.15;
   const RECURVE_ARC_DEG = 7.0;
-  const POST_GREEN_ARC_DEG = 6.0;
-  const TARGET_ARC_DLON_DEG = 22;
-  const ARC_BOW_LON_DEG = 15;
-  const ENE_MAX_HDG = 52 * Math.PI / 180;
-  const LEG_TRIGGER_DEG = 0.22;
-  /** 越绿后先再往北抬这么多，脱离圆角贴边，再放大振幅东折 */
-  const CLEAR_NORTH_DEG = 0.85;
-  /** 短清脊后尽早东折；半弧前段压低 v 从九州南侧过海，目标 Δlon≥20 */
-  const CLEAR_LAT_MIN = 28.3;
-  const CLEAR_NORTHOF_MIN = 0.45;
+  const POST_GREEN_ARC_DEG = 4.0;
+  const TARGET_ARC_DLON_DEG = 5;    // 小振幅 subtle ≈3–7°（非 20° 大弯）
+  const ARC_BOW_LON_DEG = 2.2;     // 小东鼓：地图上不明显大弯，但仍有轻微弧
+  /** atan2(v,u)≈44° → 地理约 46° from N（东北，稍微稍微偏东） */
+  const NE_TARGET_HDG = 44 * Math.PI / 180;
+  /** 下限：勿扁成东北偏东（atan2 过小 / fromN 过大） */
+  const NE_MIN_HDG = 40 * Math.PI / 180;
+  /** 上限：半弧后半勿一直贴正北 */
+  const NE_MAX_HDG = 55 * Math.PI / 180;
+  /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
+  const LEG_TRIGGER_DEG = 0.55;
+  /** 越绿后几乎立刻开始 N→NE 弧（可见平滑弯，非 tip kink） */
+  const CLEAR_NORTH_DEG = 0.10;
+  const CLEAR_LAT_MIN = 0;
+  const CLEAR_NORTHOF_MIN = 0.06;
 
   function approachNorthUV(northOf, band, spdW) {
     const u = 0;
@@ -87,45 +92,58 @@
     return { u, v, ta: clamp((northOf + band) / Math.max(1e-9, band), 0, 1) };
   }
 
-  function postGreenArcUV(sRaw, lat, wU, wVE, spdW) {
-    const s = clamp(sRaw, 0, 1);
-    const angENE = Math.atan2(wVE, Math.max(0.01, wU));
-    // s=0 due-N 接竖段；很快转到深东（压低 v，九州南侧过海以拉 Δlon）；终点满 ENE
-    const ang0 = Math.PI * 0.5;
-    const angMid = Math.min(angENE, 6 * Math.PI / 180);
-    let ang;
-    if (s < 0.12) {
-      ang = lerpAngle(ang0, 35 * Math.PI / 180, smoothstep(s / 0.12));
-    } else {
-      ang = bezierHeading(35 * Math.PI / 180, angMid, angENE, smoothstep((s - 0.12) / 0.88));
-    }
-    const spd = Math.max(spdW, 9.0);
-    let u = Math.cos(ang) * spd;
-    let v = Math.sin(ang) * spd;
-    // 强东鼓：目标 Δlon 20–25°+
-    const bowU = (3.6 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * Math.pow(s, 0.7));
-    u += bowU;
-    if (s < 0.08) {
+  function enforceNeHeading(u, v, s) {
+    if (s < 0.06 || u <= 0.15) {
       if (u < 0) u = 0;
-    } else {
-      // 前中段压低北分，优先东向振幅
-      const maxV = u * Math.tan(Math.min(ENE_MAX_HDG, (28 - 10 * smoothstep((s - 0.08) / 0.35)) * Math.PI / 180));
-      if (v > maxV) v = Math.max(maxV, u * 0.12);
-      if (u < spd * 0.35) u = spd * (0.35 + 0.5 * smoothstep((s - 0.08) / 0.2));
+      if (v < 0) v = 0;
+      return { u, v };
+    }
+    let h = Math.atan2(v, u);
+    const spd = Math.hypot(u, v) || 1;
+    if (h < NE_MIN_HDG) {
+      u = Math.cos(NE_MIN_HDG) * spd;
+      v = Math.sin(NE_MIN_HDG) * spd;
+    } else if (s > 0.2 && h > NE_MAX_HDG) {
+      u = Math.cos(NE_MAX_HDG) * spd;
+      v = Math.sin(NE_MAX_HDG) * spd;
     }
     if (v < 0) v = 0;
+    return { u, v };
+  }
+
+  function postGreenArcUV(sRaw, lat, wU, wVE, spdW) {
+    const s = clamp(sRaw, 0, 1);
+    const ang0 = Math.PI * 0.5; // due-N 接竖段
+    // 终点：东北稍微偏东（非深 ENE）；不收到 westerly 的 ~20° atan2
+    const angEnd = NE_TARGET_HDG;
+    let ang = lerpAngle(ang0, angEnd, smoothstep(s));
+    if (s > 0.75) {
+      // 末端极轻偏东，仍贴近 NE（≥ NE_MIN）
+      const tip = Math.max(NE_MIN_HDG, NE_TARGET_HDG - 2 * Math.PI / 180);
+      ang = lerpAngle(angEnd, tip, smoothstep((s - 0.75) / 0.25));
+    }
+    const spd = Math.max(spdW * 0.9, 8.0);
+    let u = Math.cos(ang) * spd;
+    let v = Math.sin(ang) * spd;
+    // 小东鼓：轻微弧 Δlon≈3–7，非 z 版 ~20°，地图上勿显大弯
+    const bowU = (1.0 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * Math.pow(s, 0.95));
+    u += bowU;
+    ({ u, v } = enforceNeHeading(u, v, s));
     return { u, v, s };
   }
 
   function ensureLegTarget(northOf, lat, edge, arcState) {
     if (!arcState) return null;
     if (arcState.legTargetLat != null) return arcState.legTargetLat;
+    // 进入黄线附近即锁存：目标至少到绿线，且自当前位置再抬 ≥0.15°，
+    // 防止西缘圆角 edge 突降 / 单步跨带导致看不见纯北段。
     if (northOf >= -LEG_TRIGGER_DEG && northOf < 0) {
-      arcState.legTargetLat = Math.max(edge, lat + NORTH_LEG_DEG);
+      arcState.legTargetLat = Math.max(edge + 0.02, lat + NORTH_LEG_DEG);
       return arcState.legTargetLat;
     }
     if (northOf >= 0) {
-      arcState.legTargetLat = (northOf < 0.12) ? (lat + NORTH_LEG_DEG) : lat;
+      // 已越绿仍未锁：强制再抬一段纯北，再进入 NE 弧
+      arcState.legTargetLat = lat + NORTH_LEG_DEG;
       return arcState.legTargetLat;
     }
     return null;
@@ -141,9 +159,9 @@
     if (arcState.arcLon0 == null) arcState.arcLon0 = lon;
     const sLat = (lat - arcState.arcLat0) / POST_GREEN_ARC_DEG;
     const sLon = (lon - arcState.arcLon0) / TARGET_ARC_DLON_DEG;
-    // 东向振幅优先：lon 进度权重提高
-    let s = clamp(Math.max(sLat * 0.7, sLon * 0.85), 0, 1);
-    s = clamp(Math.min(s, (arcState.sAcc || 0) + 0.14), 0, 1);
+    // 中等振幅：lat/lon 均衡，勿 lon 权重过大导致狂奔向东
+    let s = clamp(Math.max(sLat * 0.85, sLon * 0.55), 0, 1);
+    s = clamp(Math.min(s, (arcState.sAcc || 0) + 0.12), 0, 1);
     if (write) arcState.sAcc = Math.max(arcState.sAcc || 0, s);
     return s;
   }
@@ -183,48 +201,60 @@
         const b = approachNorthUV(northOf, band, spdW);
         u = 0;
         v = b.v;
-      } else if (arcActive) {
+      } else if (arcActive || northOf >= 0) {
+        // 绿北：短净空后 N→NE；无 arcState 时按 northOf 直接给箭头/场
         const clearLat = Math.max(
-          CLEAR_LAT_MIN,
-          (arcState.legTargetLat != null ? arcState.legTargetLat : lat) + CLEAR_NORTH_DEG
+          (arcState && arcState.legTargetLat != null ? arcState.legTargetLat : edge) + CLEAR_NORTH_DEG,
+          edge + CLEAR_NORTH_DEG
         );
         const cleared = lat >= clearLat || northOf >= CLEAR_NORTHOF_MIN;
-        const needClear = (arcState.clearLon0 == null) && !cleared;
+        const needClear = arcState && (arcState.clearLon0 == null) && !cleared && arcActive;
         if (needClear) {
-          // B0) 先抬北取得净空，再东折半弧（避免圆角贴边）
           const base = arcState.arcLat0 != null ? arcState.arcLat0 : lat;
           const span = Math.max(1e-3, clearLat - base);
           const tc = clamp((lat - base) / span, 0, 1);
           const spd = Math.max(spdW, 8.0);
-          u = spd * (0.04 + 0.28 * smoothstep(tc));
-          v = spd * (0.99 - 0.18 * smoothstep(tc));
+          // 净空段几乎正北，仅极微东偏，接上 NE 弧
+          u = spd * (0.02 + 0.12 * smoothstep(tc));
+          v = spd * (0.995 - 0.08 * smoothstep(tc));
         } else {
-          const s = arcProgress(lat, lon, arcState, false);
+          const s = arcState
+            ? arcProgress(lat, lon, arcState, false)
+            : clamp(northOf / POST_GREEN_ARC_DEG, 0, 1);
           if (s < 1) {
             const b = postGreenArcUV(s, lat, wU, wVE, spdW);
             u = b.u;
             v = b.v;
           } else {
-            u = wU;
-            v = wVE;
+            // 收束在东北稍微偏东，不落到满 ENE
+            const spd = Math.max(spdW, 8.0);
+            u = Math.cos(NE_TARGET_HDG) * spd;
+            v = Math.sin(NE_TARGET_HDG) * spd;
           }
         }
-      } else if (onFringe && northOf >= -RECURVE_ARC_DEG) {
-        const t = (northOf + RECURVE_ARC_DEG) / (RECURVE_ARC_DEG - band);
-        const te = clamp(t, 0, 1);
-        u = Math.min(u, 0) * (1 - te);
-        v = Math.max(0, v) * (1 - te) + 4.6 * te;
+      } else if (northOf < -band) {
+        // 黄线以南：轻度西北偏西（小西分量 + 抬北），不要大西漂
+        const t = clamp((northOf + RECURVE_ARC_DEG) / (RECURVE_ARC_DEG - band), 0, 1);
+        const te = smoothstep(t);
+        // 基础场若东向则清零；西向收敛到温和 ~−1.2~−2.0
+        let uBase = Math.min(u, 0);
+        if (uBase < -2.0) uBase = -2.0 + (uBase + 2.0) * 0.35;
+        u = uBase * (1 - 0.25 * te) - 0.6 * te;
+        v = Math.max(v, 0) * (1 - 0.55 * te) + (5.2 + 1.5 * te) * te;
+        if (u < -2.4) u = -2.4; // 硬顶：勿过偏西
       }
 
       if (inNorthLeg) {
         u = 0;
       } else if (northOf < 0 && !arcActive) {
-        if (northOf >= -band) u = 0;
-        else u = Math.min(u, 0);
+        if (northOf >= -band) u = 0;          // 黄→绿：纯北
+        else u = Math.min(u, 0);              // 黄南：不许东
       }
     } else if (lat >= 32) {
-      u = cfg.westerlyU;
-      v = 1.5;
+      // 无绿线兜底：东北稍微偏东
+      const spd = Math.max(Math.hypot(cfg.westerlyU, 2.2), 8);
+      u = Math.cos(NE_TARGET_HDG) * spd;
+      v = Math.sin(NE_TARGET_HDG) * spd;
     }
 
     const arcOn = !!(arcState && (
@@ -233,13 +263,12 @@
     ));
     if (G.inFugenSolid(lon, lat, fugenList, hole)) {
       if (arcState && arcState.clearLon0 != null && (arcState.sAcc || 0) < 1) {
-        // 东折半弧：轻阻尼，允许穿脊；不抬 v，避免过早撞日本
+        // NE 半弧：轻阻尼；勿强推东
         u *= 0.9;
         v *= 0.9;
-        u = Math.max(u, 5.0);
       } else if (arcOn) {
         v = Math.max(v, 8.0);
-        u = Math.max(0, Math.min(u, 3.0));
+        u = Math.max(0, Math.min(u, 4.0));
       } else {
         u *= 0.58;
         v *= 0.58;
@@ -367,10 +396,7 @@
         u = 0;
         v = Math.max(b.v, 5.5);
       } else if (arcActive) {
-        const clearLat = Math.max(
-          CLEAR_LAT_MIN,
-          (arcState.legTargetLat != null ? arcState.legTargetLat : lat) + CLEAR_NORTH_DEG
-        );
+        const clearLat = (arcState.legTargetLat != null ? arcState.legTargetLat : edge) + CLEAR_NORTH_DEG;
         const cleared = lat >= clearLat || northOf >= CLEAR_NORTHOF_MIN;
         const needClear = (arcState.clearLon0 == null) && !cleared;
         if (needClear) {
@@ -382,11 +408,12 @@
           const span = Math.max(1e-3, clearLat - arcState.arcLat0);
           const tc = clamp((lat - arcState.arcLat0) / span, 0, 1);
           const spd = Math.max(spdW, 8.0);
-          u = spd * (0.04 + 0.28 * smoothstep(tc));
-          v = Math.max(spd * (0.99 - 0.18 * smoothstep(tc)), 7.5);
-          if (G.inFugenSolid(lon, lat, fugenList, hole) || northOf < 0.5) {
-            u = Math.min(u, spd * 0.18);
-            v = Math.max(v, 10.0);
+          // 极短净空：几乎正北，微东，立刻接 NE 弧
+          u = spd * (0.02 + 0.10 * smoothstep(tc));
+          v = Math.max(spd * (0.995 - 0.06 * smoothstep(tc)), 7.5);
+          if (G.inFugenSolid(lon, lat, fugenList, hole) || northOf < 0.35) {
+            u = Math.min(u, spd * 0.12);
+            v = Math.max(v, 9.0);
           }
         } else {
           if (arcState.clearLon0 == null) {
@@ -399,37 +426,24 @@
           const s = arcProgress(lat, lon, arcState, true);
           if (s < 1) {
             const b = postGreenArcUV(s, lat, wU, wVE, spdW);
-            u = b.u + beta.u * 0.1 * smoothstep(s);
-            v = b.v + beta.v * 0.1;
-            // 前 60% 半弧：强东、压北，从九州南侧过海以拉大 Δlon
-            if (s < 0.7) {
-              u = Math.max(u, 18);
-              const cap = u * Math.tan((9 + 7 * s) * Math.PI / 180);
-              if (v > cap) v = cap;
-            } else {
-              const minU = 1.3 * smoothstep(Math.max(0, (s - 0.05) / 0.28));
-              if (u < minU) u = minU;
-            }
-            if (northOf < -0.35) {
-              v = Math.max(v, 3.5);
-              u = Math.max(u, 8);
-            }
-            if (s >= 0.08 && u > 0.4 && Math.atan2(v, u) > ENE_MAX_HDG) {
-              v = u * Math.tan(ENE_MAX_HDG);
-            }
+            // β 漂移轻微；勿把西向吃掉东北的东分量
+            u = b.u + beta.u * 0.05 * smoothstep(s);
+            v = b.v + beta.v * 0.08;
+            ({ u, v } = enforceNeHeading(u, v, s));
           } else {
-            if (u < 1.2) u = 1.2;
-            const eneVcap = wVE + Math.abs(beta.v) * 0.35;
-            if (v > eneVcap + 0.35) v = eneVcap + 0.35;
-            if (u > 0.4 && Math.atan2(v, u) > ENE_MAX_HDG) {
-              v = u * Math.tan(ENE_MAX_HDG);
-            }
+            const spd = Math.max(spdW, 8.0);
+            u = Math.cos(NE_TARGET_HDG) * spd + beta.u * 0.05;
+            v = Math.sin(NE_TARGET_HDG) * spd + beta.v * 0.08;
+            ({ u, v } = enforceNeHeading(u, v, 1));
           }
         }
-      } else if (onFringe && northOf >= -RECURVE_ARC_DEG) {
-        u = Math.min(u, 0);
-        v += 1.2;
-        if (v < 0) v = 0;
+      } else if (northOf < -band) {
+        // 黄南：轻度西北偏西（小西 + 抬北）
+        let uBase = Math.min(u, 0);
+        if (uBase < -2.0) uBase = -2.0 + (uBase + 2.0) * 0.35;
+        u = Math.max(uBase, -2.4) - 0.35;
+        if (u < -2.4) u = -2.4;
+        v = Math.max(v + 1.0, 4.5);
       }
     }
     if (edge != null) {
@@ -457,13 +471,13 @@
       const sArc = arcOn
         ? (lat - arcState.arcLat0) / POST_GREEN_ARC_DEG
         : northOf / POST_GREEN_ARC_DEG;
-      // 细步仅用于往北腿；半弧进行中勿因 edge 贴边把东向步长掐成 0.02
-      if (inLeg) stepLim = 0.02;
-      else if (arcOn && arcState.clearLon0 == null) stepLim = 0.09; // 清脊抬北
-      else if (arcOn && arcState.clearLon0 != null && (arcState.sAcc || 0) < 1) stepLim = 0.5;
-      else if (arcOn && arcState.clearLon0 == null) stepLim = 0.09;
-      else if (!arcOn && dist <= band + 0.08) stepLim = 0.022;
-      else if (northOf >= 0 && sArc <= 1.05) stepLim = 0.08;
+      // 细步：往北腿 + 接近黄线，防圆角 tip 跳过黄→绿纯北段
+      if (inLeg) stepLim = 0.018;
+      else if (!arcOn && northOf >= -LEG_TRIGGER_DEG && northOf < 0) stepLim = 0.02;
+      else if (!arcOn && dist <= band + 0.35) stepLim = 0.035;
+      else if (arcOn && arcState.clearLon0 == null) stepLim = 0.08; // 短净空
+      else if (arcOn && arcState.clearLon0 != null && (arcState.sAcc || 0) < 1) stepLim = 0.28;
+      else if (northOf >= 0 && sArc <= 1.05) stepLim = 0.10;
       else if (dist <= 3.0) stepLim = 0.16;
     }
     const stepMag = Math.hypot(stepLon, stepLat);
@@ -501,10 +515,12 @@
       const sArc = (arcState && arcState.arcLat0 != null)
         ? (lat - arcState.arcLat0) / POST_GREEN_ARC_DEG
         : northOf / POST_GREEN_ARC_DEG;
-      if (inLeg) n = Math.max(n, Math.min(18, Math.ceil(dtHours / 0.1)));
+      if (inLeg) n = Math.max(n, Math.min(20, Math.ceil(dtHours / 0.08)));
+      else if (!(arcState && arcState.arcLat0) && northOf >= -LEG_TRIGGER_DEG && northOf < 0.05)
+        n = Math.max(n, Math.min(18, Math.ceil(dtHours / 0.1)));
       else if (arcState && arcState.arcLat0 != null && (arcState.sAcc || 0) < 1) n = Math.max(n, Math.min(12, Math.ceil(dtHours / 0.22)));
-      else if (!(arcState && arcState.arcLat0) && dist <= G.APPROACH_NORTH_BAND_DEG + 0.1) n = Math.max(n, Math.min(16, Math.ceil(dtHours / 0.12)));
-      else if (northOf >= 0 && sArc <= 1.1) n = Math.max(n, Math.min(14, Math.ceil(dtHours / 0.18)));
+      else if (!(arcState && arcState.arcLat0) && dist <= G.APPROACH_NORTH_BAND_DEG + 0.25) n = Math.max(n, Math.min(16, Math.ceil(dtHours / 0.12)));
+      else if (northOf >= 0 && sArc <= 1.1) n = Math.max(n, Math.min(12, Math.ceil(dtHours / 0.2)));
       else if (dist <= 3.0) n = Math.max(n, Math.min(10, Math.ceil(dtHours / 0.28)));
     }
     const sub = dtHours / n;
@@ -664,6 +680,9 @@
     POST_GREEN_ARC_DEG,
     TARGET_ARC_DLON_DEG,
     ARC_BOW_LON_DEG,
+    NE_TARGET_HDG,
+    NE_MIN_HDG,
+    NE_MAX_HDG,
     mpi,
     steeringAt,
     betaDrift,

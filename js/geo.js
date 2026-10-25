@@ -293,8 +293,9 @@
    *   - 无北偏：绿线 = 混合后的局地北缘本身（不再 +0.5°）
    * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（本经贴边；空档最高连接；开阔 look-east）。
    *
-   * APPROACH_NORTH_BAND_DEG = 0.15° lat（≈50 km）：开阔 [edge−0.15, edge) 严格往北（u≡0，锁存腿）。
-   * 绿线以北：短清脊后 due-N→大振幅 ENE 半弧（目标 Δlon≥20°），再收束满 ENE；无 tip kink。
+   * APPROACH_NORTH_BAND_DEG = 0.15° lat（≈50 km）= 黄线相对绿线的南偏。
+   *   黄线以南：往西北偏西；黄→绿 [edge−0.15, edge)：纯往北 u≡0（锁存腿）；
+   *   绿线以北：往东北稍微偏东（≈40–50° from N），小振幅 Δlon≈3–7°；非深 ENE。
    * 绿线 = 本经局地北缘 / gap 最高连接 / 开阔 look-east（见 guidingNorthernEdgeLat）。
    */
   const APPROACH_NORTH_BAND_DEG = 0.15;

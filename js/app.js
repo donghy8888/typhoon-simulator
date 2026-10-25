@@ -760,6 +760,8 @@
     const main = {
       lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
       phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
+      arcLat0: null,
+      sAcc: 0,
       cfgPerturb: null
     };
     state.members.push(main);

@@ -294,7 +294,7 @@
    * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（含西侧 look-east）。
    *
    * APPROACH_NORTH_BAND_DEG = 0.3° lat（≈1/3 of 0.9°；用户「一百公里只有你以为的三分之一大」）：
-   * 绿线以南该带宽内完全往北（u=0，禁东/西／偏北）；绿线以北全部东北偏北（NNE），大半圆弧振幅仍落在 NNE（~7°lat）。
+   * 绿线以南该带宽内完全往北（u=0，禁东/西／偏北）；绿线以北全部东北偏北（NNE），大半圆弧振幅仍落在 NNE（~10.5°lat）。
    */
   const APPROACH_NORTH_BAND_DEG = 0.3;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺
@@ -338,9 +338,16 @@
    * 引导用北缘：在 look 窗口内取所有非空局地北缘的最北（max lat），
    * 而非「第一个非空」。避免 lon≈121 南海低块(~18°)盖过东侧主脊北缘(~28–32°)，
    * 否则 20–27°N 会被误判 lat>=edge → 全 NNE，而用户仍看到自己在主绿线以南。
+   *
+   * 历史 bug：LOOK 只到 +10° 时，默认副高在 lon≈123–125 有空档，
+   * lon≤114 的 look-east 够不到主脊(~126+)，绿线错贴南海段(~22°)。
+   * 再宽到 +24°，并加密 7–24 采样，才能在西侧稳定追上主脊北缘(~28–35°)。
    * 绿线绘制与 physics 共用此函数，保持一致。
    */
-  const GUIDING_EDGE_LOOK_DLONS = [0, 1, 2, 3, 4, 5, 6, 8, 10, -1, -2, -3];
+  const GUIDING_EDGE_LOOK_DLONS = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24,
+    -1, -2, -3, -4
+  ];
   function guidingNorthernEdgeLat(lon, fugenList, hole) {
     let best = null;
     for (const dlon of GUIDING_EDGE_LOOK_DLONS) {

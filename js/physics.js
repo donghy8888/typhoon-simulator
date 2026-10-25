@@ -38,14 +38,14 @@
    *      ——纯北带只在绿线以南；带宽=0.3°；绝不用 edge+N° / 弧长当南侧带宽
    *      ——整带强制 u = 0（不是 u≤0／偏北 NW）；禁止东/西分量；禁止往南
    *   B) lat >= edge：全部东北偏北（NNE）——踏线起即有东分量，绝非「纯北／偏北」
-   *      ——onset@绿线已是 NNE（禁 ang0=π/2）；大半圆弧振幅仍落在 NNE（~30–60°），绝不掉回 ENE
+   *      ——onset@绿线已是 NNE（禁 ang0=π/2）；大半圆弧振幅加大仍落在 NNE（~30–60°，弧长~10.5°lat），绝不掉回 ENE
    *      ——FORBIDDEN：绿线以北纯北/偏北 / 航向≈90° / 终点东重 ENE(~20°) / 直角尖叫拐
    *   C) lat <= edge−0.3°：基础引导场 only
    * 所有 westerly / Bezier / NNE 项必须门控在 lat >= edge。
    * RECURVE_ARC_DEG 只描述绿线以北弧长，≠ 南侧 0.3° 接近带宽度。
    */
   // 绿线以北完成「大半圆弧 NNE（仍东北偏北）」的纬度尺度（仅 lat≥edge）；与南侧 0.3° 带宽无关
-  const RECURVE_ARC_DEG = 7.0;
+  const RECURVE_ARC_DEG = 10.5;
 
   function steeringAt(lon, lat, cfg, fugenList, hole) {
     let u = cfg.steerU;
@@ -67,20 +67,20 @@
         // B) 绿线以北：踏线起全部东北偏北（NNE），大半圆弧振幅仍落在 NNE
         //    禁 ang0=π/2（纯北/偏北）；禁终点 ENE(~20°)
         const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
-        // 轻度前载：edge+0 已是 NNE；中段大半圆弧鼓北；终点仍 NNE
-        const te = 1 - Math.pow(1 - t, 1.35);
+        // 轻度前载：edge+0 已是 NNE；中段大半圆弧鼓北（振幅加大）；终点仍 NNE
+        const te = 1 - Math.pow(1 - t, 1.28);
         const angNNE = Math.atan2(wV, Math.max(0.01, wU)); // ~38°
         // onset@edge：NNE ~42–48°，u 明显 >0；绝不用 π/2
         const ang0 = Math.atan2(Math.max(4.0, wU * 0.74), Math.max(3.8, wU * 0.70));
-        // 顶点：偏北拉大半圆弧振幅，但封顶 ~55–58°（禁纯北/偏北 ≥70°）
-        const ang1 = Math.atan2(Math.max(5.4, wU * 0.95), Math.max(3.5, wU * 0.62));
+        // 顶点：更大北鼓（大半圆），封顶 ~58°（禁纯北/偏北 ≥70°）
+        const ang1 = Math.atan2(Math.max(6.2, wU * 1.12), Math.max(3.2, wU * 0.52));
         const ang2 = angNNE;
         const ang = bezierHeading(ang0, ang1, ang2, te);
         const spdW = Math.hypot(wU, wV);
         const spd0 = Math.hypot(Math.max(3.8, wU * 0.70), Math.max(4.0, wU * 0.74));
         const spd = spd0 * (1 - te) + spdW * te;
-        // 中段轻鼓包放大路径弧幅；随后硬封 NNE 航向带，避免被拽成偏北
-        const midBulge = 1.35 * Math.sin(Math.PI * te) * (1 - 0.25 * te);
+        // 中段鼓包加大路径弧幅（用户「转向幅度大一些」）；硬封 NNE，避免偏北
+        const midBulge = 2.35 * Math.sin(Math.PI * te) * (1 - 0.18 * te);
         u = Math.cos(ang) * spd;
         v = Math.sin(ang) * spd + midBulge;
         // 软保：绿线以北东分量必须明显 >0（NNE 不是偏北）
@@ -215,10 +215,10 @@
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
       if (lat >= edge) {
         const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
-        const te = 1 - Math.pow(1 - t, 1.35); // 与 steeringAt 同缓入
-        // B) onset@edge 即东北偏北 NNE；中段轻鼓包做大半圆弧振幅（不拽成偏北）
+        const te = 1 - Math.pow(1 - t, 1.28); // 与 steeringAt 同缓入
+        // B) onset@edge 即东北偏北 NNE；中段加大鼓包做大半圆弧振幅（不拽成偏北）
         u += 1.85 * (0.75 + 0.25 * te);
-        v += 1.55 * Math.sin(Math.PI * Math.max(te, 0.12)) * (0.55 + 0.45 * (1 - te));
+        v += 2.45 * Math.sin(Math.PI * Math.max(te, 0.12)) * (0.55 + 0.45 * (1 - te));
         if (u < 1.6) u = 1.6;
         // NNE 航向带 30–60°；禁偏北(~90°) / 禁掉回过东 ENE
         const hMax = Math.tan(60 * Math.PI / 180);

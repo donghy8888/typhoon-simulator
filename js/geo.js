@@ -291,10 +291,10 @@
    * 副高北缘纬度（西风带南界 / 绿线）——贴红区北缘：
    *   - 以本经线为主，仅 ±1° 邻经做轻度加权软混合（消毛刺）
    *   - 无北偏：绿线 = 混合后的局地北缘本身（不再 +0.5°）
-   * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（含西侧 look-east）。
+   * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（本经贴边；空档最高连接；开阔 look-east）。
    *
    * APPROACH_NORTH_BAND_DEG = 0.3° lat（≈1/3 of 0.9°；用户「一百公里只有你以为的三分之一大」）：
-   * 绿线以南该带宽内完全往北（u=0，禁东/西／偏北）；绿线以北全部东北偏北（NNE），大半圆弧振幅仍落在 NNE（~10.5°lat）。
+   * 绿线以南该带宽内完全往北（u=0，禁东/西／偏北）；绿线以北全部东北偏东（ENE），中等大半圆弧振幅。
    */
   const APPROACH_NORTH_BAND_DEG = 0.3;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺
@@ -335,26 +335,47 @@
   }
 
   /**
-   * 引导用北缘：在 look 窗口内取所有非空局地北缘的最北（max lat），
-   * 而非「第一个非空」。避免 lon≈121 南海低块(~18°)盖过东侧主脊北缘(~28–32°)，
-   * 否则 20–27°N 会被误判 lat>=edge → 全 NNE，而用户仍看到自己在主绿线以南。
+   * 引导用北缘（绿线）——与绘制 / steeringAt / inWesterlyBelt 完全一致：
    *
-   * 历史 bug：LOOK 只到 +10° 时，默认副高在 lon≈123–125 有空档，
-   * lon≤114 的 look-east 够不到主脊(~126+)，绿线错贴南海段(~22°)。
-   * 再宽到 +24°，并加密 7–24 采样，才能在西侧稳定追上主脊北缘(~28–35°)。
-   * 绿线绘制与 physics 共用此函数，保持一致。
+   * 1) 本经有副高实体：绿线 = 局地北缘（贴红区）。副高北边就是西风带，
+   *    绝不再被 look-east max 抬到远处主脊高度——否则南海块以北、两块之间
+   *    大片本应是西风带的区域会被误判成基础场。
+   * 2) 本经无副高（空档 / 开阔）：
+   *    - 若东西两侧都能看到副高块（两脊之间的 gap）：绿线 = 两侧最近北缘的
+   *      较高者（最高连接绿线纬度）。gap 内 lat≥该连接绿线 → 全部西风带 ENE，
+   *      不是空/基础场。
+   *    - 若只有一侧（例如西侧开阔看主脊）：在 look 窗取 max lat，并向东看够远
+   *      （+24°），避免西侧贴南海低纬块而够不到主脊。
    */
   const GUIDING_EDGE_LOOK_DLONS = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 24,
     -1, -2, -3, -4
   ];
   function guidingNorthernEdgeLat(lon, fugenList, hole) {
+    const local = northernFugenEdgeLat(lon, fugenList, hole);
+    if (local != null) return local; // 贴本经红区北缘；北侧即西风带
+
     let best = null;
+    let nearestWest = null, nearestEast = null;
+    let distW = Infinity, distE = Infinity;
     for (const dlon of GUIDING_EDGE_LOOK_DLONS) {
+      if (dlon === 0) continue;
       const e = northernFugenEdgeLat(lon + dlon, fugenList, hole);
       if (e == null) continue;
       if (best == null || e > best) best = e;
+      if (dlon < 0) {
+        const d = -dlon;
+        if (d < distW) { distW = d; nearestWest = e; }
+      } else {
+        const d = dlon;
+        if (d < distE) { distE = d; nearestEast = e; }
+      }
     }
+    // 两脊之间的空档：最高连接绿线 = 两侧最近北缘之 max
+    if (nearestWest != null && nearestEast != null) {
+      return Math.max(nearestWest, nearestEast);
+    }
+    // 开阔一侧：look 窗 max（向东够远追上主脊）
     return best;
   }
 

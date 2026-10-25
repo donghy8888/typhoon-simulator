@@ -550,7 +550,7 @@
     const canvas = steerRenderer;
 
     // 绿线 = physics 的 guidingNorthernEdgeLat（本经贴边；空档取两侧最高连接；开阔 look-east max），
-    // 与 ENE onset 同一条边；1° 采样。
+    // 与满 ENE 门控同一条边（绿线以北立即 ENE）；1° 采样。
     const edgePts = [];
     for (let lon = 105; lon <= 175; lon += 1) {
       const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
@@ -560,7 +560,7 @@
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈0.3°完全往北(u=0)，以北全部东北偏东ENE+中等转向弧；两脊空档北侧亦为西风带', { sticky: true })
+      }).bindTooltip('副高北缘（绿线=引导北缘）；以南 fringe 中等转向弧→近线满ENE，剩余南带≈0.3°纯北；以北立即满ENE无弧；两脊空档北侧亦为西风带', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

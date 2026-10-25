@@ -293,8 +293,9 @@
    *   - 无北偏：绿线 = 混合后的局地北缘本身（不再 +0.5°）
    * 绿线绘制与 guidingNorthernEdgeLat / steeringAt 完全一致（本经贴边；空档最高连接；开阔 look-east）。
    *
-   * APPROACH_NORTH_BAND_DEG = 0.3° lat（≈1/3 of 0.9°；用户「一百公里只有你以为的三分之一大」）：
-   * 绿线以南该带宽内完全往北（u=0，禁东/西／偏北）；绿线以北全部东北偏东（ENE），中等大半圆弧振幅。
+   * APPROACH_NORTH_BAND_DEG = 0.3° lat：弧区以南的剩余纯北带（u=0）。
+   * 转向 Bezier 弧在绿线以南的副高北缘 fringe（RECURVE_ARC_DEG）内完成；
+   * 绿线以北立即满东北偏东（ENE），无过渡弧。
    */
   const APPROACH_NORTH_BAND_DEG = 0.3;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺

@@ -25,7 +25,7 @@
     return a + d * t;
   }
 
-  /** 二次 Bezier 航向：起点 ENE（东北偏东）→ 偏北 NE 顶点（大半圆弧振幅）→ 满 ENE；禁 ang0=π/2 */
+  /** 二次 Bezier 航向：起点 due-N → 偏北 NE 顶点（中等弧振幅）→ 满 ENE（在绿线处完成） */
   function bezierHeading(a0, a1, a2, t) {
     const ab = lerpAngle(a0, a1, t);
     const bc = lerpAngle(a1, a2, t);
@@ -33,19 +33,18 @@
   }
 
   /**
-   * 引导气流：两区制（绿线 = guidingNorthernEdgeLat，与绘制一致）
-   *   A) [edge−APPROACH_NORTH_BAND_DEG, edge) ≈ [edge−0.3°, edge)：完全往北（u = 0）
-   *      ——纯北带只在绿线以南；带宽=0.3°；绝不用 edge+N° / 弧长当南侧带宽
-   *      ——整带强制 u = 0（不是 u≤0／偏北 NW）；禁止东/西分量；禁止往南
-   *   B) lat >= edge：全部东北偏东（ENE）——踏线起即有东分量，绝非「纯北／偏北／NNE」
-   *      ——onset@绿线已是东重 ENE（禁 ang0=π/2）；中段中等北鼓弧 → 终点仍满 ENE
-   *      ——FORBIDDEN：绿线以北纯北/NNE / 航向≈90° / midBulge 过大(3.85)或过小 / 直角尖叫拐
-   *   C) lat <= edge−0.3°：基础引导场 only
-   * 所有 westerly / Bezier / ENE 项必须门控在 lat >= edge。
-   * RECURVE_ARC_DEG 只描述绿线以北弧长，≠ 南侧 0.3° 接近带宽度。
+   * 引导气流（绿线 = guidingNorthernEdgeLat，与绘制一致）
+   *   A) 南侧接近 / 副高北缘 fringe [edge−RECURVE_ARC_DEG, edge)：Bezier 转向弧
+   *      ——弧全部在绿线以南（副高北缘 fringe / 南接近带）；绿线处以满 ENE 收束
+   *      ——起点 due-N（u=0）；中段中等北鼓；终点逼近满 ENE；FORBIDDEN：弧越过绿线以北
+   *   A2) remaining 南带 [edge−RECURVE−band, edge−RECURVE)：完全往北（u=0）
+   *      ——保留 APPROACH_NORTH_BAND_DEG≈0.3° 纯北带，贴在弧区南界
+   *   B) lat >= edge：立即满东北偏东（ENE），恒定，无过渡带、无 Bezier、无北鼓
+   *      ——踏线即满西风 ENE；FORBIDDEN：绿线以北任何弧/过渡
+   *   C) 更南：基础引导场 only
+   * Bezier / 弧项只门控在 lat < edge；westerly 满 ENE 门控在 lat >= edge。
    */
-  // 绿线以北完成「ENE→中等北鼓→满 ENE」的纬度尺度（仅 lat≥edge）；与南侧 0.3° 带宽无关
-  // 弧长中等(~7°)；振幅取中间档（禁 midBulge 3.85 过大，亦禁过小摊平）
+  // 弧长中等(~7°)，全部在绿线以南的副高北缘 fringe 完成；振幅中间档（禁 midBulge 3.85）
   const RECURVE_ARC_DEG = 7.0;
 
   function steeringAt(lon, lat, cfg, fugenList, hole) {
@@ -53,55 +52,63 @@
     let v = cfg.steerV;
 
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
-    const band = G.APPROACH_NORTH_BAND_DEG; // ≈0.3°；仅用于绿线以南
+    const band = G.APPROACH_NORTH_BAND_DEG; // ≈0.3°；弧区以南的剩余纯北带
     if (edge != null) {
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
-      // 目标满 ENE（东北偏东）：东向西风 + 适度北分（仅 lat >= edge）
+      // 目标满 ENE（东北偏东）：东向西风 + 适度北分（仅 lat >= edge 立即满值）
       const wV = 2.2 + Math.max(0, cfg.westerlyU) * 0.08;
-      if (northOf >= RECURVE_ARC_DEG) {
-        // 弧已完成：满西风 ENE
+      const wVE = Math.min(wV, Math.max(0.01, wU) * 0.42); // ENE 北分上限 ~23°
+      const angENE = Math.atan2(wVE, Math.max(0.01, wU));
+      const spdW = Math.hypot(wU, wVE);
+      if (northOf >= 0) {
+        // B) 绿线以北：立即满 ENE，无弧、无过渡
         u = wU;
         v = wV;
-      } else if (northOf >= 0) {
-        // B) 绿线以北：踏线起全部东北偏东（ENE），中段大半圆弧北鼓后仍回满 ENE
-        //    禁 ang0=π/2（纯北/偏北）；禁整段锁死 NNE；禁踏线无幅度
-        const t = northOf / RECURVE_ARC_DEG; // 0@绿线 → 1@弧完成
-        // 轻度前载：edge+0 已是 ENE；中段可见大半圆弧鼓北；终点满 ENE
-        const te = 1 - Math.pow(1 - t, 1.35);
-        const wVE = Math.min(wV, Math.max(0.01, wU) * 0.42); // ENE 终点北分上限 ~23°
-        const angENE = Math.atan2(wVE, Math.max(0.01, wU));
-        // onset@edge：实质 ENE（东重，~28–36°），踏线即有东分量；绝不用 π/2
-        const ang0 = Math.atan2(Math.max(2.2, wU * 0.48), Math.max(3.2, wU * 0.70));
-        // 顶点：中等北鼓（~50–58°），幅度不大不小；禁纯北 ≥70°
+      } else if (northOf >= -RECURVE_ARC_DEG) {
+        // A) 绿线以南 fringe：Bezier 弧（due-N → 中等北鼓 → 满 ENE），在 edge 收束
+        const t = (northOf + RECURVE_ARC_DEG) / RECURVE_ARC_DEG; // 0@弧南界 → 1@绿线
+        const te = 1 - Math.pow(1 - t, 1.35); // 前载：近绿线时已接近满 ENE
+        // 起点：due north（u=0）；禁 onset 即东向（那会把弧推到绿线以北）
+        const ang0 = Math.PI * 0.5;
+        // 顶点：中等北鼓偏 NE（~50–58°），幅度不大不小；禁纯北锁死整段
         const ang1 = Math.atan2(Math.max(4.6, wU * 0.88), Math.max(2.7, wU * 0.50));
-        const ang2 = angENE;
+        const ang2 = angENE; // 终点满 ENE（与绿线以北恒定值一致）
         const ang = bezierHeading(ang0, ang1, ang2, te);
-        const spdW = Math.hypot(wU, wVE);
-        const spd0 = Math.hypot(Math.max(3.2, wU * 0.70), Math.max(2.2, wU * 0.48));
+        const spd0 = Math.max(4.6, spdW * 0.55);
         const spd = spd0 * (1 - te) + spdW * te;
         // 中段北鼓：中间档振幅（禁 3.85 过大 / 禁过小）
         const midBulge = 2.2 * Math.sin(Math.PI * te) * (1 - 0.18 * te);
         u = Math.cos(ang) * spd;
         v = Math.sin(ang) * spd + midBulge;
-        // 软保：绿线以北东分量必须明显 >0（ENE）
-        if (u < 1.2) u = 1.2 + te * Math.max(0, wU - 1.2);
-        // 仅防极端接近正北；中等弧峰值 ~50–60°，终点可落到 ~20° ENE
-        const hLim = Math.tan(68 * Math.PI / 180); // ~2.5 → 68°
-        if (u > 0 && v > u * hLim) v = u * hLim;
-      } else if (northOf >= -band) {
-        // A) 绿线以南 [edge−0.3, edge)：完全往北（due north）。u 必须 = 0，不是 ≤0／偏北
-        //    南界 inclusive：lat >= edge−band && lat < edge
-        const t = clamp((northOf + band) / band, 0, 1); // 0@南界 → 1@绿线
-        u = 0; // 强制纯北：禁东、禁西（u≤0 仍会露出 NW 偏北）
-        v = Math.max(0, v * (1 - t) + 4.6 * t); // 主导北向，禁止往南
+        // 早期保 due-N：te 很小时强制 u=0（纯北起点）
+        if (te < 0.12) u = 0;
+        // 近绿线：东分量必须起来，收束到满 ENE
+        if (te >= 0.55 && u < 1.2) u = 1.2 + (te - 0.55) / 0.45 * Math.max(0, wU - 1.2);
+        if (v < 0) v = 0;
+        // 中段防极端纯北；终点允许落到 ~20° ENE
+        if (te >= 0.35 && u > 0) {
+          const hLim = Math.tan(68 * Math.PI / 180);
+          if (v > u * hLim) v = u * hLim;
+        }
+      } else if (northOf >= -(RECURVE_ARC_DEG + band)) {
+        // A2) 弧区以南剩余 ≈0.3°：完全往北（due north）
+        const t = clamp((northOf + RECURVE_ARC_DEG + band) / band, 0, 1);
+        u = 0;
+        v = Math.max(0, v * (1 - t) + 4.6 * t);
       }
-      // C) northOf < -band：基础场，无西风、无接近带加成
+      // C) 更南：基础场
 
-      // 硬门控：接近带内强制 u=0；带外以南只杀东向（防 slide/混合泄漏）
+      // 硬门控（绿线以南）：剩余纯北带 u=0；弧区早期 u=0；弧区外以南只杀东向
       if (northOf < 0) {
-        if (northOf >= -band) u = 0;
-        else u = Math.min(u, 0);
+        if (northOf < -RECURVE_ARC_DEG && northOf >= -(RECURVE_ARC_DEG + band)) u = 0;
+        else if (northOf < -(RECURVE_ARC_DEG + band)) u = Math.min(u, 0);
+        // 弧区内：早期再杀一次东漏（与 te<0.12 一致）；后段允许东向收束
+        else if (northOf >= -RECURVE_ARC_DEG) {
+          const tGate = (northOf + RECURVE_ARC_DEG) / RECURVE_ARC_DEG;
+          const teGate = 1 - Math.pow(1 - tGate, 1.35);
+          if (teGate < 0.12) u = 0;
+        }
       }
     } else if (lat >= 32) {
       u = cfg.westerlyU;
@@ -209,33 +216,47 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 两区强化：南≈0.3° 只加北向；绿线以北踏线即 ENE 大半圆弧（禁纯北/NNE 锁死）。
+    // 强化：绿线以南 fringe 走弧；绿线以北只保满 ENE；剩余南带纯北。
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
-    const band = G.APPROACH_NORTH_BAND_DEG; // 仅 [edge−0.3, edge)
+    const band = G.APPROACH_NORTH_BAND_DEG;
     if (edge != null && !G.inFugenSolid(lon, lat, fugenList, hole)) {
-      if (lat >= edge) {
-        const t = clamp((lat - edge) / RECURVE_ARC_DEG, 0, 1);
-        const te = 1 - Math.pow(1 - t, 1.35); // 与 steeringAt 同缓入
-        // B) onset@edge 即东向 ENE；中段中等北鼓；终点仍 ENE
-        u += 2.0 * (0.72 + 0.28 * te);
-        v += 1.65 * Math.sin(Math.PI * Math.max(te, 0.12)) * (0.55 + 0.45 * (1 - te));
+      const northOf = lat - edge;
+      if (northOf >= 0) {
+        // B) 绿线以北：无弧加成；只保证满 ENE 东分量
         if (u < 1.2) u = 1.2;
-        // 仅防极端接近正北；中等弧由 steeringAt Bezier+midBulge 主导
-        const hLim = Math.tan(68 * Math.PI / 180);
-        if (u > 0 && v > u * hLim) v = u * hLim;
-      } else if (lat >= edge - band) {
-        // A) 仅绿线以南 ≈0.3°：完全往北（u=0）；南界 inclusive；禁止偏北 NW / 东漏
-        const t = clamp((lat - (edge - band)) / band, 0, 1);
-        u = 0;          // 强制纯北：不做轻西加成（那会变成偏北）
-        v += 2.2 * t;   // 北向加成
+      } else if (northOf >= -RECURVE_ARC_DEG) {
+        // A) 南 fringe 弧区：中段北鼓轻加成；近绿线抬东向收束
+        const t = clamp((northOf + RECURVE_ARC_DEG) / RECURVE_ARC_DEG, 0, 1);
+        const te = 1 - Math.pow(1 - t, 1.35);
+        if (te < 0.12) {
+          u = 0;
+          v += 2.2 * te;
+        } else {
+          u += 2.0 * (0.72 + 0.28 * te) * te;
+          v += 1.65 * Math.sin(Math.PI * Math.max(te, 0.12)) * (0.55 + 0.45 * (1 - te));
+          if (te >= 0.55 && u < 1.2) u = 1.2;
+          const hLim = Math.tan(68 * Math.PI / 180);
+          if (u > 0 && v > u * hLim) v = u * hLim;
+        }
+        if (v < 0) v = 0;
+      } else if (northOf >= -(RECURVE_ARC_DEG + band)) {
+        // A2) 剩余南带 ≈0.3°：完全往北
+        const t = clamp((northOf + RECURVE_ARC_DEG + band) / band, 0, 1);
+        u = 0;
+        v += 2.2 * t;
         if (v < 0) v = 0;
       }
     }
-    // 硬门控（必须在 beta + slideAlongFugen 之后）：接近带内 u=0；带外以南只杀东向
-    // slide 可能重新引入东向，故在此再杀一次
+    // 硬门控（beta + slide 之后）：剩余纯北带 / 弧早期 u=0；弧外以南杀东向；绿线以北不动
     if (edge != null && lat < edge) {
-      if (lat >= edge - band) u = 0;
-      else u = Math.min(u, 0);
+      const northOf = lat - edge;
+      if (northOf < -RECURVE_ARC_DEG && northOf >= -(RECURVE_ARC_DEG + band)) u = 0;
+      else if (northOf < -(RECURVE_ARC_DEG + band)) u = Math.min(u, 0);
+      else if (northOf >= -RECURVE_ARC_DEG) {
+        const tGate = (northOf + RECURVE_ARC_DEG) / RECURVE_ARC_DEG;
+        const teGate = 1 - Math.pow(1 - tGate, 1.35);
+        if (teGate < 0.12) u = 0;
+      }
     }
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);

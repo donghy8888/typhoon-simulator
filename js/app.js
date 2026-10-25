@@ -550,7 +550,7 @@
     const canvas = steerRenderer;
 
     // 绿线 = physics 的 guidingNorthernEdgeLat（含西侧 look-east max-lat），
-    // 与 NNE onset 同一条边；1° 采样减少空档折线错觉。
+    // 与 ENE onset 同一条边；1° 采样减少空档折线错觉。
     const edgePts = [];
     for (let lon = 105; lon <= 175; lon += 1) {
       const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
@@ -560,7 +560,7 @@
       L.polyline(edgePts, {
         color: '#1a7f4b', weight: 2.5, dashArray: '8 6', opacity: 0.9,
         renderer: canvas
-      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈0.3°完全往北(u=0)，以北全部东北偏北NNE+大半圆弧(~10.5°lat)', { sticky: true })
+      }).bindTooltip('副高北缘（绿线=引导北缘）；以南≈0.3°完全往北(u=0)，以北全部东北偏东ENE+大半圆弧(~8°lat)', { sticky: true })
         .addTo(layerGroups.steer);
     }
 

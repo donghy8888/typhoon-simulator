@@ -288,15 +288,14 @@
   }
 
   /**
-   * 副高北缘纬度（西风带南界 / 绿线）。
-   * 有效边界 = 温和邻经线 soft-max + 北向小偏置：
-   *   - 邻经线采样 dlon ∈ {0, ±1.5, ±3}（不做旧版 ±8° + ringMax，避免过北）
-   *   - WESTERLY_EDGE_NORTH_OFFSET = 1.5°：在 soft-max 之上再北移 1.5°，
-   *     使西风起效略高于局地北缘毛刺，又明显低于旧“过北”行为。
-   * 绿线与 inWesterlyBelt / steering 共用此有效边界。
+   * 副高北缘纬度（西风带南界 / 绿线）——中间档：
+   *   - 以本经线为主，仅 ±1° 邻经做轻度加权软混合（非 soft-max / ringMax，非 ±3/±8）
+   *   - WESTERLY_EDGE_NORTH_OFFSET = 0.5°：在混合北缘上再北偏 0.5°
+   * 绿线、inWesterlyBelt、steeringAt 共用此 northernFugenEdgeLat。
    */
-  const WESTERLY_EDGE_NORTH_OFFSET = 1.5;
-  const WESTERLY_EDGE_NEIGHBOR_DLONS = [0, -1.5, 1.5, -3, 3];
+  const WESTERLY_EDGE_NORTH_OFFSET = 0.5;
+  // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺
+  const WESTERLY_EDGE_BLEND = [[0, 0.7], [-1, 0.15], [1, 0.15]];
 
   /** 单经线上的原始局地北缘（二分），无偏置 */
   function rawLocalFugenEdgeLat(lon, fugenList, hole) {
@@ -321,14 +320,15 @@
 
   function northernFugenEdgeLat(lon, fugenList, hole) {
     if (!fugenList || !fugenList.length) return null;
-    let softMax = null;
-    for (const dlon of WESTERLY_EDGE_NEIGHBOR_DLONS) {
+    let sum = 0, wSum = 0;
+    for (const [dlon, w] of WESTERLY_EDGE_BLEND) {
       const e = rawLocalFugenEdgeLat(lon + dlon, fugenList, hole);
       if (e == null) continue;
-      softMax = softMax == null ? e : Math.max(softMax, e);
+      sum += e * w;
+      wSum += w;
     }
-    if (softMax == null) return null;
-    return softMax + WESTERLY_EDGE_NORTH_OFFSET;
+    if (wSum <= 0) return null;
+    return sum / wSum + WESTERLY_EDGE_NORTH_OFFSET;
   }
 
   /** 是否位于副高以北的西风带（不含副高实体内部） */

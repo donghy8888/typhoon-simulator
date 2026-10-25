@@ -288,37 +288,30 @@
   }
 
   /**
-   * 副高北缘纬度（西风带南界）。
-   * 规则：副高北边整片都是西风带——若副高北缘伸到长江以南，
-   * 则长江以北（北缘以北）全部按西风带处理。
-   * 在附近经度上取副高实体的最北缘，避免“只在某一经线有副高”时漏判。
+   * 副高北缘纬度（西风带南界）——按当前经度的局地北缘。
+   * 规则：该经线上副高实体以北整片为西风带。
+   * 仅在本经线附近（±0.5°）采样，不再取 ±8° 全域最大值或 ringMax 顶点包络，
+   * 避免绿线/西风起始被抬到副高实际北缘以北。
    */
   function northernFugenEdgeLat(lon, fugenList, hole) {
     if (!fugenList || !fugenList.length) return null;
-    let maxLat = null;
-    const dlonList = [0, -1.5, 1.5, -3, 3, -5, 5, -8, 8];
-    for (const dlon of dlonList) {
-      const x = lon + dlon;
-      if (x < DOMAIN.lonMin || x > DOMAIN.lonMax) continue;
-      for (let lat = DOMAIN.latMax; lat >= DOMAIN.latMin; lat -= 0.35) {
-        if (inFugenSolid(x, lat, fugenList, hole)) {
-          if (maxLat == null || lat > maxLat) maxLat = lat;
-          break;
-        }
+    // 仅本经线：粗扫找到实体后二分逼近北缘；不做跨经度抬高
+    let approx = null;
+    for (let lat = DOMAIN.latMax; lat >= DOMAIN.latMin; lat -= 0.15) {
+      if (inFugenSolid(lon, lat, fugenList, hole)) {
+        approx = lat;
+        break;
       }
     }
-    // 再用多边形顶点包络兜底（略外扩），防止采样漏掉北缘
-    let ringMax = null;
-    for (const f of fugenList) {
-      for (const pt of f.ring) {
-        if (Math.abs(pt[0] - lon) > 12) continue;
-        if (ringMax == null || pt[1] > ringMax) ringMax = pt[1];
-      }
+    if (approx == null) return null;
+    let hi = Math.min(DOMAIN.latMax, approx + 0.15);
+    let lo = Math.max(DOMAIN.latMin, approx - 0.15);
+    for (let k = 0; k < 10; k++) {
+      const mid = (hi + lo) * 0.5;
+      if (inFugenSolid(lon, mid, fugenList, hole)) lo = mid;
+      else hi = mid;
     }
-    if (ringMax != null) {
-      if (maxLat == null || ringMax > maxLat) maxLat = ringMax;
-    }
-    return maxLat;
+    return lo;
   }
 
   /** 是否位于副高以北的西风带（不含副高实体内部） */

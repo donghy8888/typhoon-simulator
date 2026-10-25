@@ -1,4 +1,4 @@
-/* 西北太平洋台风模拟器 — 普通气象科普 / 教学网站风格 */
+/* 西北太平洋台风模拟器 — 气象台站控制台风格（可读、有层次，非霓虹） */
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
@@ -6,35 +6,36 @@ html, body {
   height: 100%;
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Source Han Sans SC", SimHei, sans-serif;
   font-size: 14px;
-  color: #2c2c2c;
-  background: #e8ecf0;
+  color: #1e2a36;
+  background: #d9e2ec;
   line-height: 1.5;
 }
-a { color: #1a5a9a; }
+a { color: #1565a8; }
 
 /* —— 顶栏 —— */
 header.site-header {
-  background: #fff;
-  border-bottom: 1px solid #d0d5db;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  padding: 12px 20px 14px;
+  background: linear-gradient(180deg, #1a4f7a 0%, #163f62 100%);
+  border-bottom: 3px solid #0e7cc0;
+  box-shadow: 0 2px 8px rgba(10, 40, 70, 0.28);
+  padding: 11px 20px 12px;
+  color: #fff;
 }
 header.site-header h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 700;
-  color: #1a3a5c;
-  letter-spacing: 0.02em;
+  color: #fff;
+  letter-spacing: 0.03em;
 }
 header.site-header .subtitle {
-  margin: 5px 0 0;
-  font-size: 12.5px;
-  color: #667788;
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #b8d4ea;
 }
 
 .layout {
   display: flex;
-  height: calc(100% - 62px);
+  height: calc(100% - 58px);
   min-height: 480px;
 }
 
@@ -43,72 +44,85 @@ header.site-header .subtitle {
   width: 340px;
   min-width: 300px;
   max-width: 380px;
-  background: #f4f6f8;
-  border-right: 1px solid #d0d5db;
+  background: #e8eef4;
+  border-right: 1px solid #b7c4d2;
   overflow-y: auto;
-  padding: 12px 12px 28px;
+  padding: 10px 10px 24px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
 }
 
 /* 面板卡片 */
 .panel {
   background: #fff;
-  border: 1px solid #d8dde3;
+  border: 1px solid #c5d0dc;
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  padding: 12px 14px 14px;
+  box-shadow: 0 1px 4px rgba(20, 40, 60, 0.07);
+  padding: 11px 12px 12px;
+  border-left: 4px solid #3a7eb8;
 }
+.panel#panel-run { border-left-color: #1f7a3a; }
+.panel#panel-status { border-left-color: #0e7cc0; }
+.panel#panel-layers { border-left-color: #5a6f8a; }
+.panel#panel-sst { border-left-color: #c45c12; }
+.panel#panel-fugen { border-left-color: #c0392b; }
+.panel#panel-steer { border-left-color: #1a7f4b; }
+.panel#panel-init { border-left-color: #2a6ebb; }
+
 .panel-title {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 9px;
+  font-size: 13.5px;
   font-weight: 700;
-  color: #1a3a5c;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e6eaef;
+  color: #12324f;
+  padding: 0 0 7px 0;
+  border-bottom: 2px solid #d5e3f0;
   display: flex;
   align-items: center;
   gap: 6px;
+  letter-spacing: 0.02em;
 }
 .panel-title .badge {
-  font-size: 11px;
-  font-weight: 500;
-  color: #6a7a8a;
-  background: #f0f3f6;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #0e5a8a;
+  background: #e3f1fb;
+  border: 1px solid #a8cce4;
   border-radius: 4px;
   padding: 1px 6px;
 }
 
 .hint {
   font-size: 12px;
-  color: #6a7a8a;
+  color: #5a6a7a;
   margin: 6px 0 0;
   line-height: 1.55;
 }
-.hint strong { color: #445566; font-weight: 600; }
+.hint strong { color: #334455; font-weight: 600; }
 
 /* 运行控制粘性区 */
 .panel-sticky {
   position: sticky;
   top: 0;
   z-index: 20;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  border-color: #c5d0dc;
+  box-shadow: 0 3px 10px rgba(20, 80, 40, 0.12);
+  border-color: #9ec4a8;
+  background: #f4faf5;
 }
 
 .form-row {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 7px;
   gap: 8px;
 }
 .form-row:last-child { margin-bottom: 0; }
 .form-row label {
   width: 96px;
   flex-shrink: 0;
-  color: #445566;
-  font-size: 13px;
+  color: #2f4558;
+  font-size: 12.5px;
+  font-weight: 600;
 }
 .form-row input[type="number"],
 .form-row input[type="text"],
@@ -116,11 +130,11 @@ header.site-header .subtitle {
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
-  border: 1px solid #c0c8d0;
+  border: 1px solid #a8b6c4;
   border-radius: 5px;
-  background: #fff;
+  background: #fbfcfe;
   font-size: 13px;
-  color: #2c2c2c;
+  color: #1e2a36;
   font-family: inherit;
   min-height: 32px;
 }
@@ -128,72 +142,92 @@ header.site-header .subtitle {
 .form-row input[type="text"]:focus,
 .form-row select:focus {
   outline: none;
-  border-color: #3a7fc0;
-  box-shadow: 0 0 0 2px rgba(58, 127, 192, 0.18);
+  border-color: #2a7fc4;
+  box-shadow: 0 0 0 2px rgba(42, 127, 196, 0.22);
+  background: #fff;
 }
 .form-row input[type="range"] {
   flex: 1;
   min-width: 0;
   height: 28px;
   cursor: pointer;
+  accent-color: #1f6fad;
 }
 .form-row .unit {
   width: 36px;
-  color: #6a7a8a;
+  color: #5a6f82;
   font-size: 12px;
   flex-shrink: 0;
+  font-weight: 500;
 }
 .form-row .val {
   width: 48px;
   text-align: right;
-  color: #334455;
-  font-size: 12px;
+  color: #0e4a78;
+  font-size: 12.5px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 .btn-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 10px 0 4px;
+  margin: 8px 0 4px;
 }
-.btn-row.tight { margin-top: 6px; }
+.btn-row.tight { margin-top: 4px; }
 
 button, .btn {
   padding: 7px 14px;
   min-height: 34px;
-  border: 1px solid #b0b8c0;
+  border: 1px solid #8fa0b0;
   border-radius: 6px;
-  background: #f7f8fa;
-  color: #2c2c2c;
+  background: linear-gradient(180deg, #f5f7fa 0%, #e6ebf0 100%);
+  color: #243444;
   font-size: 13px;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
-}
-button:hover { background: #eef1f4; border-color: #9aa3ad; }
-button:active { background: #e4e8ec; }
-button.primary {
-  background: #2a6ebb;
-  color: #fff;
-  border-color: #1e5a9a;
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(26, 90, 154, 0.25);
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, filter 0.12s;
+  box-shadow: 0 1px 2px rgba(20, 40, 60, 0.08);
 }
-button.primary:hover { background: #245fa3; }
-button.primary:active { background: #1e528c; }
+button:hover {
+  background: linear-gradient(180deg, #eef2f6 0%, #dce3ea 100%);
+  border-color: #708090;
+}
+button:active { filter: brightness(0.96); }
+button.primary {
+  background: linear-gradient(180deg, #2f8ad4 0%, #1c6db0 100%);
+  color: #fff;
+  border-color: #155a96;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(20, 90, 150, 0.35);
+}
+button.primary:hover {
+  background: linear-gradient(180deg, #3a96dc 0%, #1e74b8 100%);
+}
+button.primary:active {
+  background: linear-gradient(180deg, #1c6db0 0%, #165a94 100%);
+}
 button.secondary {
-  background: #fff;
-  border-color: #b0b8c0;
-  color: #334455;
+  background: linear-gradient(180deg, #fff 0%, #eef2f6 100%);
+  border-color: #8fa3b5;
+  color: #243e56;
+}
+button.secondary:hover {
+  background: linear-gradient(180deg, #f4f8fb 0%, #e2eaf1 100%);
+  border-color: #5f7f9a;
 }
 button.danger {
-  background: #fff;
-  border-color: #d0a0a0;
-  color: #a03333;
+  background: linear-gradient(180deg, #fff5f5 0%, #fde8e8 100%);
+  border-color: #d08080;
+  color: #a02828;
 }
-button.danger:hover { background: #fdf2f2; border-color: #c08080; }
+button.danger:hover {
+  background: linear-gradient(180deg, #ffeaea 0%, #f8d4d4 100%);
+  border-color: #c06060;
+}
 button.small {
   padding: 4px 10px;
   min-height: 28px;
@@ -203,12 +237,13 @@ button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;
+  filter: none;
 }
 
 .checkbox-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .checkbox-list label {
   display: flex;
@@ -217,75 +252,89 @@ button:disabled {
   margin: 0;
   width: auto;
   cursor: pointer;
-  padding: 5px 6px;
+  padding: 6px 8px;
   border-radius: 5px;
-  font-size: 13px;
-  color: #334455;
+  font-size: 12.5px;
+  color: #243444;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: #f5f8fb;
 }
-.checkbox-list label:hover { background: #f4f6f8; }
+.checkbox-list label:hover {
+  background: #e8f1f8;
+  border-color: #c0d4e4;
+}
 .checkbox-list input {
   margin: 0;
   width: 16px;
   height: 16px;
   flex-shrink: 0;
   cursor: pointer;
+  accent-color: #1f6fad;
 }
 
 .help-box {
-  background: #f8fafb;
-  border: 1px solid #e0e5ea;
+  background: #f4f8fb;
+  border: 1px solid #c8d6e2;
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 12.5px;
   line-height: 1.65;
-  color: #445566;
+  color: #334455;
 }
-.help-box strong { color: #1a3a5c; }
+.help-box strong { color: #12324f; }
 .help-box p { margin: 0 0 10px; }
 .help-box p:last-child { margin-bottom: 0; }
 
 /* 状态信息卡 */
 .status-panel {
-  background: #f7fafc;
-  border: 1px solid #d5dde5;
+  background: linear-gradient(180deg, #eef6fc 0%, #e3eef8 100%);
+  border: 1px solid #a8c4dc;
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.65;
 }
 .status-panel .st-row {
   display: flex;
   gap: 6px;
-  padding: 2px 0;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(160, 190, 215, 0.35);
 }
+.status-panel .st-row:last-child { border-bottom: none; }
 .status-panel .st-label {
-  color: #6a7a8a;
+  color: #3d5a72;
   min-width: 72px;
   flex-shrink: 0;
+  font-weight: 600;
+  font-size: 12px;
 }
 .status-panel .st-value {
-  color: #1a2a3a;
-  font-weight: 500;
+  color: #0d2a42;
+  font-weight: 600;
   word-break: break-all;
 }
 .status-panel .phase {
-  font-weight: 700;
-  color: #1a5a9a;
+  font-weight: 800;
+  color: #0b6eb8;
+  background: #d6ebf8;
+  border-radius: 4px;
+  padding: 0 6px;
 }
 
 .sst-block {
-  border: 1px solid #e0e5ea;
+  border: 1px solid #e0b892;
   border-radius: 6px;
   padding: 8px 10px;
   margin-bottom: 8px;
-  background: #fafbfc;
+  background: linear-gradient(180deg, #fffaf4 0%, #fff3e6 100%);
 }
 .sst-block:last-child { margin-bottom: 0; }
 .sst-block .name {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 12.5px;
   margin-bottom: 6px;
-  color: #334455;
+  color: #8a3d08;
 }
 
 /* 副高列表 */
@@ -301,21 +350,21 @@ button:disabled {
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border: 1px solid #e0e5ea;
+  border: 1px solid #e0b0a8;
   border-radius: 6px;
-  background: #fafbfc;
-  transition: border-color 0.12s, background 0.12s;
+  background: linear-gradient(180deg, #fff8f6 0%, #fdeeea 100%);
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
 }
 .fugen-item.selected {
-  border-color: #8b6bb8;
-  background: #f5f0fa;
-  box-shadow: 0 0 0 1px rgba(139, 107, 184, 0.25);
+  border-color: #c0392b;
+  background: linear-gradient(180deg, #ffe8e4 0%, #f8d5ce 100%);
+  box-shadow: 0 0 0 2px rgba(192, 57, 43, 0.22);
 }
 .fugen-item .fugen-name {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
-  color: #334455;
+  font-weight: 700;
+  color: #7a2218;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -331,12 +380,13 @@ button:disabled {
   min-height: 28px;
 }
 .fugen-item .dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: #c9a0dc;
-  border: 1px solid #8b6bb8;
+  background: #e74c3c;
+  border: 1px solid #a93226;
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.2);
 }
 
 /* 地图区 */
@@ -344,12 +394,12 @@ button:disabled {
   flex: 1;
   position: relative;
   min-width: 0;
-  background: #d4e0ea;
+  background: #c5d6e4;
 }
 #map {
   width: 100%;
   height: 100%;
-  background: #d4e6f1;
+  background: #c8daf0;
 }
 
 .map-toolbar {
@@ -357,15 +407,17 @@ button:disabled {
   top: 10px;
   left: 10px;
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #c5cdd5;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #9eb4c8;
+  border-left: 3px solid #1f6fad;
   border-radius: 6px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 6px rgba(20, 40, 60, 0.12);
   padding: 6px 10px;
   font-size: 12px;
-  color: #445566;
+  color: #2f4558;
   max-width: 280px;
   line-height: 1.45;
+  font-weight: 500;
 }
 
 .map-legend {
@@ -373,29 +425,30 @@ button:disabled {
   bottom: 28px;
   right: 12px;
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #c5cdd5;
-  border-radius: 6px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #9eb4c8;
+  border-radius: 7px;
+  box-shadow: 0 2px 8px rgba(20, 40, 60, 0.14);
+  padding: 9px 12px;
   font-size: 11.5px;
   line-height: 1.65;
-  color: #334455;
+  color: #243444;
   max-width: 210px;
 }
 .map-legend .legend-title {
-  font-weight: 700;
+  font-weight: 800;
   font-size: 12px;
-  color: #1a3a5c;
-  margin-bottom: 4px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid #e6eaef;
+  color: #12324f;
+  margin-bottom: 5px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid #c5d8ea;
+  letter-spacing: 0.04em;
 }
 .map-legend .swatch {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 1px solid #888;
+  border: 1px solid #666;
   border-radius: 2px;
   vertical-align: middle;
   margin-right: 5px;
@@ -407,15 +460,15 @@ button:disabled {
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid #c5cdd5;
+  background: linear-gradient(180deg, #1a4f7a 0%, #163f62 100%);
+  border: 1px solid #0e7cc0;
   border-radius: 6px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(10, 40, 70, 0.3);
   padding: 6px 16px;
   font-size: 13px;
-  color: #1a2a3a;
+  color: #fff;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: 650;
 }
 
 footer.site-footer { display: none; }
@@ -434,7 +487,7 @@ footer.site-footer { display: none; }
   height: 16px !important;
   margin: 0 !important;
   background: #fff;
-  border: 2px solid #5a3d7a;
+  border: 2px solid #a93226;
   border-radius: 50%;
   cursor: grab;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);

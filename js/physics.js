@@ -28,16 +28,18 @@
 
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
     if (edge != null) {
-      // 西风带仅在副高北缘（绿线）以北：南侧绝不掺入西风。
-      // 刚越过北缘约 0.3° 内极窄过渡，以北即满西风。
+      // 西风带仅在副高北缘（绿线）以北：南侧绝不掺入西风（避免过早 NE）。
+      // 北侧用约 2.8° 纬度的 smoothstep 缓入，形成可见但不过大的弧形转向。
       const northOf = lat - edge;
       const wU = cfg.westerlyU;
-      const wV = 1.6 + Math.max(0, cfg.westerlyU) * 0.08;
-      if (northOf >= 0.3) {
+      const wV = 1.2 + Math.max(0, cfg.westerlyU) * 0.06;
+      const BLEND_DEG = 2.8;
+      if (northOf >= BLEND_DEG) {
         u = wU;
         v = wV;
       } else if (northOf >= 0) {
-        const w = northOf / 0.3; // 0→0，0.3→1（仅北侧）
+        const t = northOf / BLEND_DEG;
+        const w = t * t * (3 - 2 * t); // smoothstep 0→1
         u = u * (1 - w) + wU * w;
         v = v * (1 - w) + wV * w;
       }
@@ -146,13 +148,14 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    // 进入西风带后的 NE 拐弯增强：仅当 lat > 北缘（绿线以北），
-    // 且不在副高实体内；贴边/南侧 deep=0，不给额外推。
+    // 进入西风带后的 NE 拐弯增强：仅 lat > 北缘；南侧 deep=0。
+    // 在约 4° 纬度内 smoothstep 缓入，中等幅度弧线（非直角急转、非大回环）。
     const edge = G.northernFugenEdgeLat(lon, fugenList, hole);
     if (edge != null && lat > edge && !G.inFugenSolid(lon, lat, fugenList, hole)) {
-      const deep = clamp((lat - edge) / 8, 0, 1);
-      u += (0.8 + 1.6 * deep) * deep;
-      v += (0.5 + 1.0 * deep) * deep;
+      const t = clamp((lat - edge) / 4.0, 0, 1);
+      const w = t * t * (3 - 2 * t);
+      u += 1.15 * w;
+      v += 0.85 * w;
     }
 
     const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);

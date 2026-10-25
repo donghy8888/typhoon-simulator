@@ -6,12 +6,12 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261025a" />
+  <link rel="stylesheet" href="css/style.css?v=20261025b" />
 </head>
 <body>
   <header class="site-header">
     <h1>西北太平洋台风模拟器</h1>
-    <p class="subtitle">面向科普与教学的简化西北太平洋热带气旋路径与强度模拟 · 用户：Hongyu Dong</p>
+    <p class="subtitle">西北太平洋热带气旋路径与强度模拟</p>
   </header>
 
   <div class="layout">
@@ -50,7 +50,6 @@
             <option value="56.1">17级 (56.1 m/s)</option>
           </select>
         </div>
-        <p class="hint"><strong>放置台风：</strong>在右侧地图上点击即可设定中心位置；也可直接改上方经纬度。</p>
       </section>
 
       <section class="panel panel-sticky" id="panel-run">
@@ -94,13 +93,11 @@
           <label title="主台风路径与风圈"><input type="checkbox" data-layer="track" checked /> 台风路径与风圈</label>
           <label title="集合成员扰动路径（意大利面条图）"><input type="checkbox" data-layer="ensemble" checked /> 集合预报路径</label>
         </div>
-        <p class="hint">勾选后在地图上显示对应图层；副高选中后可拖动整块或拖顶点改形。</p>
       </section>
 
       <section class="panel" id="panel-sst">
         <h2 class="panel-title">海温 <span class="badge">SST</span></h2>
         <div id="sstControls"></div>
-        <p class="hint">规则：&lt;26.5℃ 趋于减弱；≥28℃ 且环境尚可时易快速增强。</p>
       </section>
 
       <section class="panel" id="panel-fugen">
@@ -110,9 +107,6 @@
           <button type="button" class="secondary" id="btnResetFugen" title="恢复默认两块副高">恢复默认</button>
         </div>
         <div class="fugen-list" id="fugenList"></div>
-        <p class="hint">
-          <strong>编辑：</strong>点「选中」或点地图上的副高 → 拖动<strong>内部</strong>可整体平移；拖动<strong>圆点</strong>可改形状。台风不能穿越副高实体，只能沿外围移动。
-        </p>
       </section>
 
       <section class="panel" id="panel-steer">
@@ -136,16 +130,6 @@
           <label for="betaStrength">β 漂移强度</label>
           <input type="range" id="betaStrength" min="0" max="2" value="1" step="0.1" />
           <span class="val" id="betaStrengthVal">1.0</span>
-        </div>
-        <p class="hint">单位约 m/s。副高北边整片都是西风带：副高若伸到长江以南，则长江以北全部按西风带；引导风图层里绿色箭头与虚线即西风带。β 漂移使台风偏西北，进入西风带后易向东北拐弯。</p>
-      </section>
-
-      <section class="panel" id="panel-help">
-        <h2 class="panel-title">帮助说明</h2>
-        <div class="help-box">
-          <p><strong>副高空圈规则：</strong>若台风初始位置落在副高内部，会在该副高上“挖”出一个略大于风圈的圆形空洞（空洞内不算副高）。空洞半径随风圈（强度）增大或缩小而同步变化。台风在空洞内按引导气流与 β 漂移移动，仍不能穿入空洞外的副高实体。</p>
-          <p><strong>强度阈值：</strong>海温 26.5℃ 为维持下限，28℃ 为快速增强阈值。登陆后地面摩擦使强度下降，山地（中国东部/台湾/日本/菲律宾示意）加快衰减。当最大风速降至<strong>7级以下</strong>（约 &lt;13.9 m/s）时模拟结束并判定消亡。</p>
-          <p><strong>集合预报：</strong>可设 1–20 个成员，对初始位置、强度与引导气流作小扰动，叠加显示“意大利面条”路径。</p>
         </div>
       </section>
 
@@ -175,8 +159,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/geo.js?v=20261025a"></script>
-  <script src="js/physics.js?v=20261025a"></script>
-  <script src="js/app.js?v=20261025a"></script>
+  <script src="js/geo.js?v=20261025b"></script>
+  <script src="js/physics.js?v=20261025b"></script>
+  <script src="js/app.js?v=20261025b"></script>
 </body>
 </html>

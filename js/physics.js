@@ -57,8 +57,8 @@
   /**
    * 引导气流（绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261026b）：
-   *   黄线以南 (northOf < −0.15)：轻度 WNW（西+北）
+   * 分区（20261026d）：
+   *   黄线以南 (northOf < −0.15)：明确 WNW 西北偏西（|u|>v，西多于北；非 NNW）
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿）
    *   绿线以北：NE 稍微偏东 ≈45° from N；杀深 ENE / 大 u / 大 lon bow；
    *             小真弯 Δlon≈3–6°（绿线处平滑弧，非 tip kink）
@@ -233,16 +233,18 @@
           }
         }
       } else if (northOf < -band) {
-        // 黄线以南：轻度 WNW（西+北），非正北、非大西漂
+        // 黄线以南：明确 WNW 西北偏西（西分量 ≥ 北分量），非 NNW 西北偏北
         const t = clamp((northOf + RECURVE_ARC_DEG) / (RECURVE_ARC_DEG - band), 0, 1);
         const te = smoothstep(t);
         let uBase = Math.min(u, 0);
-        if (uBase < -2.8) uBase = -2.8 + (uBase + 2.8) * 0.3;
-        // 目标约 fromN≈300–330°（轻度 WNW）：u≈−2.5~−3.6，v≈4.5~7
-        u = uBase * (1 - 0.15 * te) - 2.0 * te;
-        v = Math.max(v, 0) * (1 - 0.45 * te) + (4.5 + 1.6 * te) * te;
-        if (u < -3.4) u = -3.4;
-        if (u > -1.2 && te > 0.25) u = -1.2 - 1.0 * te; // 保证有西分量
+        if (uBase < -4.2) uBase = -4.2 + (uBase + 4.2) * 0.28;
+        // 目标 hdg≈140–150（地理 ~300–310° / fromN≈−50~−60）：u≈−4.6~−5.4，v≈3.5~4.2
+        u = uBase * (1 - 0.1 * te) - 3.4 * te;
+        v = Math.max(v, 0) * (1 - 0.55 * te) + (3.4 + 0.8 * te) * te;
+        if (u < -5.5) u = -5.5;
+        if (u > -3.6 && te > 0.18) u = -3.6 - 1.5 * te; // 西分量主导
+        if (v > 4.5) v = 4.5;
+        if (Math.abs(u) < v * 1.05) u = -Math.max(v * 1.1, 4.0); // |u|≥v → WNW not NNW
       }
 
       if (inNorthLeg) {
@@ -439,12 +441,13 @@
           }
         }
       } else if (northOf < -band) {
-        // 黄南：轻度 WNW（小西 + 抬北）
+        // 黄南：明确 WNW（西 ≥ 北），非 NNW
         let uBase = Math.min(u, 0);
-        if (uBase < -2.8) uBase = -2.8 + (uBase + 2.8) * 0.3;
-        u = Math.min(Math.max(uBase, -3.4) - 1.2, -1.5);
-        if (u < -3.4) u = -3.4;
-        v = Math.max(v + 1.0, 4.5);
+        if (uBase < -4.2) uBase = -4.2 + (uBase + 4.2) * 0.28;
+        u = Math.min(Math.max(uBase, -5.5) - 2.0, -3.8);
+        if (u < -5.5) u = -5.5;
+        v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
+        if (Math.abs(u) < v * 1.05) u = -Math.max(v * 1.1, 4.0);
       }
     }
     if (edge != null) {

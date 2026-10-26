@@ -54,8 +54,8 @@ const a0 = clearIdx >= 0 ? samples[clearIdx] : samples.find(s => s.sAcc > 0);
 const dlon = a0 && endArc ? endArc.lon - a0.lon : 0;
 const dlat = a0 && endArc ? endArc.lat - a0.lat : 0;
 
-let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026b\n';
-out += 'FIX: yellow@edge-0.15; mild WNW south; Y→G due-N; post-G NE tiny-E; small Δlon~3–7.\n';
+let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026d\n';
+out += 'FIX: yellow@edge-0.15; clear WNW south (west>north); Y→G due-N; post-G NE tiny-E; small Δlon~3–7.\n';
 out += `CONST: POST_GREEN=${P.POST_GREEN_ARC_DEG} TARGET_DLON=${P.TARGET_ARC_DLON_DEG} BOW=${P.ARC_BOW_LON_DEG} NORTH_LEG=${P.NORTH_LEG_DEG} NE_TARGET_deg=${(P.NE_TARGET_HDG*180/Math.PI).toFixed(0)}\n\n`;
 out += 'lon\tlat\tnorthOf\tsAcc\thdg\tfromN\tu\n';
 
@@ -78,11 +78,11 @@ if (clearIdx >= 0) {
   }
 }
 
-out += '\n--- SOUTH OF YELLOW (want WNW-ish: u<0, fromN~300–340 or hdg~110–160) ---\n';
+out += '\n--- SOUTH OF YELLOW (want clear WNW: |u|>v, hdg~140–160 / fromN≈−50~−70) ---\n';
 const sy = southYellow.slice(-8);
 for (const s of sy) out += `${s.lon},${s.lat} northOf=${s.northOf} hdg=${s.hdg} fromN=${s.fromN} u=${s.u} v=${s.v}\n`;
 const syDeep = sy.filter(s => s.northOf < -0.4 && !s.inLeg);
-const syOk = syDeep.length && syDeep.every(s => s.u <= 0.15 && s.u >= -3.6 && s.hdg >= 100 && s.hdg <= 145);
+const syOk = syDeep.length && syDeep.every(s => s.u <= -3.8 && s.u >= -7.5 && s.hdg >= 135 && s.hdg <= 165 && Math.abs(s.u) >= s.v * 0.95);
 
 out += '\n--- YELLOW→GREEN / N-leg (want hdg≈90, u≈0) ---\n';
 for (const s of yellowGreen.slice(0, 12)) {
@@ -132,5 +132,5 @@ if (all.length) {
   out += `\nASCII (|=N-leg o=post-green NE arc #=settled)\nlon ${lon0.toFixed(1)} -> ${lon1.toFixed(1)}   lat ${lat0.toFixed(1)} -> ${lat1.toFixed(1)}\n`;
   out += grid.map(r => r.join('')).join('\n') + '\n';
 }
-fs.writeFileSync(`${root}/track-proof-20261026b.txt`, out);
+fs.writeFileSync(`${root}/track-proof-20261026d.txt`, out);
 console.log(out);

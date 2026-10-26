@@ -31,6 +31,9 @@ for (let i = 0; i < 500 && m.alive; i++) {
     sAcc: +(m.sAcc || 0).toFixed(2),
     hdg: +hdg.toFixed(0), fromN: +fromN.toFixed(0),
     u: +m.u.toFixed(2), v: +m.v.toFixed(2),
+    vmax: +m.vmax.toFixed(1),
+    phase: m.phase,
+    land: !!G.isLand(m.lon, m.lat),
     inLeg: m.legTargetLat != null && m.lat < m.legTargetLat,
     legT: m.legTargetLat == null ? null : +m.legTargetLat.toFixed(2),
     clear: m.clearLon0 == null ? null : +m.clearLon0.toFixed(2)
@@ -51,11 +54,14 @@ const postGreen = samples.filter(s => s.clear != null && s.sAcc >= 0.15);
 const clearIdx = samples.findIndex(s => s.clear != null);
 const endArc = [...samples].reverse().find(s => s.sAcc > 0) || samples[samples.length - 1];
 const a0 = clearIdx >= 0 ? samples[clearIdx] : samples.find(s => s.sAcc > 0);
+const arcDone = samples.find(s => s.sAcc >= 1) || endArc;
 const dlon = a0 && endArc ? endArc.lon - a0.lon : 0;
 const dlat = a0 && endArc ? endArc.lat - a0.lat : 0;
+const dlonArc = a0 && arcDone ? arcDone.lon - a0.lon : 0;
+const dlatArc = a0 && arcDone ? arcDone.lat - a0.lat : 0;
 
-let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026d\n';
-out += 'FIX: yellow@edge-0.15; clear WNW south (west>north); Y→G due-N; post-G NE tiny-E; small Δlon~3–7.\n';
+let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026e\n';
+out += 'FIX: yellow@edge-0.15; clear WNW south; Y→G due-N; post-G NE slight-E; Δlon slightly larger (~6–9); sea decay slower.\n';
 out += `CONST: POST_GREEN=${P.POST_GREEN_ARC_DEG} TARGET_DLON=${P.TARGET_ARC_DLON_DEG} BOW=${P.ARC_BOW_LON_DEG} NORTH_LEG=${P.NORTH_LEG_DEG} NE_TARGET_deg=${(P.NE_TARGET_HDG*180/Math.PI).toFixed(0)}\n\n`;
 out += 'lon\tlat\tnorthOf\tsAcc\thdg\tfromN\tu\n';
 
@@ -102,17 +108,45 @@ if (yellowGreen.length) {
   const a = yellowGreen[0], b = yellowGreen[yellowGreen.length - 1];
   out += `  ${a.lon},${a.lat} → ${b.lon},${b.lat} Δlat=${(b.lat-a.lat).toFixed(2)} Δlon=${(b.lon-a.lon).toFixed(2)}\n`;
 }
-out += `\nPost-green arc Δlon: ${dlon.toFixed(1)} Δlat: ${dlat.toFixed(1)} (want ≈3–7 small)\n`;
+out += `\nPost-green turn Δlon (to sAcc≥1): ${dlonArc.toFixed(1)} Δlat: ${dlatArc.toFixed(1)}\n`;
+out += `Post-green life Δlon (to end): ${dlon.toFixed(1)} Δlat: ${dlat.toFixed(1)} (want ≈7–10 slightly > prior 5.6–7.4)\n`;
+if (a0 && arcDone) {
+  out += `  clear: ${a0.lon},${a0.lat} hdg=${a0.hdg} fromN=${a0.fromN} s=${a0.sAcc}\n`;
+  out += `  arc1:  ${arcDone.lon},${arcDone.lat} hdg=${arcDone.hdg} fromN=${arcDone.fromN} s=${arcDone.sAcc}\n`;
+}
 if (a0 && endArc) {
-  out += `  start: ${a0.lon},${a0.lat} hdg=${a0.hdg} fromN=${a0.fromN} s=${a0.sAcc}\n`;
-  out += `  end:   ${endArc.lon},${endArc.lat} hdg=${endArc.hdg} fromN=${endArc.fromN} s=${endArc.sAcc}\n`;
+  out += `  end:   ${endArc.lon},${endArc.lat} hdg=${endArc.hdg} fromN=${endArc.fromN} s=${endArc.sAcc} vmax=${endArc.vmax}\n`;
 }
 out += `  avg fromN (mid-arc): ${avgFromN == null ? 'n/a' : avgFromN.toFixed(1)}\n`;
 out += `  max sAcc=${Math.max(...samples.map(s => s.sAcc))}\n`;
 
-const dlonOk = dlon >= 2.5 && dlon <= 8;
-out += `\nCHECKS: southWNW=${syOk} yellowGreenN=${ygOk} postNe=${pgOk} dlonMed=${dlonOk} (Δlon=${dlon.toFixed(1)})\n`;
-out += `PASS=${syOk && ygOk && pgOk && dlonOk}\n`;
+// intensity: sea vs land mean |dV| proxies via vmax longevity
+const seaPts = samples.filter(s => !s.land && s.lat >= 20 && s.lat <= 36);
+const landPts = samples.filter(s => s.land);
+const vmaxAtClear = a0 ? a0.vmax : null;
+const vmaxAtArc1 = arcDone ? arcDone.vmax : null;
+const vmaxAtEnd = endArc ? endArc.vmax : null;
+const hoursAlive = samples.length;
+out += `\n--- INTENSITY (want sea weaken slower; land near prior) ---\n`;
+out += `hoursAlive=${hoursAlive} vmax@start=${samples[0]?.vmax} @clear=${vmaxAtClear} @arc1=${vmaxAtArc1} @end=${vmaxAtEnd}\n`;
+if (seaPts.length >= 4) {
+  const a = seaPts[0], b = seaPts[Math.floor(seaPts.length * 0.5)], c = seaPts[seaPts.length - 1];
+  out += `sea vmax: ${a.vmax}(${a.lat}N) → ${b.vmax}(${b.lat}N) → ${c.vmax}(${c.lat}N) phase_end_sea=${c.phase}\n`;
+}
+if (landPts.length) {
+  out += `land hits=${landPts.length} first vmax=${landPts[0].vmax}@${landPts[0].lat}N last=${landPts[landPts.length-1].vmax}\n`;
+}
+// Spot-check tendency at open ocean vs land
+const tendSeaCold = P.intensityTendency(145, 32, 40, 24);
+const tendSeaWarm = P.intensityTendency(140, 22, 40, 29);
+const tendLand = P.intensityTendency(121, 31, 40, 26);
+out += `dV spot: seaWarm28N? ${tendSeaWarm.dV.toFixed(2)} (${tendSeaWarm.phase}); seaCold32N ${tendSeaCold.dV.toFixed(2)} (${tendSeaCold.phase}); land ${tendLand.dV.toFixed(2)} (${tendLand.phase})\n`;
+out += `  expect: |seaCold dV| << |land dV|; seaCold milder than pre-26e (~-2.2 at 40ms/24SST)\n`;
+
+const dlonOk = dlon >= 7.0 && dlon <= 11.5; // slightly larger than prior ~5.6–7.4
+const seaSlowOk = tendSeaCold.dV > -1.35 && tendLand.dV < -2.5; // sea milder vs old~-2.2; land still strong
+out += `\nCHECKS: southWNW=${syOk} yellowGreenN=${ygOk} postNe=${pgOk} dlonBump=${dlonOk} (lifeΔlon=${dlon.toFixed(1)} arc=${dlonArc.toFixed(1)}) seaSlow=${seaSlowOk}\n`;
+out += `PASS=${syOk && ygOk && pgOk && dlonOk && seaSlowOk}\n`;
 
 const all = samples.filter(s => s.lat >= 24);
 if (all.length) {

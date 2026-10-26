@@ -57,21 +57,21 @@
   /**
    * 引导气流（绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261026d）：
+   * 分区（20261026e）：
    *   黄线以南 (northOf < −0.15)：明确 WNW 西北偏西（|u|>v，西多于北；非 NNW）
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿）
    *   绿线以北：NE 稍微偏东 ≈45° from N；杀深 ENE / 大 u / 大 lon bow；
-   *             小真弯 Δlon≈3–6°（绿线处平滑弧，非 tip kink）
+   *             转向振幅稍微大一点 Δlon≈6–9°（相对 26d 的 ~5.6–7.4 略增）
    *
    * 状态机（arcState）：
    *   A) 首次进入绿南 ~0.22°：legTargetLat=max(edge,lat+0.15)，u≡0 往北直到越过；
-   *   B) 越过后锁存 arcLat0，平滑 N→NE 半弧（不因 edge 回追重置）；中等 Δlon。
+   *   B) 越过后锁存 arcLat0，平滑 N→NE 半弧（不因 edge 回追重置）；中等略大 Δlon。
    */
   const NORTH_LEG_DEG = 0.15;
   const RECURVE_ARC_DEG = 7.0;
-  const POST_GREEN_ARC_DEG = 3.5;  // 短弧：绿后很快落到 ~45° fromN
-  const TARGET_ARC_DLON_DEG = 4;   // 小振幅 ≈3–6°（杀大 lon bow）
-  const ARC_BOW_LON_DEG = 1.2;     // 极小东鼓：可见轻弧，非大弯
+  const POST_GREEN_ARC_DEG = 4.2;  // 略加长弧：绿后落到 ~45° fromN
+  const TARGET_ARC_DLON_DEG = 5.8; // 稍微大一小点 ≈6–9°（非大弯）
+  const ARC_BOW_LON_DEG = 1.8;     // 东鼓略增：可见轻弧，仍非大弯
   /** atan2(v,u)≈45° → 地理约 45° from N（NE 稍微偏东） */
   const NE_TARGET_HDG = 45 * Math.PI / 180;
   /** 下限：勿扁成东北偏东（atan2 过小 / fromN 过大 / 深 ENE） */
@@ -122,7 +122,7 @@
     const spd = Math.max(spdW * 0.85, 7.5);
     let u = Math.cos(ang) * spd;
     let v = Math.sin(ang) * spd;
-    // 极小东鼓：轻弧 Δlon≈3–6，杀大 postGreenArc lon bow
+    // 轻东鼓：Δlon≈6–9（相对 26d 稍微大一点），杀深 ENE / 大 lon bow
     const bowU = (0.7 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * Math.pow(s, 1.05));
     u += bowU;
     // 硬顶：u 不得超过 NE 对应（杀深 ENE / 大 u）
@@ -548,40 +548,42 @@
     const pot = mpi(sst);
 
     if (land) {
-      dV = -1.4 - (vmax / 35) * 1.6;
-      if (mtn) dV -= 2.0;
+      // 登陆衰减略缓（相对 26d），仍明显快于海上
+      dV = -1.25 - (vmax / 35) * 1.45;
+      if (mtn) dV -= 1.85;
       phase = mtn ? '登陆衰减（山地加速）' : '登陆衰减';
     } else {
       const gap = pot - vmax;
       if (sst < 26.5) {
-        dV = -0.7 - (26.5 - sst) * 0.4;
-        if (vmax > pot) dV -= 0.5;
+        // 冷海减弱明显放慢：强度在海上更耐用
+        dV = -0.32 - (26.5 - sst) * 0.18;
+        if (vmax > pot) dV -= 0.15;
         phase = '海上减弱';
       } else if (sst >= 28.0) {
-        // 向 MPI 松弛；未达 MPI 且暖海时可 RI
+        // 向 MPI 松弛；未达 MPI 且暖海时可 RI；高纬扣减减弱
         dV = gap * 0.045;
         if (gap > 8 && vmax < 50) dV += 0.25 + (sst - 28) * 0.2;
-        if (lat > 28) dV -= (lat - 28) * 0.1;
+        if (lat > 28) dV -= (lat - 28) * 0.05;
         if (dV > 0.85) phase = '海上快速增强';
         else if (dV > 0.12) phase = '海上增强';
         else if (dV < -0.15) phase = '海上减弱';
         else phase = '海上维持';
       } else {
         dV = gap * 0.03 + (sst - 27.2) * 0.15;
-        if (lat > 30) dV -= 0.2;
+        if (lat > 30) dV -= 0.1;
         phase = dV >= 0.1 ? '海上增强' : (dV < -0.1 ? '海上减弱' : '海上维持');
       }
 
-      // 超过 MPI 回落
-      if (vmax > pot) dV = Math.min(dV, -(vmax - pot) * 0.08 - 0.2);
+      // 超过 MPI 回落（海上放慢，尤其开阔洋面）
+      if (vmax > pot) dV = Math.min(dV, -(vmax - pot) * 0.035 - 0.08);
 
       if (lat > 35 && sst < 27) {
-        dV -= 0.5;
+        dV -= 0.22;
         phase = '海上减弱';
       }
     }
 
-    if (vmax < 18 && dV < 0) dV *= 1.35;
+    if (vmax < 18 && dV < 0) dV *= 1.2;
     return { dV, phase, mpi: pot };
   }
 

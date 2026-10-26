@@ -724,7 +724,7 @@
     const timeStr = '第 ' + days + ' 天 ' + hrs + ' 小时' + (mins ? (' ' + mins + ' 分') : '');
 
     if (!state.members.length) {
-      clock.textContent = '模拟时钟：未开始 · 点击地图放置台风，再选风力等级（自动开始）或按「开始」';
+      clock.textContent = '模拟时钟：未开始 · 点击地图放置台风后按「开始」';
       document.getElementById('stTime').textContent = '—';
       document.getElementById('stPos').textContent = '—';
       document.getElementById('stWind').textContent = '—';
@@ -739,7 +739,7 @@
     if (!m.alive) clockExtra = ' · 已消亡';
     else if (state.paused) clockExtra = '（已暂停）';
     else if (state.running) clockExtra = '（运行中）';
-    else clockExtra = ' · 已放置，选择风力等级将自动开始，或按「开始」';
+    else clockExtra = ' · 已放置，选风力等级更新强度/风圈，按「开始」运行';
     clock.textContent = '模拟时钟：' + timeStr + clockExtra;
 
     document.getElementById('stTime').textContent = timeStr;
@@ -902,10 +902,6 @@
     }
     stopSim();
     placeStorm(lon, lat);
-    // 若已选风力等级，放置后自动开始
-    if (document.getElementById('initWindGrade').value) {
-      startSim();
-    }
   });
 
   document.getElementById('btnStart').onclick = startSim;
@@ -944,14 +940,8 @@
       document.getElementById('initWind').value = this.value;
     }
     if (!this.value) return;
-    // 已放置但未跑：同步风力并自动开始（用户常以为选等级即开跑）
-    if (state.members.length && state.members[0].alive && !state.running) {
-      applyInitWindToMember();
-      startSim();
-      return;
-    }
-    // 运行中改等级：更新当前风速
-    if (state.running && state.members.length && state.members[0].alive) {
+    // 已放置：立即同步 vmax + 重绘 7/10/12 级风圈与等级 UI；不自动开跑
+    if (state.members.length && state.members[0].alive) {
       applyInitWindToMember();
     }
   };

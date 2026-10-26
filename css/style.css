@@ -64,7 +64,6 @@ header.site-header .subtitle {
 }
 .panel#panel-run { border-left-color: #1f7a3a; }
 .panel#panel-status { border-left-color: #0e7cc0; }
-.panel#panel-sst { border-left-color: #c45c12; }
 .panel#panel-fugen { border-left-color: #c0392b; }
 .panel#panel-init { border-left-color: #2a6ebb; }
 
@@ -320,20 +319,6 @@ button:disabled {
   padding: 0 6px;
 }
 
-.sst-block {
-  border: 1px solid #e0b892;
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  background: linear-gradient(180deg, #fffaf4 0%, #fff3e6 100%);
-}
-.sst-block:last-child { margin-bottom: 0; }
-.sst-block .name {
-  font-weight: 700;
-  font-size: 12.5px;
-  margin-bottom: 6px;
-  color: #8a3d08;
-}
 
 /* 副高列表 */
 .fugen-list {

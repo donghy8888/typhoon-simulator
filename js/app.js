@@ -16,7 +16,8 @@
     members: [],
     hole: null,
     fugen: G.defaultFugen(),
-    sstRegions: G.defaultSstRegions(),
+    sstRegions: G.defaultSstRegions(), // 固定默认背景场，无侧栏调节
+    lastPlace: { lon: 140, lat: 15 },
     selectedFugen: null,
     _draggingVertex: false,
     _draggingBlock: false,
@@ -432,41 +433,6 @@
     });
   }
 
-  function renderSstControls() {
-    const box = document.getElementById('sstControls');
-    box.innerHTML = '';
-    state.sstRegions.forEach(r => {
-      const wrap = document.createElement('div');
-      wrap.className = 'sst-block';
-      wrap.innerHTML = '<div class="name">' + r.name +
-        ' <span style="font-weight:normal;color:#6a7a8a">(' +
-        r.lon0 + '–' + r.lon1 + '°E, ' + r.lat0 + '–' + r.lat1 + '°N)</span></div>';
-      const row = document.createElement('div');
-      row.className = 'form-row';
-      const label = document.createElement('label');
-      label.textContent = '海温';
-      const range = document.createElement('input');
-      range.type = 'range';
-      range.min = '20';
-      range.max = '32';
-      range.step = '0.5';
-      range.value = String(r.sst);
-      const val = document.createElement('span');
-      val.className = 'val';
-      val.textContent = r.sst.toFixed(1) + '℃';
-      range.oninput = () => {
-        r.sst = parseFloat(range.value);
-        val.textContent = r.sst.toFixed(1) + '℃';
-        redrawSst();
-      };
-      row.appendChild(label);
-      row.appendChild(range);
-      row.appendChild(val);
-      wrap.appendChild(row);
-      box.appendChild(wrap);
-    });
-  }
-
   // —— 引导风箭头（更密、更大；Canvas 下缩放更顺）——
   let _steerTimer = null;
   let _steerThrottleTimer = null;
@@ -737,14 +703,17 @@
       'u=' + m.u.toFixed(1) + ' v=' + m.v.toFixed(1) + ' m/s';
   }
 
+  function initVmaxFromGrade() {
+    const el = document.getElementById('initWindGrade');
+    const v = parseFloat(el && el.value);
+    return isFinite(v) ? v : 32.7;
+  }
+
   function placeStorm(lon, lat, vmax) {
     lon = clamp(lon, G.DOMAIN.lonMin, G.DOMAIN.lonMax);
     lat = clamp(lat, G.DOMAIN.latMin, G.DOMAIN.latMax);
-    document.getElementById('initLon').value = lon.toFixed(2);
-    document.getElementById('initLat').value = lat.toFixed(2);
-    if (vmax != null) document.getElementById('initWind').value = vmax;
-
-    vmax = parseFloat(document.getElementById('initWind').value);
+    state.lastPlace = { lon, lat };
+    if (vmax == null) vmax = initVmaxFromGrade();
 
     state.hole = P.ensureBirthHole(lon, lat, vmax, state.fugen);
     state.hours = 0;
@@ -813,16 +782,12 @@
 
   function startSim() {
     if (!state.members.length) {
-      const lon = parseFloat(document.getElementById('initLon').value);
-      const lat = parseFloat(document.getElementById('initLat').value);
-      placeStorm(lon, lat);
+      placeStorm(state.lastPlace.lon, state.lastPlace.lat);
     }
     if (!state.members[0].alive) {
-      const lon = parseFloat(document.getElementById('initLon').value);
-      const lat = parseFloat(document.getElementById('initLat').value);
-      placeStorm(lon, lat);
+      placeStorm(state.lastPlace.lon, state.lastPlace.lat);
     }
-    // 尚未开跑时，用左侧当前风速刷新已放置风暴（避免选等级后只改了 input）
+    // 尚未开跑时，用当前风力等级刷新已放置风暴
     if (!state.running && state.hours === 0) {
       applyInitWindToMember();
     }
@@ -901,9 +866,9 @@
     }
   };
 
-  /** 把左侧风速同步到已放置风暴：更新 vmax、等级标签与 7/10/12 风圈；不启动模拟 */
+  /** 把风力等级同步到已放置风暴：更新 vmax、等级标签与 7/10/12 风圈；不启动模拟 */
   function applyInitWindToMember() {
-    const vmax = parseFloat(document.getElementById('initWind').value);
+    const vmax = initVmaxFromGrade();
     if (!state.members.length || !isFinite(vmax)) return vmax;
     const m = state.members[0];
     if (!m.alive && !state.running) return vmax;
@@ -919,19 +884,8 @@
   }
 
   document.getElementById('initWindGrade').onchange = function () {
-    if (this.value) {
-      document.getElementById('initWind').value = this.value;
-    }
     // 已放置：立刻同步 vmax / 等级标签 / 七·十·十二级风圈；不自动开跑
     if (this.value) applyInitWindToMember();
-  };
-
-  // 直接改最大风速数字时同样同步显示与物理初值
-  document.getElementById('initWind').onchange = function () {
-    applyInitWindToMember();
-  };
-  document.getElementById('initWind').oninput = function () {
-    applyInitWindToMember();
   };
 
   document.getElementById('btnAddFugen').onclick = () => {
@@ -958,10 +912,9 @@
   redrawFugen();
   redrawSst();
   redrawSteer();
-  renderSstControls();
   renderFugenList();
   updateStatus();
 
   // 默认放置一个示范台风
-  placeStorm(140, 15, 35);
+  placeStorm(140, 15);
 })();

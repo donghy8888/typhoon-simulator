@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261026k" />
+  <link rel="stylesheet" href="css/style.css?v=20261026l" />
 </head>
 <body>
   <header class="site-header">
@@ -19,30 +19,15 @@
 
       <section class="panel" id="panel-init">
         <h2 class="panel-title">初始条件 <span class="badge">台风中心</span></h2>
+        <p class="hint" style="margin:0 0 0.6rem;font-size:0.85rem;color:#6a7a8a">点击地图放置台风中心</p>
         <div class="form-row">
-          <label for="initLon">经度</label>
-          <input type="number" id="initLon" value="140" step="0.1" min="100" max="180" title="东经 100–180°" />
-          <span class="unit">°E</span>
-        </div>
-        <div class="form-row">
-          <label for="initLat">纬度</label>
-          <input type="number" id="initLat" value="15" step="0.1" min="0" max="50" title="北纬 0–50°" />
-          <span class="unit">°N</span>
-        </div>
-        <div class="form-row">
-          <label for="initWind">最大风速</label>
-          <input type="number" id="initWind" value="35" step="0.5" min="14" max="70" />
-          <span class="unit">m/s</span>
-        </div>
-        <div class="form-row">
-          <label for="initWindGrade">或风力等级</label>
-          <select id="initWindGrade" title="按中国风力等级对照填入风速">
-            <option value="">— 对照选择 —</option>
+          <label for="initWindGrade">风力等级</label>
+          <select id="initWindGrade" title="按中国风力等级设定初始强度">
             <option value="17.2">8级 (17.2 m/s)</option>
             <option value="20.8">9级 (20.8 m/s)</option>
             <option value="24.5">10级 (24.5 m/s)</option>
             <option value="28.5">11级 (28.5 m/s)</option>
-            <option value="32.7">12级 (32.7 m/s)</option>
+            <option value="32.7" selected>12级 (32.7 m/s)</option>
             <option value="37.0">13级 (37.0 m/s)</option>
             <option value="41.5">14级 (41.5 m/s)</option>
             <option value="46.2">15级 (46.2 m/s)</option>
@@ -79,10 +64,6 @@
       </section>
 
 
-      <section class="panel" id="panel-sst">
-        <h2 class="panel-title">海温 <span class="badge">SST</span></h2>
-        <div id="sstControls"></div>
-      </section>
 
       <section class="panel" id="panel-fugen">
         <h2 class="panel-title">副热带高压</h2>
@@ -118,8 +99,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/geo.js?v=20261026k"></script>
-  <script src="js/physics.js?v=20261026k"></script>
-  <script src="js/app.js?v=20261026k"></script>
+  <script src="js/geo.js?v=20261026l"></script>
+  <script src="js/physics.js?v=20261026l"></script>
+  <script src="js/app.js?v=20261026l"></script>
 </body>
 </html>

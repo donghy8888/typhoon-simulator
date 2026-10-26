@@ -724,7 +724,7 @@
     const timeStr = '第 ' + days + ' 天 ' + hrs + ' 小时' + (mins ? (' ' + mins + ' 分') : '');
 
     if (!state.members.length) {
-      clock.textContent = '模拟时钟：未开始 · 点击地图放置台风后按「开始」';
+      clock.textContent = '模拟时钟：未开始 · 点击地图放置台风，再选风力等级（自动开始）或按「开始」';
       document.getElementById('stTime').textContent = '—';
       document.getElementById('stPos').textContent = '—';
       document.getElementById('stWind').textContent = '—';
@@ -735,8 +735,12 @@
     }
 
     const m = state.members[0];
-    clock.textContent = '模拟时钟：' + timeStr +
-      (m.alive ? (state.paused ? '（已暂停）' : (state.running ? '（运行中）' : '')) : ' · 已消亡');
+    let clockExtra = '';
+    if (!m.alive) clockExtra = ' · 已消亡';
+    else if (state.paused) clockExtra = '（已暂停）';
+    else if (state.running) clockExtra = '（运行中）';
+    else clockExtra = ' · 已放置，选择风力等级将自动开始，或按「开始」';
+    clock.textContent = '模拟时钟：' + timeStr + clockExtra;
 
     document.getElementById('stTime').textContent = timeStr;
     document.getElementById('stPos').textContent =
@@ -835,6 +839,10 @@
       const lat = parseFloat(document.getElementById('initLat').value);
       placeStorm(lon, lat);
     }
+    // 尚未开跑时，用左侧当前风速刷新已放置风暴（避免选等级后只改了 input）
+    if (!state.running && state.hours === 0) {
+      applyInitWindToMember();
+    }
 
     state.running = true;
     state.paused = false;
@@ -894,6 +902,10 @@
     }
     stopSim();
     placeStorm(lon, lat);
+    // 若已选风力等级，放置后自动开始
+    if (document.getElementById('initWindGrade').value) {
+      startSim();
+    }
   });
 
   document.getElementById('btnStart').onclick = startSim;
@@ -910,9 +922,37 @@
     }
   };
 
+  /** 把左侧风速同步到已放置风暴（未运行时改初值；运行中改当前 vmax） */
+  function applyInitWindToMember() {
+    const vmax = parseFloat(document.getElementById('initWind').value);
+    if (!state.members.length || !isFinite(vmax)) return vmax;
+    const m = state.members[0];
+    if (!m.alive && !state.running) return vmax;
+    m.vmax = vmax;
+    if (!state.running && m.track && m.track.length === 1) {
+      m.track[0].vmax = vmax;
+    }
+    state.hole = P.ensureBirthHole(m.lon, m.lat, vmax, state.fugen);
+    redrawFugen();
+    redrawStorm();
+    updateStatus();
+    return vmax;
+  }
+
   document.getElementById('initWindGrade').onchange = function () {
     if (this.value) {
       document.getElementById('initWind').value = this.value;
+    }
+    if (!this.value) return;
+    // 已放置但未跑：同步风力并自动开始（用户常以为选等级即开跑）
+    if (state.members.length && state.members[0].alive && !state.running) {
+      applyInitWindToMember();
+      startSim();
+      return;
+    }
+    // 运行中改等级：更新当前风速
+    if (state.running && state.members.length && state.members[0].alive) {
+      applyInitWindToMember();
     }
   };
 

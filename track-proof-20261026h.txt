@@ -1,0 +1,8 @@
+PROOF ?v=20261026h — stuck after intensity pick
+CAUSE (verified): Physics/run loop OK (ensemble removal did not break motion).
+  After map place, clock hint "按开始" disappeared; initWindGrade.onchange only
+  wrote #initWind and never called startSim — storm sat at phase 待启动 looking stuck.
+FIX: selecting 风力等级 with a placed storm auto-starts; map place with grade
+  already chosen also auto-starts; applyInitWindToMember syncs vmax; clock/toolbar
+  hints say 选风力等级自动开始 / 或按「开始」.
+Physics smoke: 140E15N vmax32.7 → after 24h ~135.6E 17.5N alive (unchanged core).

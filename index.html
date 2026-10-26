@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261026f" />
+  <link rel="stylesheet" href="css/style.css?v=20261026g" />
 </head>
 <body>
   <header class="site-header">
@@ -64,11 +64,6 @@
           <input type="range" id="simSpeed" min="1" max="20" value="4" />
           <span class="val" id="simSpeedVal">4×</span>
         </div>
-        <div class="form-row">
-          <label for="ensembleN">集合成员</label>
-          <input type="number" id="ensembleN" value="1" min="1" max="20" step="1" title="1–20；大于 1 时叠加扰动路径" />
-          <span class="unit">个</span>
-        </div>
       </section>
 
       <section class="panel" id="panel-status">
@@ -91,7 +86,6 @@
           <label title="大尺度引导风向示意箭头"><input type="checkbox" data-layer="steer" checked /> 引导风向箭头</label>
           <label title="陆地轮廓与山地示意（影响摩擦衰减）"><input type="checkbox" data-layer="terrain" checked /> 陆地 / 山地示意</label>
           <label title="主台风路径与风圈"><input type="checkbox" data-layer="track" checked /> 台风路径与风圈</label>
-          <label title="集合成员扰动路径（意大利面条图）"><input type="checkbox" data-layer="ensemble" checked /> 集合预报路径</label>
         </div>
       </section>
 
@@ -151,7 +145,6 @@
         <div><span class="swatch" style="background:transparent;border:2px solid #e67e22"></span>10级风圈</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #c0392b"></span>12级风圈</div>
         <div><span class="swatch" style="background:#2980b9"></span>台风路径</div>
-        <div><span class="swatch" style="background:#95a5a6"></span>集合成员路径</div>
         <div><span class="swatch" style="background:transparent;border:2px dashed #1a7f4b"></span>副高北缘（绿线）</div>
       </div>
     </div>
@@ -159,8 +152,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/geo.js?v=20261026f"></script>
-  <script src="js/physics.js?v=20261026f"></script>
-  <script src="js/app.js?v=20261026f"></script>
+  <script src="js/geo.js?v=20261026g"></script>
+  <script src="js/physics.js?v=20261026g"></script>
+  <script src="js/app.js?v=20261026g"></script>
 </body>
 </html>

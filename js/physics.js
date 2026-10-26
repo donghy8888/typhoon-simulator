@@ -587,34 +587,6 @@
     return { dV, phase, mpi: pot };
   }
 
-  function createMember(seed, init, cfg) {
-    const r = () => {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      return (seed / 0x7fffffff) * 2 - 1;
-    };
-    return {
-      lon: init.lon + r() * 0.6,
-      lat: init.lat + r() * 0.5,
-      vmax: clamp(init.vmax + r() * 3, 14, 70),
-      alive: true,
-      track: [],
-      phase: '待启动',
-      sst: null,
-      u: 0,
-      v: 0,
-      arcLat0: null, // 半弧锁存纬度原点（完成后不重置）
-      arcLon0: null, // 半弧锁存经度原点（辅助 Δlon 进度）
-      legTargetLat: null, // 往北腿目标纬度（保 ≥0.15° 竖段）
-      sAcc: 0,     // 半弧进度缓增累加器
-      cfgPerturb: {
-        steerU: cfg.steerU + r() * 1.2,
-        steerV: cfg.steerV + r() * 0.8,
-        westerlyU: cfg.westerlyU + r() * 1.5,
-        betaStrength: clamp(cfg.betaStrength + r() * 0.2, 0, 2)
-      }
-    };
-  }
-
   function stepMember(m, dtHours, baseCfg, fugenList, sstRegions, holeRef) {
     if (!m.alive) return;
 
@@ -694,7 +666,6 @@
     betaDrift,
     moveStep,
     intensityTendency,
-    createMember,
     stepMember,
     ensureBirthHole,
     updateHole

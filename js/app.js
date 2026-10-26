@@ -22,8 +22,7 @@
       sst: true,
       steer: true,
       terrain: true,
-      track: true,
-      ensemble: true
+      track: true
     },
     selectedFugen: null,
     _draggingVertex: false,
@@ -69,7 +68,6 @@
     // guides 永远在地图上（默认开），不随「引导风向箭头」开关关闭
     guides: L.layerGroup({ pane: 'guides' }).addTo(map),
     track: L.layerGroup().addTo(map),
-    ensemble: L.layerGroup().addTo(map),
     storm: L.layerGroup().addTo(map)
   };
 
@@ -87,17 +85,14 @@
   let holeCircleLayer = null;
   const stormRefs = {
     trackLine: null,
-    ensembleLines: [],
     windCircles: {},
     marker: null
   };
 
   function clearStormRefs() {
     layerGroups.track.clearLayers();
-    layerGroups.ensemble.clearLayers();
     layerGroups.storm.clearLayers();
     stormRefs.trackLine = null;
-    stormRefs.ensembleLines = [];
     stormRefs.windCircles = {};
     stormRefs.marker = null;
   }
@@ -664,21 +659,6 @@
 
     const main = state.members[0];
 
-    if (state.layers.ensemble && state.members.length > 1) {
-      for (let i = 1; i < state.members.length; i++) {
-        const m = state.members[i];
-        const latlngs = m.track.map(function (p) { return [p.lat, p.lon]; });
-        const ei = i - 1;
-        if (stormRefs.ensembleLines[ei]) {
-          if (latlngs.length >= 2) stormRefs.ensembleLines[ei].setLatLngs(latlngs);
-        } else if (latlngs.length >= 2) {
-          stormRefs.ensembleLines[ei] = L.polyline(latlngs, {
-            color: '#95a5a6', weight: 1.5, opacity: 0.7
-          }).addTo(layerGroups.ensemble);
-        }
-      }
-    }
-
     if (state.layers.track && main.track.length >= 1) {
       const latlngs = main.track.map(function (p) { return [p.lat, p.lon]; });
       if (latlngs.length >= 2) {
@@ -778,15 +758,11 @@
     if (vmax != null) document.getElementById('initWind').value = vmax;
 
     vmax = parseFloat(document.getElementById('initWind').value);
-    const n = clamp(parseInt(document.getElementById('ensembleN').value, 10) || 1, 1, 20);
-    document.getElementById('ensembleN').value = n;
 
-    const cfg = cfgFromUI();
     state.hole = P.ensureBirthHole(lon, lat, vmax, state.fugen);
     state.hours = 0;
     state.members = [];
 
-    const init = { lon, lat, vmax };
     const main = {
       lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
       phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
@@ -795,13 +771,6 @@
       cfgPerturb: null
     };
     state.members.push(main);
-
-    for (let i = 1; i < n; i++) {
-      const mem = P.createMember(1000 + i * 97 + Math.floor(lon * 10), init, cfg);
-      mem.track = [{ lon: mem.lon, lat: mem.lat, vmax: mem.vmax, t: 0 }];
-      mem.sst = G.getSst(mem.lon, mem.lat, state.sstRegions);
-      state.members.push(mem);
-    }
 
     redrawFugen();
     redrawStorm();
@@ -968,7 +937,7 @@
       if (inp.dataset.layer === 'sst') redrawSst();
       if (inp.dataset.layer === 'steer') redrawSteer();
       if (inp.dataset.layer === 'terrain') redrawTerrain();
-      if (inp.dataset.layer === 'track' || inp.dataset.layer === 'ensemble') redrawStorm();
+      if (inp.dataset.layer === 'track') redrawStorm();
     };
   });
 

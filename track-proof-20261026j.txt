@@ -1,0 +1,1 @@
+PROOF ?v=20261026j — remove layer toggles; all layers always on (fugen/sst/steer/terrain/track/guides/wind circles); single main track

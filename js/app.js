@@ -17,13 +17,6 @@
     hole: null,
     fugen: G.defaultFugen(),
     sstRegions: G.defaultSstRegions(),
-    layers: {
-      fugen: true,
-      sst: true,
-      steer: true,
-      terrain: true,
-      track: true
-    },
     selectedFugen: null,
     _draggingVertex: false,
     _draggingBlock: false,
@@ -65,7 +58,7 @@
     fugen: L.layerGroup().addTo(map),
     sst: L.layerGroup().addTo(map),
     steer: L.layerGroup().addTo(map),
-    // guides 永远在地图上（默认开），不随「引导风向箭头」开关关闭
+    // guides 永远在地图上（黄/绿线）
     guides: L.layerGroup({ pane: 'guides' }).addTo(map),
     track: L.layerGroup().addTo(map),
     storm: L.layerGroup().addTo(map)
@@ -109,7 +102,6 @@
   // —— 地形绘制 ——
   function redrawTerrain() {
     layerGroups.terrain.clearLayers();
-    if (!state.layers.terrain) return;
     G.LAND_POLYS.forEach(ring => {
       L.polygon(ring, {
         color: '#7a8a6a', weight: 1, fillColor: '#c5d5b5', fillOpacity: 0.35
@@ -162,10 +154,6 @@
     layerGroups.fugen.clearLayers();
     fugenPolygons = [];
     holeCircleLayer = null;
-    if (!state.layers.fugen) {
-      if (opts.refreshSteer !== false) redrawSteerSoon();
-      return;
-    }
 
     state.fugen.forEach((f, idx) => {
       const outer = ringToLatLng(f.ring);
@@ -305,7 +293,7 @@
     });
 
     // 空洞描边提示
-    if (state.hole && state.layers.fugen) {
+    if (state.hole) {
       holeCircleLayer = L.circle([state.hole.lat, state.hole.lon], {
         radius: state.hole.radiusDeg * 111320,
         color: '#922b21',
@@ -320,8 +308,6 @@
 
   /** tick 时原地更新空圈与副高挖洞，避免 clearLayers + 重建 */
   function updateHoleVisualInPlace() {
-    if (!state.layers.fugen) return;
-
     state.fugen.forEach(function (f, idx) {
       const poly = fugenPolygons[idx];
       if (poly) applyPolyLatLngs(poly, f);
@@ -422,7 +408,6 @@
   // —— SST 等值线 ——
   function redrawSst() {
     layerGroups.sst.clearLayers();
-    if (!state.layers.sst) return;
 
     state.sstRegions.forEach(r => {
       const bounds = [[r.lat0, r.lon0], [r.lat1, r.lon1]];
@@ -523,7 +508,6 @@
    * 运行中走节流，避免每次 lat 微移都重绘。
    */
   function maybeRefreshSteerAfterTick(holeJustChangedPresence) {
-    if (!state.layers.steer) return;
     const present = !!state.hole;
     const radius = present ? state.hole.radiusDeg : null;
     let geometryChanged = holeJustChangedPresence;
@@ -546,12 +530,11 @@
   }
 
   /**
-   * 黄线 / 绿线：始终绘制到 guides pane（默认开，不随箭头层关闭）。
+   * 黄线 / 绿线：始终绘制到 guides pane。
    * yellowLat = greenEdge − 0.15°；同 lon 采样；亮黄 weight=3.5 同绿线；SVG 非 canvas，压在副高之上。
    */
   function redrawGuideLines() {
     layerGroups.guides.clearLayers();
-    // FORCE ON: 黄绿引导线永不因 hidden layer flag 跳过
     const edgePts = [];
     const yellowPts = [];
     const band = G.APPROACH_NORTH_BAND_DEG || 0.15;
@@ -584,7 +567,6 @@
   function redrawSteer() {
     redrawGuideLines();
     layerGroups.steer.clearLayers();
-    if (!state.layers.steer) return;
     const cfg = cfgFromUI();
     // 复用模块级 steerRenderer，切勿每次 new L.canvas()
     const canvas = steerRenderer;
@@ -644,7 +626,7 @@
     });
   }
 
-  /** 完整重建（放置 / 重置 / 图层开关） */
+  /** 完整重建（放置 / 重置） */
   function redrawStorm() {
     clearStormRefs();
     updateStormInPlace();
@@ -659,7 +641,7 @@
 
     const main = state.members[0];
 
-    if (state.layers.track && main.track.length >= 1) {
+    if (main.track.length >= 1) {
       const latlngs = main.track.map(function (p) { return [p.lat, p.lon]; });
       if (latlngs.length >= 2) {
         if (stormRefs.trackLine) {
@@ -960,21 +942,6 @@
     };
   });
 
-  document.querySelectorAll('#layerToggles input').forEach(inp => {
-    inp.onchange = () => {
-      state.layers[inp.dataset.layer] = inp.checked;
-      const g = layerGroups[inp.dataset.layer];
-      if (g) {
-        if (inp.checked) map.addLayer(g);
-        else map.removeLayer(g);
-      }
-      if (inp.dataset.layer === 'fugen') redrawFugen();
-      if (inp.dataset.layer === 'sst') redrawSst();
-      if (inp.dataset.layer === 'steer') redrawSteer();
-      if (inp.dataset.layer === 'terrain') redrawTerrain();
-      if (inp.dataset.layer === 'track') redrawStorm();
-    };
-  });
 
   document.getElementById('btnAddFugen').onclick = () => {
     const c = map.getCenter();

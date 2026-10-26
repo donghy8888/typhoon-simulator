@@ -1,10 +1,9 @@
-PROOF ?v=20261026i — grade updates intensity/wind circles; no auto-start
-REVERT of 20261026h auto-start behavior (user clarified intent).
-REAL BUG: selecting 风力等级 only filled #initWind; placed storm vmax / 7·10·12
-  wind circles / grade label on map+status did not update until「开始」.
+PROOF ?v=20261026i — grade select updates intensity+radii, does NOT auto-start
+USER: selecting 风力等级 should not move the storm; press「开始」to run.
+REAL BUG: after grade pick, vmax label and 七/十/十二级风圈 looked unchanged ("没动").
 FIX:
-  - initWindGrade.onchange → set #initWind + applyInitWindToMember() (vmax,
-    redraw wind radii + status). Does NOT call startSim.
-  - map place never auto-starts; wait for「开始」.
-  - clock/toolbar/README hints restored: place → pick grade (update) → 开始.
-KEPT: applyInitWindToMember + startSim still syncs left-panel wind at t=0.
+  - Revert 20261026h auto-start on grade select / place-with-grade.
+  - On initWindGrade change (and initWind input): applyInitWindToMember()
+    → m.vmax (+ track[0].vmax if still at t0), birth hole, redrawStorm
+      (G.windRadiiForGrades → 7/10/12 circles), updateStatus (stWind grade).
+  - Sim stays idle until「开始」; startSim still re-applies init wind when hours===0.

@@ -918,7 +918,7 @@
     }
   };
 
-  /** 把左侧风速同步到已放置风暴（未运行时改初值；运行中改当前 vmax） */
+  /** 把左侧风速同步到已放置风暴：更新 vmax、等级标签与 7/10/12 风圈；不启动模拟 */
   function applyInitWindToMember() {
     const vmax = parseFloat(document.getElementById('initWind').value);
     if (!state.members.length || !isFinite(vmax)) return vmax;
@@ -939,11 +939,16 @@
     if (this.value) {
       document.getElementById('initWind').value = this.value;
     }
-    if (!this.value) return;
-    // 已放置：立即同步 vmax + 重绘 7/10/12 级风圈与等级 UI；不自动开跑
-    if (state.members.length && state.members[0].alive) {
-      applyInitWindToMember();
-    }
+    // 已放置：立刻同步 vmax / 等级标签 / 七·十·十二级风圈；不自动开跑
+    if (this.value) applyInitWindToMember();
+  };
+
+  // 直接改最大风速数字时同样同步显示与物理初值
+  document.getElementById('initWind').onchange = function () {
+    applyInitWindToMember();
+  };
+  document.getElementById('initWind').oninput = function () {
+    applyInitWindToMember();
   };
 
   ['steerU', 'steerV', 'westerlyU', 'betaStrength'].forEach(id => {

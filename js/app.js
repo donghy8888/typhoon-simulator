@@ -91,11 +91,12 @@
   }
 
   function cfgFromUI() {
+    // 引导气流固定默认值（侧栏调整 UI 已移除）
     return {
-      steerU: parseFloat(document.getElementById('steerU').value),
-      steerV: parseFloat(document.getElementById('steerV').value),
-      westerlyU: parseFloat(document.getElementById('westerlyU').value),
-      betaStrength: parseFloat(document.getElementById('betaStrength').value)
+      steerU: -3,
+      steerV: 1.5,
+      westerlyU: 8,
+      betaStrength: 1
     };
   }
 
@@ -932,16 +933,6 @@
   document.getElementById('initWind').oninput = function () {
     applyInitWindToMember();
   };
-
-  ['steerU', 'steerV', 'westerlyU', 'betaStrength'].forEach(id => {
-    const el = document.getElementById(id);
-    const valEl = document.getElementById(id + 'Val');
-    el.oninput = () => {
-      valEl.textContent = parseFloat(el.value).toFixed(1);
-      redrawSteer();
-    };
-  });
-
 
   document.getElementById('btnAddFugen').onclick = () => {
     const c = map.getCenter();

@@ -300,7 +300,8 @@
    */
   const APPROACH_NORTH_BAND_DEG = 0.15;
   // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺
-  const WESTERLY_EDGE_BLEND = [[0, 0.7], [-1, 0.15], [1, 0.15]];
+  // [dlon, weight]：本经线权重大，±1° 轻柔平滑毛刺（勿扩到 ±2，以免南海脊污染两脊空档）
+  const WESTERLY_EDGE_BLEND = [[0, 0.62], [-1, 0.19], [1, 0.19]];
 
   /** 单经线上的原始局地北缘（二分），无偏置 */
   function rawLocalFugenEdgeLat(lon, fugenList, hole) {

@@ -286,32 +286,161 @@
     return { u: -0.75 * speed, v: 0.85 * speed };
   }
 
-  /** 从副高实体内小步推出（步长小，避免贴边弹跳锯齿） */
+  /** 平滑副高法向（指向实体内部）。多点加权，抑制多边形折角造成的法向翻转。 */
+  function smoothedInwardNormal(lon, lat, fugenList, hole) {
+    const samples = [
+      [0, 0, 1.0],
+      [0.25, 0, 0.55], [-0.25, 0, 0.55],
+      [0, 0.25, 0.55], [0, -0.25, 0.55],
+      [0.45, 0.15, 0.35], [-0.45, 0.15, 0.35],
+      [0.45, -0.15, 0.35], [-0.45, -0.15, 0.35]
+    ];
+    let gx = 0, gy = 0, wSum = 0;
+    for (const [dx, dy, w] of samples) {
+      const g = G.fugenGradient(lon + dx, lat + dy, fugenList, hole);
+      gx += g.gx * w;
+      gy += g.gy * w;
+      wSum += w;
+    }
+    gx /= wSum;
+    gy /= wSum;
+    let gl = Math.hypot(gx, gy);
+    if (gl < 1e-6) return null;
+    return { nx: gx / gl, ny: gy / gl, gl };
+  }
+
+  /** 从副高实体内小步推出（细步；仅在真穿入后加外侧微间隙） */
   function pushOutOfFugen(lon, lat, fugenList, hole, maxIter) {
-    maxIter = maxIter || 20;
+    maxIter = maxIter || 28;
+    const step = 0.045;
+    let wasInside = G.inFugenSolid(lon, lat, fugenList, hole);
     for (let k = 0; k < maxIter; k++) {
       if (!G.inFugenSolid(lon, lat, fugenList, hole)) break;
-      const gg = G.fugenGradient(lon, lat, fugenList, hole);
-      let gl = Math.hypot(gg.gx, gg.gy);
-      if (gl < 1e-6) {
-        lon -= 0.12;
-        lat -= 0.08;
+      wasInside = true;
+      const n = smoothedInwardNormal(lon, lat, fugenList, hole);
+      if (!n) {
+        lon -= 0.06;
+        lat -= 0.04;
       } else {
-        lon -= (gg.gx / gl) * 0.12;
-        lat -= (gg.gy / gl) * 0.12;
+        lon -= n.nx * step;
+        lat -= n.ny * step;
+      }
+    }
+    // 仅当本步确实从实体内推出时加微间隙；远处有梯度也绝不能外推（否则黄南北进被吃掉）
+    if (wasInside && !G.inFugenSolid(lon, lat, fugenList, hole)) {
+      const n = smoothedInwardNormal(lon, lat, fugenList, hole);
+      if (n) {
+        lon -= n.nx * 0.03;
+        lat -= n.ny * 0.03;
       }
     }
     return { lon, lat };
   }
 
-  /** 贴边时只去掉穿入分量，保留原引导风切向，轻微外推——避免巨尺状折线。
+  /**
+   * 穿入时沿边界裁剪并切向滑行（保留原步长），替代硬推出造成的锯齿尖角。
+   * 绿北半弧（bowOn）不调用。
+   */
+  function clipAndSlide(lon, lat, nlon, nlat, u, v, fugenList, hole) {
+    const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    const southOfGreen = edge != null && lat < edge;
+
+    if (!G.inFugenSolid(nlon, nlat, fugenList, hole)) {
+      // 已在外侧：若几乎贴边，略外推保持间隙，不反向折返
+      if (G.inFugenSolid(nlon, nlat + 0.08, fugenList, hole) ||
+          G.inFugenSolid(nlon + 0.08, nlat, fugenList, hole) ||
+          G.inFugenSolid(nlon - 0.08, nlat, fugenList, hole) ||
+          G.inFugenSolid(nlon, nlat - 0.08, fugenList, hole)) {
+        const n = smoothedInwardNormal(nlon, nlat, fugenList, hole);
+        if (n) {
+          nlon -= n.nx * 0.03;
+          nlat -= n.ny * 0.03;
+        }
+      }
+      return { lon: nlon, lat: nlat };
+    }
+
+    const stepLon = nlon - lon;
+    const stepLat = nlat - lat;
+    const stepLen = Math.hypot(stepLon, stepLat);
+    // 二分找线段上最远的外侧点
+    let lo = 0, hi = 1;
+    let freeLon = lon, freeLat = lat;
+    for (let k = 0; k < 14; k++) {
+      const mid = (lo + hi) * 0.5;
+      const mx = lon + stepLon * mid;
+      const my = lat + stepLat * mid;
+      if (G.inFugenSolid(mx, my, fugenList, hole)) hi = mid;
+      else {
+        lo = mid;
+        freeLon = mx;
+        freeLat = my;
+      }
+    }
+    if (G.inFugenSolid(freeLon, freeLat, fugenList, hole) ||
+        (Math.abs(freeLon - lon) < 1e-9 && Math.abs(freeLat - lat) < 1e-9 &&
+         G.inFugenSolid(lon, lat, fugenList, hole))) {
+      ({ lon: freeLon, lat: freeLat } = pushOutOfFugen(lon, lat, fugenList, hole));
+    }
+
+    const used = Math.hypot(freeLon - lon, freeLat - lat);
+    let remain = Math.max(0, stepLen - used);
+    const n = smoothedInwardNormal(freeLon, freeLat, fugenList, hole);
+    if (!n || remain < 1e-6) {
+      return pushOutOfFugen(freeLon, freeLat, fugenList, hole);
+    }
+
+    // 切向（与原速度同号）
+    let tx = -n.ny, ty = n.nx;
+    if (u * tx + v * ty < 0) { tx = -tx; ty = -ty; }
+
+    // 绿南贴南缘：切向滑行混入原步进方向，保留北分量，避免纯西锯齿爬行
+    let dx, dy;
+    if (southOfGreen) {
+      const ol = Math.hypot(stepLon, stepLat) || 1;
+      const ox = stepLon / ol, oy = stepLat / ol;
+      dx = 0.72 * tx + 0.28 * ox;
+      dy = 0.72 * ty + 0.28 * oy;
+      const dl = Math.hypot(dx, dy) || 1;
+      dx /= dl; dy /= dl;
+      // 南缘：法向约向北，略外推（向南）+ 保北向下限
+      if (dy < 0.25 && oy > 0) dy = 0.25;
+      const dl2 = Math.hypot(dx, dy) || 1;
+      dx /= dl2; dy /= dl2;
+    } else {
+      dx = tx; dy = ty;
+    }
+
+    let sx = freeLon - n.nx * 0.035 + dx * remain;
+    let sy = freeLat - n.ny * 0.035 + dy * remain;
+    if (G.inFugenSolid(sx, sy, fugenList, hole)) {
+      let rLo = 0, rHi = remain;
+      sx = freeLon - n.nx * 0.035;
+      sy = freeLat - n.ny * 0.035;
+      for (let k = 0; k < 10; k++) {
+        const mid = (rLo + rHi) * 0.5;
+        const mx = freeLon - n.nx * 0.035 + dx * mid;
+        const my = freeLat - n.ny * 0.035 + dy * mid;
+        if (G.inFugenSolid(mx, my, fugenList, hole)) rHi = mid;
+        else {
+          rLo = mid;
+          sx = mx;
+          sy = my;
+        }
+      }
+    }
+    return { lon: sx, lat: sy };
+  }
+
+  /** 贴边时只去掉穿入分量，保留原引导风切向，轻柔外推——避免巨尺状折线。
    *  关键：绿线以南的北缘接近（N→ENE 弧窗）不得被 lat+ε “near” 探测掐掉北向，
    *  否则主脊下路径会竖直贴边后尖折成 ENE，大半圆永远看不见。
+   *  20261027b：南缘滑行时外推更轻、法向更平滑，配合 clipAndSlide 消锯齿。
    */
   function slideAlongFugen(lon, lat, u, v, fugenList, hole) {
     const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
     const southOfGreen = edge != null && lat < edge;
-    const probes = [0.25, 0.55, 0.9];
+    const probes = [0.35, 0.7, 1.05];
     let hit = false;
     for (const probe of probes) {
       const { dlon, dlat } = G.degPerHourFromMs(u, v, lat);
@@ -330,37 +459,46 @@
 
     if (!hit && !near) return { u, v };
 
-    const g = G.fugenGradient(lon, lat, fugenList, hole);
-    const g2 = G.fugenGradient(lon + 0.2, lat, fugenList, hole);
-    const g3 = G.fugenGradient(lon, lat + 0.2, fugenList, hole);
-    let gx = g.gx + 0.5 * g2.gx + 0.5 * g3.gx;
-    let gy = g.gy + 0.5 * g2.gy + 0.5 * g3.gy;
-    let gl = Math.hypot(gx, gy);
-    if (gl < 1e-6) return { u, v };
-    const nx = gx / gl, ny = gy / gl; // 指向副高内部
+    const n = smoothedInwardNormal(lon, lat, fugenList, hole);
+    if (!n) return { u, v };
+    const nx = n.nx, ny = n.ny;
 
-    // 去掉向内法向分量
+    // 去掉向内法向分量。绿南贴南缘时只去掉部分北向穿入，保留 WNW 北分量，
+    // 否则路径会贴南缘纯西爬行，拖到南海脊经度触发假“绿北”尖折。
     const into = u * nx + v * ny;
     if (into > 0) {
-      u -= into * nx;
-      v -= into * ny;
+      const strip = southOfGreen ? 0.55 : 1.0;
+      u -= into * strip * nx;
+      v -= into * strip * ny;
     }
-    // 轻微外推，幅度远小于旧版，避免折返
-    u -= nx * 0.35;
-    v -= ny * 0.35;
+    // 外推：绿南更轻，避免南北弹跳；仍靠 clipAndSlide 保外侧间隙
+    const outKick = southOfGreen ? 0.08 : 0.28;
+    u -= nx * outKick;
+    v -= ny * outKick;
 
-    // 切向：保持原速度在切向上的投影，不强制改写方向
+    // 切向：保持原速度在切向上的投影
     const tx = -ny, ty = nx;
     let along = u * tx + v * ty;
-    // 若几乎卡住，给一点沿切向的引导（取与原引导同号）
     if (Math.abs(along) < 0.55) {
-      const stSign = (Math.abs(u) + Math.abs(v)) > 0.01 ? 1 : 1;
-      along = 2.4 * (along >= 0 ? 1 : -1) * stSign; // 贴边卡住时更快切向推进
-      u = tx * along - nx * 0.35;
-      v = ty * along - ny * 0.35;
+      const prefer = along >= 0 ? 1 : -1;
+      const boost = southOfGreen ? 2.8 : 2.4;
+      along = boost * prefer;
+      u = tx * along - nx * outKick;
+      v = ty * along - ny * outKick;
     }
 
-    // 限速，防止单步飞出造成巨尺折线
+    // 绿南：强制保持 WNW 北分量下限，路径沿南缘斜上而非锯齿纯西
+    if (southOfGreen) {
+      if (v < 2.8) v = 2.8;
+      if (u > -3.2) u = Math.min(u, -3.2);
+      // 仍禁止明显穿入
+      const into2 = u * nx + v * ny;
+      if (into2 > 0.45) {
+        u -= (into2 - 0.2) * nx;
+        v -= (into2 - 0.2) * ny;
+      }
+    }
+
     const spd = Math.hypot(u, v);
     const maxSpd = 14;
     if (spd > maxSpd) {
@@ -368,6 +506,26 @@
       v *= maxSpd / spd;
     }
     return { u, v };
+  }
+
+  /** 步间航向限幅：抑制 fringe/slide 造成的尖角折转 */
+
+
+  function blendHeading(prevU, prevV, u, v, maxTurnDeg) {
+    if (prevU == null || prevV == null) return { u, v };
+    const spd0 = Math.hypot(prevU, prevV);
+    const spd1 = Math.hypot(u, v);
+    if (spd0 < 0.2 || spd1 < 0.2) return { u, v };
+    const a0 = Math.atan2(prevV, prevU);
+    const a1 = Math.atan2(v, u);
+    let d = a1 - a0;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    const maxRad = (maxTurnDeg * Math.PI) / 180;
+    if (Math.abs(d) <= maxRad) return { u, v };
+    const a = a0 + Math.sign(d) * maxRad;
+    const spd = 0.65 * spd1 + 0.35 * spd0;
+    return { u: Math.cos(a) * spd, v: Math.sin(a) * spd };
   }
 
   function moveStepOnce(lon, lat, vmax, dtHours, cfg, fugenList, hole, arcState) {
@@ -448,6 +606,9 @@
         if (u < -5.5) u = -5.5;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.05) u = -Math.max(v * 1.1, 4.0);
+        // 接近黄线时渐收西向（不抬北速），避免 WNW→正北硬折，并保留黄→绿纯北腿
+        const ease = clamp((-band - northOf) / 0.85, 0, 1);
+        u *= smoothstep(ease);
       }
     }
     if (edge != null) {
@@ -499,7 +660,8 @@
       nlat += 0.1;
       for (let k = 0; k < 6 && G.inFugenSolid(nlon, nlat, fugenList, hole); k++) nlat += 0.08;
     } else {
-      ({ lon: nlon, lat: nlat } = pushOutOfFugen(nlon, nlat, fugenList, hole));
+      // 贴边滑行：裁剪 + 切向续行，避免 pushOut 南北弹跳锯齿
+      ({ lon: nlon, lat: nlat } = clipAndSlide(lon, lat, nlon, nlat, u, v, fugenList, hole));
     }
 
     nlon = clamp(nlon, G.DOMAIN.lonMin + 0.2, G.DOMAIN.lonMax - 0.2);
@@ -604,10 +766,21 @@
     if (m.clearLat0 === undefined) m.clearLat0 = null;
     const arcState = m; // 就地写入 arcLat0 / legTargetLat
     const moved = moveStep(m.lon, m.lat, m.vmax, dtHours, cfg, fugenList, holeRef, arcState);
+    // 步间航向平滑：贴副高缘时限幅，消尖角；越绿半弧放宽以免抹掉转向
+    const nearEdge = (() => {
+      const e = G.guidingNorthernEdgeLat(moved.lon, fugenList, holeRef);
+      if (e == null) return false;
+      return Math.abs(moved.lat - e) < 4.5 || G.inFugenSolid(moved.lon, moved.lat, fugenList, holeRef);
+    })();
+    const arcTurning = m.clearLon0 != null && (m.sAcc || 0) < 1;
+    let ou = moved.u, ov = moved.v;
+    if (nearEdge && !arcTurning) {
+      ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(18, 28 * Math.min(1, dtHours))));
+    }
     m.lon = moved.lon;
     m.lat = moved.lat;
-    m.u = moved.u;
-    m.v = moved.v;
+    m.u = ou;
+    m.v = ov;
 
     const sst = G.getSst(m.lon, m.lat, sstRegions);
     m.sst = sst;

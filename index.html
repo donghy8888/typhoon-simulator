@@ -6,12 +6,12 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261027a" />
+  <link rel="stylesheet" href="css/style.css?v=20261027b" />
 </head>
 <body>
   <header class="site-header">
     <h1>西北太平洋台风模拟器</h1>
-    <p class="subtitle">西北太平洋热带气旋路径与强度模拟</p>
+    <p class="subtitle">西北太平洋热带气旋路径与强度 · 副高引导 · 简易业务台站</p>
   </header>
 
   <div class="layout">
@@ -49,12 +49,14 @@
       <section class="panel" id="panel-status">
         <h2 class="panel-title">实时状态</h2>
         <div class="status-panel" id="statusPanel">
+          <div class="st-section">观测要素</div>
           <div class="st-row"><span class="st-label">时间</span><span class="st-value" id="stTime">—</span></div>
-          <div class="st-row"><span class="st-label">位置</span><span class="st-value" id="stPos">—</span></div>
-          <div class="st-row"><span class="st-label">最大风速</span><span class="st-value" id="stWind">—</span></div>
-          <div class="st-row"><span class="st-label">海温（SST）</span><span class="st-value" id="stSst">—</span></div>
+          <div class="st-row"><span class="st-label">位置</span><span class="st-value mono" id="stPos">—</span></div>
+          <div class="st-row"><span class="st-label">最大风速</span><span class="st-value wind" id="stWind">—</span></div>
+          <div class="st-row"><span class="st-label">海温（SST）</span><span class="st-value sst" id="stSst">—</span></div>
           <div class="st-row"><span class="st-label">阶段</span><span class="st-value phase" id="stPhase">待启动</span></div>
-          <div class="st-row"><span class="st-label">引导气流</span><span class="st-value" id="stSteer">—</span></div>
+          <div class="st-section">引导场</div>
+          <div class="st-row"><span class="st-label">引导气流</span><span class="st-value mono" id="stSteer">—</span></div>
         </div>
       </section>
 
@@ -74,28 +76,31 @@
     <div class="map-wrap">
       <div id="map"></div>
       <div class="map-toolbar" id="mapToolbar" title="操作提示">
-        点击地图放置台风 · 选风力等级更新强度/风圈 · 按「开始」运行 · 副高可拖移改形
+        操作：点击地图落点 · 选风力等级 ·「开始」积分 · 副高可拖移改形
       </div>
       <div class="clock-bar" id="clockBar">模拟时钟：未开始 · 点击地图放置台风后按「开始」</div>
       <div class="map-legend">
-        <div class="legend-title">图例</div>
-        <div><span class="swatch" style="background:#e74c3c;opacity:0.55"></span>副热带高压</div>
-        <div><span class="swatch" style="background:transparent;border:2px solid #e67e22"></span>SST 26.5℃</div>
+        <div class="legend-title">图例 · 业务要素</div>
+        <div class="legend-sec">环境场</div>
+        <div><span class="swatch" style="background:#d35400;opacity:0.55"></span>副热带高压</div>
+        <div><span class="swatch" style="background:transparent;border:2px solid #d68910"></span>SST 26.5℃</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #922b21"></span>SST 28℃</div>
-        <div><span class="swatch" style="background:#8b7355;opacity:0.45"></span>山地示意</div>
-        <div><span class="swatch" style="background:transparent;border:2px solid #2980b9"></span>7级风圈</div>
-        <div><span class="swatch" style="background:transparent;border:2px solid #e67e22"></span>10级风圈</div>
+        <div><span class="swatch" style="background:#8b7355;opacity:0.5"></span>山地示意</div>
+        <div class="legend-sec">台风</div>
+        <div><span class="swatch" style="background:transparent;border:2px solid #2471a3"></span>7级风圈</div>
+        <div><span class="swatch" style="background:transparent;border:2px solid #d68910"></span>10级风圈</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #c0392b"></span>12级风圈</div>
-        <div><span class="swatch" style="background:#2980b9"></span>台风路径</div>
-        <div><span class="swatch" style="background:transparent;border:2px dashed #1a7f4b"></span>副高北缘（绿线）</div>
+        <div><span class="swatch" style="background:#1a5276"></span>台风路径</div>
+        <div class="legend-sec">引导</div>
+        <div><span class="swatch" style="background:transparent;border:2px dashed #1e8449"></span>副高北缘（绿线）</div>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/geo.js?v=20261027a"></script>
-  <script src="js/physics.js?v=20261027a"></script>
-  <script src="js/app.js?v=20261027a"></script>
+  <script src="js/geo.js?v=20261027b"></script>
+  <script src="js/physics.js?v=20261027b"></script>
+  <script src="js/app.js?v=20261027b"></script>
 </body>
 </html>

@@ -57,21 +57,22 @@
   /**
    * 引导气流（绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261026e）：
+   * 分区（20261026f）：
    *   黄线以南 (northOf < −0.15)：明确 WNW 西北偏西（|u|>v，西多于北；非 NNW）
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿）
-   *   绿线以北：NE 稍微偏东 ≈45° from N；杀深 ENE / 大 u / 大 lon bow；
-   *             转向振幅稍微大一点 Δlon≈6–9°（相对 26d 的 ~5.6–7.4 略增）
+   *   绿线以北：NE 稍微偏东 ≈45° from N；杀深 ENE / 大 u；
+   *             转向再稍微大一点 life Δlon≈12–14（相对 26e ~10；仍非旧 20°）；
+   *             半圆光滑半弧：曲率连续 due-N→NE，无 tip kink / 边角。
    *
    * 状态机（arcState）：
    *   A) 首次进入绿南 ~0.22°：legTargetLat=max(edge,lat+0.15)，u≡0 往北直到越过；
-   *   B) 越过后锁存 arcLat0，平滑 N→NE 半弧（不因 edge 回追重置）；中等略大 Δlon。
+   *   B) 越过后锁存 arcLat0，常数曲率半圆 N→NE（不因 edge 回追重置）。
    */
   const NORTH_LEG_DEG = 0.15;
   const RECURVE_ARC_DEG = 7.0;
-  const POST_GREEN_ARC_DEG = 4.2;  // 略加长弧：绿后落到 ~45° fromN
-  const TARGET_ARC_DLON_DEG = 5.8; // 稍微大一小点 ≈6–9°（非大弯）
-  const ARC_BOW_LON_DEG = 1.8;     // 东鼓略增：可见轻弧，仍非大弯
+  const POST_GREEN_ARC_DEG = 4.7;  // 半弧 lat 跨度：较低纬收束，留 NE 巡航攒 lon
+  const TARGET_ARC_DLON_DEG = 14.8; // 稍微大一小点 → life Δlon≈12–14
+  const ARC_BOW_LON_DEG = 6.1;     // 半圆东鼓（sin 峰值中段，无尖角）
   /** atan2(v,u)≈45° → 地理约 45° from N（NE 稍微偏东） */
   const NE_TARGET_HDG = 45 * Math.PI / 180;
   /** 下限：勿扁成东北偏东（atan2 过小 / fromN 过大 / 深 ENE） */
@@ -93,42 +94,41 @@
   }
 
   function enforceNeHeading(u, v, s) {
-    if (s < 0.06 || u <= 0.15) {
-      if (u < 0) u = 0;
-      if (v < 0) v = 0;
-      return { u, v };
-    }
+    // 半圆：只拦深 ENE（MIN）；勿用 MAX 把前半段从 due-N 瞬间夹到 ~52°（那就是 tip kink）
+    if (u < 0) u = 0;
+    if (v < 0) v = 0;
+    if (s < 0.04 || u <= 0.08) return { u, v };
     let h = Math.atan2(v, u);
     const spd = Math.hypot(u, v) || 1;
-    if (h < NE_MIN_HDG) {
+    // 仅在弧中后段防止扁成东北偏东；前半保持常数曲率半圆
+    if (s >= 0.55 && h < NE_MIN_HDG) {
       u = Math.cos(NE_MIN_HDG) * spd;
       v = Math.sin(NE_MIN_HDG) * spd;
-    } else if (s > 0.12 && h > NE_MAX_HDG) {
-      u = Math.cos(NE_MAX_HDG) * spd;
-      v = Math.sin(NE_MAX_HDG) * spd;
     }
-    if (v < 0) v = 0;
     return { u, v };
   }
 
   function postGreenArcUV(sRaw, lat, wU, wVE, spdW) {
     const s = clamp(sRaw, 0, 1);
-    const ang0 = Math.PI * 0.5; // due-N 接竖段
-    // 终点：NE ≈45° from N（非深 ENE）；不用 westerly 的 ~20° atan2
-    const angEnd = NE_TARGET_HDG;
-    // 平滑 N→NE：前半略快转入，避免 tip kink / 迟钝无弯
-    const te = smoothstep(Math.pow(s, 0.7)); // 更快转入 ~45° fromN，绿处可见小真弯
+    const ang0 = Math.PI * 0.5; // due-N 接竖段（C1：s=0 时 u≈0, dθ/ds≈0）
+    const angEnd = NE_TARGET_HDG; // NE ≈45° from N
+    // 半圆参数：余弦缓入缓出 = 端点曲率连续，无 tip kink / 边角
+    // （相对 linear 更像半圆弧；相对 pow 前载不会在绿线折尖）
+    const te = 0.5 * (1 - Math.cos(Math.PI * s));
     let ang = lerpAngle(ang0, angEnd, te);
-    const spd = Math.max(spdW * 0.85, 7.5);
+    const spd = Math.max(spdW * 1.12, 9.2);
     let u = Math.cos(ang) * spd;
     let v = Math.sin(ang) * spd;
-    // 轻东鼓：Δlon≈6–9（相对 26d 稍微大一点），杀深 ENE / 大 lon bow
-    const bowU = (0.7 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * Math.pow(s, 1.05));
+    // 半椭圆东鼓：sin(πs) 两端 0、中段最大 → 东向拉长的光滑半弧
+    const bowU = (1.18 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * s);
     u += bowU;
-    // 硬顶：u 不得超过 NE 对应（杀深 ENE / 大 u）
-    const uCap = Math.cos(NE_MIN_HDG) * spd + ARC_BOW_LON_DEG * 0.5;
+    const uCap = Math.cos(NE_MIN_HDG) * spd + ARC_BOW_LON_DEG * (0.55 + 0.45 * Math.sin(Math.PI * s));
     if (u > uCap) u = uCap;
-    ({ u, v } = enforceNeHeading(u, v, s));
+    if (s >= 0.2) ({ u, v } = enforceNeHeading(u, v, s));
+    else {
+      if (u < 0) u = 0;
+      if (v < 0) v = 0;
+    }
     return { u, v, s };
   }
 
@@ -159,9 +159,9 @@
     if (arcState.arcLon0 == null) arcState.arcLon0 = lon;
     const sLat = (lat - arcState.arcLat0) / POST_GREEN_ARC_DEG;
     const sLon = (lon - arcState.arcLon0) / TARGET_ARC_DLON_DEG;
-    // 中等振幅：lat/lon 均衡，勿 lon 权重过大导致狂奔向东
-    let s = clamp(Math.max(sLat * 0.85, sLon * 0.55), 0, 1);
-    s = clamp(Math.min(s, (arcState.sAcc || 0) + 0.12), 0, 1);
+    // 半圆振幅：lon 主导收束，弧内先攒东移；lat 辅助
+    let s = clamp(Math.max(sLat * 0.60, sLon * 0.95), 0, 1);
+    s = clamp(Math.min(s, (arcState.sAcc || 0) + 0.10), 0, 1);
     if (write) arcState.sAcc = Math.max(arcState.sAcc || 0, s);
     return s;
   }
@@ -214,9 +214,9 @@
           const span = Math.max(1e-3, clearLat - base);
           const tc = clamp((lat - base) / span, 0, 1);
           const spd = Math.max(spdW, 8.0);
-          // 极短净空：正北微东，立刻接 NE≈45° 平滑弧（小真弯）
-          u = spd * (0.01 + 0.08 * smoothstep(tc));
-          v = spd * (0.998 - 0.05 * smoothstep(tc));
+          // 极短净空：保持近正北，半圆弧 s=0 处以 due-N 连续接入（无尖角）
+          u = spd * (0.005 * smoothstep(tc));
+          v = spd * (0.999 - 0.01 * smoothstep(tc));
         } else {
           const s = arcState
             ? arcProgress(lat, lon, arcState, false)
@@ -226,8 +226,8 @@
             u = b.u;
             v = b.v;
           } else {
-            // 收束在东北稍微偏东，不落到满 ENE
-            const spd = Math.max(spdW, 8.0);
+            // 收束在东北稍微偏东，不落到满 ENE；略提速攒 life Δlon
+            const spd = Math.max(spdW * 1.12, 11.0);
             u = Math.cos(NE_TARGET_HDG) * spd;
             v = Math.sin(NE_TARGET_HDG) * spd;
           }
@@ -411,11 +411,11 @@
           const span = Math.max(1e-3, clearLat - arcState.arcLat0);
           const tc = clamp((lat - arcState.arcLat0) / span, 0, 1);
           const spd = Math.max(spdW, 8.0);
-          // 极短净空：几乎正北，微东，立刻接 NE≈45° 弧
-          u = spd * (0.01 + 0.08 * smoothstep(tc));
-          v = Math.max(spd * (0.998 - 0.05 * smoothstep(tc)), 7.5);
+          // 极短净空：近正北，半圆弧以 due-N 连续接入（无 tip kink）
+          u = spd * (0.005 * smoothstep(tc));
+          v = Math.max(spd * (0.999 - 0.01 * smoothstep(tc)), 7.5);
           if (G.inFugenSolid(lon, lat, fugenList, hole) || northOf < 0.35) {
-            u = Math.min(u, spd * 0.10);
+            u = Math.min(u, spd * 0.04);
             v = Math.max(v, 9.0);
           }
         } else {
@@ -434,8 +434,8 @@
             v = b.v + beta.v * 0.08;
             ({ u, v } = enforceNeHeading(u, v, s));
           } else {
-            const spd = Math.max(spdW, 8.0);
-            u = Math.cos(NE_TARGET_HDG) * spd + beta.u * 0.05;
+            const spd = Math.max(spdW * 1.12, 11.0);
+            u = Math.cos(NE_TARGET_HDG) * spd + beta.u * 0.05 + 2.0;
             v = Math.sin(NE_TARGET_HDG) * spd + beta.v * 0.08;
             ({ u, v } = enforceNeHeading(u, v, 1));
           }

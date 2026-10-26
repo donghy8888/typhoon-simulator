@@ -60,8 +60,8 @@ const dlat = a0 && endArc ? endArc.lat - a0.lat : 0;
 const dlonArc = a0 && arcDone ? arcDone.lon - a0.lon : 0;
 const dlatArc = a0 && arcDone ? arcDone.lat - a0.lat : 0;
 
-let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026e\n';
-out += 'FIX: yellow@edge-0.15; clear WNW south; Y→G due-N; post-G NE slight-E; Δlon slightly larger (~6–9); sea decay slower.\n';
+let out = 'PROOF track start 20N 140E under main ridge — ?v=20261026f\n';
+out += 'FIX: yellow@edge-0.15; clear WNW south; Y→G due-N; post-G NE slight-E smooth semicircle; life Δlon≈12–14 (>26e~10, not ~20); sea slower.\n';
 out += `CONST: POST_GREEN=${P.POST_GREEN_ARC_DEG} TARGET_DLON=${P.TARGET_ARC_DLON_DEG} BOW=${P.ARC_BOW_LON_DEG} NORTH_LEG=${P.NORTH_LEG_DEG} NE_TARGET_deg=${(P.NE_TARGET_HDG*180/Math.PI).toFixed(0)}\n\n`;
 out += 'lon\tlat\tnorthOf\tsAcc\thdg\tfromN\tu\n';
 
@@ -100,8 +100,12 @@ out += '\n--- POST-GREEN (want fromN≈40–55 NE slight E; NOT deep ENE fromN>6
 const pg = postGreen.filter((_, i) => i % 2 === 0).slice(0, 16);
 for (const s of pg) out += `${s.lon},${s.lat} s=${s.sAcc} hdg=${s.hdg} fromN=${s.fromN} u=${s.u} v=${s.v}\n`;
 const mid = postGreen.filter(s => s.sAcc >= 0.25 && s.sAcc <= 0.95);
+const late = postGreen.filter(s => s.sAcc >= 0.7 && s.sAcc <= 1.01);
 const avgFromN = mid.length ? mid.reduce((a, s) => a + s.fromN, 0) / mid.length : null;
-const pgOk = mid.length && mid.every(s => s.fromN >= 32 && s.fromN <= 58) && avgFromN != null && avgFromN >= 38 && avgFromN <= 52;
+// 半圆：中段 fromN 可从偏北渐入；收束段须 NE slight-E（~40–55），全程勿深 ENE
+const pgOk = mid.length && mid.every(s => s.fromN >= 8 && s.fromN <= 58)
+  && late.length && late.every(s => s.fromN >= 36 && s.fromN <= 56)
+  && avgFromN != null && avgFromN >= 28 && avgFromN <= 52;
 
 out += `\nNORTH LEG pts: ${yellowGreen.length}\n`;
 if (yellowGreen.length) {
@@ -109,7 +113,7 @@ if (yellowGreen.length) {
   out += `  ${a.lon},${a.lat} → ${b.lon},${b.lat} Δlat=${(b.lat-a.lat).toFixed(2)} Δlon=${(b.lon-a.lon).toFixed(2)}\n`;
 }
 out += `\nPost-green turn Δlon (to sAcc≥1): ${dlonArc.toFixed(1)} Δlat: ${dlatArc.toFixed(1)}\n`;
-out += `Post-green life Δlon (to end): ${dlon.toFixed(1)} Δlat: ${dlat.toFixed(1)} (want ≈7–10 slightly > prior 5.6–7.4)\n`;
+out += `Post-green life Δlon (to end): ${dlon.toFixed(1)} Δlat: ${dlat.toFixed(1)} (want ≈12–14 slightly > prior ~10; not old ~20)\n`;
 if (a0 && arcDone) {
   out += `  clear: ${a0.lon},${a0.lat} hdg=${a0.hdg} fromN=${a0.fromN} s=${a0.sAcc}\n`;
   out += `  arc1:  ${arcDone.lon},${arcDone.lat} hdg=${arcDone.hdg} fromN=${arcDone.fromN} s=${arcDone.sAcc}\n`;
@@ -143,10 +147,24 @@ const tendLand = P.intensityTendency(121, 31, 40, 26);
 out += `dV spot: seaWarm28N? ${tendSeaWarm.dV.toFixed(2)} (${tendSeaWarm.phase}); seaCold32N ${tendSeaCold.dV.toFixed(2)} (${tendSeaCold.phase}); land ${tendLand.dV.toFixed(2)} (${tendLand.phase})\n`;
 out += `  expect: |seaCold dV| << |land dV|; seaCold milder than pre-26e (~-2.2 at 40ms/24SST)\n`;
 
-const dlonOk = dlon >= 7.0 && dlon <= 11.5; // slightly larger than prior ~5.6–7.4
+const dlonOk = dlon >= 11.0 && dlon <= 15.5; // slightly larger than prior ~10; not old ~20
 const seaSlowOk = tendSeaCold.dV > -1.35 && tendLand.dV < -2.5; // sea milder vs old~-2.2; land still strong
-out += `\nCHECKS: southWNW=${syOk} yellowGreenN=${ygOk} postNe=${pgOk} dlonBump=${dlonOk} (lifeΔlon=${dlon.toFixed(1)} arc=${dlonArc.toFixed(1)}) seaSlow=${seaSlowOk}\n`;
-out += `PASS=${syOk && ygOk && pgOk && dlonOk && seaSlowOk}\n`;
+// smoothness: consecutive fromN steps during arc stay gentle — semicircle, no tip kink
+const arcSamples = samples.filter(s => s.clear != null && s.sAcc > 0 && s.sAcc <= 1.01);
+let maxDFromN = 0;
+for (let i = 1; i < arcSamples.length; i++) {
+  const df = Math.abs(arcSamples[i].fromN - arcSamples[i - 1].fromN);
+  if (df > maxDFromN) maxDFromN = df;
+}
+const early = arcSamples.filter(s => s.sAcc <= 0.3);
+let earlyJump = 0;
+for (let i = 1; i < early.length; i++) {
+  earlyJump = Math.max(earlyJump, Math.abs(early[i].fromN - early[i - 1].fromN));
+}
+const smoothOk = maxDFromN <= 16 && earlyJump <= 12;
+out += `SMOOTH: max|ΔfromN|step=${maxDFromN} earlyJump=${earlyJump} (want continuous semicircle, no tip kink)\n`;
+out += `\nCHECKS: southWNW=${syOk} yellowGreenN=${ygOk} postNe=${pgOk} dlonBump=${dlonOk} (lifeΔlon=${dlon.toFixed(1)} arc=${dlonArc.toFixed(1)}) seaSlow=${seaSlowOk} smooth=${smoothOk}\n`;
+out += `PASS=${syOk && ygOk && pgOk && dlonOk && seaSlowOk && smoothOk}\n`;
 
 const all = samples.filter(s => s.lat >= 24);
 if (all.length) {
@@ -166,5 +184,5 @@ if (all.length) {
   out += `\nASCII (|=N-leg o=post-green NE arc #=settled)\nlon ${lon0.toFixed(1)} -> ${lon1.toFixed(1)}   lat ${lat0.toFixed(1)} -> ${lat1.toFixed(1)}\n`;
   out += grid.map(r => r.join('')).join('\n') + '\n';
 }
-fs.writeFileSync(`${root}/track-proof-20261026d.txt`, out);
+fs.writeFileSync(`${root}/track-proof-20261026f.txt`, out);
 console.log(out);

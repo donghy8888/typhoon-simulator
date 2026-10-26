@@ -1,0 +1,133 @@
+PROOF track start 20N 140E under main ridge — ?v=20261026f
+FIX: yellow@edge-0.15; clear WNW south; Y→G due-N; post-G NE slight-E smooth semicircle; life Δlon≈12–14 (>26e~10, not ~20); sea slower.
+CONST: POST_GREEN=4.7 TARGET_DLON=14.8 BOW=6.1 NORTH_LEG=0.15 NE_TARGET_deg=45
+
+lon	lat	northOf	sAcc	hdg	fromN	u
+126.82	24.87	-3.083	0	149	-59	-5.5
+125.84	25.41	-2.18	0	145	-55	-5.5
+124.85	25.99	-1.678	0	142	-52	-5.5
+123.86	26.62	-1.098	0	141	-51	-5.5
+124.5	29.24	-0.346	0.25	57	33	6.19
+123.76	27.12	-0.043	0	90	0	0
+123.97	28.31	0.01	0.13	71	19	3.22
+123.76	26.72	-0.438	0	90	0	0
+123.76	26.92	-0.24	0	90	0	0
+123.77	27.38	0.2	0.02	87	3	0.42
+123.8	27.69	0.335	0.05	83	7	1.24
+123.86	28	0.275	0.09	77	13	2.22
+124.11	28.62	-0.325	0.17	66	24	4.23
+124.29	28.93	-0.305	0.21	61	29	5.22
+124.75	29.55	2.445	0.29	53	37	7.12
+125.04	29.86	1.17	0.33	50	40	7.99
+125.35	30.16	0.813	0.37	47	43	8.78
+125.7	30.46	0.551	0.41	44	46	9.49
+126.07	30.76	1.894	0.44	42	48	10.1
+126.46	31.05	1.526	0.48	40	50	10.6
+126.87	31.33	3.143	0.52	39	51	11
+127.29	31.62	2.113	0.55	42	48	10.49
+127.69	31.93	1.841	0.59	42	48	10.51
+128.09	32.24	1.831	0.63	42	48	10.45
+128.48	32.55	1.76	0.67	42	48	10.31
+128.88	32.85	1.744	0.71	42	48	10.1
+129.26	33.14	1.741	0.75	42	48	9.83
+129.63	33.43	1.781	0.79	42	48	9.51
+129.99	33.7	1.831	0.82	42	48	9.15
+130.34	33.97	1.88	0.86	43	47	8.78
+130.67	34.22	1.944	0.89	43	47	8.39
+130.99	34.46	2.051	0.92	43	47	8.01
+131.3	34.7	2.153	0.95	43	47	7.64
+131.59	34.92	2.252	0.98	44	46	7.17
+131.9	35.16	2.374	1	42	48	9.3
+132.27	35.43	2.504	1	42	48	9.3
+132.64	35.7	2.634	1	42	48	9.3
+133.01	35.97	2.763	1	42	48	9.3
+133.38	36.24	2.894	1	42	48	9.3
+133.76	36.51	3.033	1	42	48	9.3
+134.13	36.78	3.171	1	42	48	9.3
+134.51	37.05	3.334	1	42	48	9.3
+134.88	37.32	3.519	1	42	48	9.3
+135.26	37.6	3.704	1	42	48	9.3
+135.64	37.87	3.898	1	42	48	9.3
+136.02	38.14	4.093	1	42	48	9.3
+
+--- SOUTH OF YELLOW (want clear WNW: |u|>v, hdg~140–160 / fromN≈−50~−70) ---
+124.85,25.99 northOf=-1.678 hdg=142 fromN=-52 u=-5.5 v=4.26
+124.65,26.12 northOf=-3.717 hdg=149 fromN=-59 u=-5.5 v=3.29
+124.46,26.23 northOf=-3.284 hdg=148 fromN=-58 u=-5.5 v=3.46
+124.26,26.35 northOf=-2.843 hdg=146 fromN=-56 u=-5.5 v=3.7
+124.06,26.48 northOf=-2.34 hdg=144 fromN=-54 u=-5.5 v=4.01
+123.86,26.62 northOf=-1.098 hdg=141 fromN=-51 u=-5.5 v=4.4
+123.76,26.72 northOf=-0.438 hdg=90 fromN=0 u=0 v=6.11
+123.76,26.92 northOf=-0.24 hdg=90 fromN=0 u=0 v=6.11
+
+--- YELLOW→GREEN / N-leg (want hdg≈90, u≈0) ---
+123.76,26.72 northOf=-0.438 hdg=90 u=0 inLeg=true
+123.76,26.92 northOf=-0.24 hdg=90 u=0 inLeg=true
+123.76,27.12 northOf=-0.043 hdg=90 u=0 inLeg=true
+
+--- POST-GREEN (want fromN≈40–55 NE slight E; NOT deep ENE fromN>60 / hdg<30) ---
+124.11,28.62 s=0.17 hdg=66 fromN=24 u=4.23 v=9.59
+124.5,29.24 s=0.25 hdg=57 fromN=33 u=6.19 v=9.54
+125.04,29.86 s=0.33 hdg=50 fromN=40 u=7.99 v=9.43
+125.7,30.46 s=0.41 hdg=44 fromN=46 u=9.49 v=9.24
+126.46,31.05 s=0.48 hdg=40 fromN=50 u=10.6 v=8.96
+127.29,31.62 s=0.55 hdg=42 fromN=48 u=10.49 v=9.57
+128.09,32.24 s=0.63 hdg=42 fromN=48 u=10.45 v=9.54
+128.88,32.85 s=0.71 hdg=42 fromN=48 u=10.1 v=9.23
+129.63,33.43 s=0.79 hdg=42 fromN=48 u=9.51 v=8.7
+130.34,33.97 s=0.86 hdg=43 fromN=47 u=8.78 v=8.05
+130.99,34.46 s=0.92 hdg=43 fromN=47 u=8.01 v=7.36
+131.59,34.92 s=0.98 hdg=44 fromN=46 u=7.17 v=6.83
+132.27,35.43 s=1 hdg=42 fromN=48 u=9.3 v=8.37
+133.01,35.97 s=1 hdg=42 fromN=48 u=9.3 v=8.37
+133.76,36.51 s=1 hdg=42 fromN=48 u=9.3 v=8.37
+134.51,37.05 s=1 hdg=42 fromN=48 u=9.3 v=8.37
+
+NORTH LEG pts: 3
+  123.76,26.72 → 123.76,27.12 Δlat=0.40 Δlon=0.00
+
+Post-green turn Δlon (to sAcc≥1): 8.1 Δlat: 7.8
+Post-green life Δlon (to end): 12.3 Δlat: 10.8 (want ≈12–14 slightly > prior ~10; not old ~20)
+  clear: 123.77,27.38 hdg=87 fromN=3 s=0.02
+  arc1:  131.9,35.16 hdg=42 fromN=48 s=1
+  end:   136.02,38.14 hdg=42 fromN=48 s=1 vmax=13.2
+  avg fromN (mid-arc): 46.0
+  max sAcc=1
+
+--- INTENSITY (want sea weaken slower; land near prior) ---
+hoursAlive=118 vmax@start=41 @clear=37.8 @arc1=27.2 @end=13.2
+sea vmax: 41(20.1N) → 43.4(24.35N) → 23.5(35.97N) phase_end_sea=海上减弱
+dV spot: seaWarm28N? 0.27 (海上增强); seaCold32N -0.92 (海上减弱); land -2.91 (登陆衰减)
+  expect: |seaCold dV| << |land dV|; seaCold milder than pre-26e (~-2.2 at 40ms/24SST)
+SMOOTH: max|ΔfromN|step=6 earlyJump=6 (want continuous semicircle, no tip kink)
+
+CHECKS: southWNW=true yellowGreenN=true postNe=true dlonBump=true (lifeΔlon=12.3 arc=8.1) seaSlow=true smooth=true
+PASS=true
+
+ASCII (|=N-leg o=post-green NE arc #=settled)
+lon 123.8 -> 136.0   lat 24.0 -> 38.1
+                                                         # #
+                                                      ##    
+                                                  # #       
+                                              # #           
+                                         # # #              
+                                      o#                    
+                                 o oo                       
+                              o o                           
+                          o o                               
+                       o o                                  
+                   o o                                      
+               o o                                          
+           o o                                              
+        oo                                                  
+     oo                                                     
+   oo                                                       
+ oo                                                         
+o                                                           
+o                                                           
+|***                                                        
+    *****                                                   
+         ******                                             
+               *****                                        
+                    ***                                     
+

@@ -12,7 +12,7 @@
     running: false,
     paused: false,
     hours: 0,
-    speed: 4,
+    speed: 20,
     members: [],
     hole: null,
     fugen: G.defaultFugen(),
@@ -856,15 +856,6 @@
   document.getElementById('btnPause').onclick = pauseSim;
   document.getElementById('btnReset').onclick = resetSim;
 
-  document.getElementById('simSpeed').oninput = function () {
-    state.speed = parseInt(this.value, 10);
-    document.getElementById('simSpeedVal').textContent = state.speed + '×';
-    if (state.running && !state.paused) {
-      clearInterval(state.timer);
-      const interval = Math.max(40, 400 / state.speed);
-      state.timer = setInterval(tick, interval);
-    }
-  };
 
   /** 把风力等级同步到已放置风暴：更新 vmax、等级标签与 7/10/12 风圈；不启动模拟 */
   function applyInitWindToMember() {

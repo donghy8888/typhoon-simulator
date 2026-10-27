@@ -879,17 +879,6 @@
     if (this.value) applyInitWindToMember();
   };
 
-  document.getElementById('btnAddFugen').onclick = () => {
-    const c = map.getCenter();
-    const id = 'user_' + Date.now();
-    state.fugen.push({
-      id,
-      name: '自定义副高' + (state.fugen.length + 1),
-      ring: G.makeSmoothFugenRing(c.lng, c.lat, 5.5, 3.2, 12)
-    });
-    selectFugen(state.fugen.length - 1);
-  };
-
   document.getElementById('btnResetFugen').onclick = () => {
     state.fugen = G.defaultFugen();
     state.selectedFugen = null;

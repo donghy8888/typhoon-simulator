@@ -1,0 +1,2 @@
+PROOF ?v=20261027m — land decay softer again (neg tendency ×0.58→×0.30 ≈ half of k); mtn still faster than plain; sea ×0.55 untouched
+spot vmax=40: land_plain dV -1.686(k)→-0.872(m); land_mtn(121E23N) dV≈-1.427; seaCold≈-0.237; seaWarm≈+0.27

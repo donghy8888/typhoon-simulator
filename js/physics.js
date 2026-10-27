@@ -710,9 +710,10 @@
     const pot = mpi(sst);
 
     if (land) {
-      // 登陆衰减仍明显快于海上
+      // 登陆衰减放慢一档：仍快于海上，但体感不再骤降；山地相对平原仍稍快
       dV = -1.25 - (vmax / 35) * 1.45;
       if (mtn) dV -= 1.85;
+      if (dV < 0) dV *= 0.58;
       phase = mtn ? '登陆衰减（山地加速）' : '登陆衰减';
     } else {
       const gap = pot - vmax;
@@ -748,8 +749,8 @@
       if (dV < 0) dV *= 0.55;
     }
 
-    // 弱台风海上不要额外加速消亡；登陆仍略加快
-    if (vmax < 18 && dV < 0) dV *= land ? 1.2 : 1.0;
+    // 弱台风海上/陆地均不再额外加速消亡
+    if (vmax < 18 && dV < 0) dV *= 1.0;
     return { dV, phase, mpi: pot };
   }
 

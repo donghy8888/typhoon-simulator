@@ -168,52 +168,49 @@
   }
 
   /**
-   * 按月份的气候态副高（东西扁长脊，参考西太副高气候形态；非整片填海）。
-   * 绿线=副高北缘；黄线=绿线南约 0.15°。台风走脊南开阔洋面（不可把 10–18°N 洋面填死）。
-   *   6 月：北缘/黄线在江南；主体约 20–30°N 一带
-   *   7 月：北缘抬至黄淮；西伸脊覆盖华南/广东
-   *   8 月：北缘再至华北南缘；西伸仍盖广东
-   *   9 月：北缘南撤江南；西伸收缩
-   * 脊线气候平均约 6月21°N、7月25°N、8月27°N、9月25°N（业务指数）；
-   * 本模拟器用北缘对齐雨带/黄线叙事，南缘留出台风进路。
+   * 近矩形单环（边上密采样 + 轻微圆角），用于「一整块」副高，避免超椭圆四角空缺。
+   */
+  function boxRing(lon0, lon1, lat0, lat1) {
+    const pts = [];
+    const nx = 28;
+    const ny = 18;
+    for (let i = 0; i <= nx; i++) pts.push([lon0 + (lon1 - lon0) * (i / nx), lat0]);
+    for (let i = 1; i <= ny; i++) pts.push([lon1, lat0 + (lat1 - lat0) * (i / ny)]);
+    for (let i = 1; i <= nx; i++) pts.push([lon1 - (lon1 - lon0) * (i / nx), lat1]);
+    for (let i = 1; i < ny; i++) pts.push([lon0, lat1 - (lat1 - lat0) * (i / ny)]);
+    pts.push([pts[0][0], pts[0][1]]);
+    return chaikinSmooth(pts, 1);
+  }
+
+  /**
+   * 按月份气候态：黄线以南 = 一整块副热带高压（单多边形，无多块空档）。
+   * 绿线=该块北缘；黄线=绿线南约 0.15°。台风在实体内靠出生空圈移动
+   *（必须单块，否则空圈只打穿一块、其余重叠块仍会卡住）。
+   *   6 月：北缘/黄线 → 江南
+   *   7 月：北缘 → 黄淮；西界盖广东
+   *   8 月：北缘 → 华北南缘；西界盖广东
+   *   9 月：北缘南撤江南
    */
   function fugenForMonth(month) {
-    const m = Number(month) || 7;
-    let mainBox; // [lon0, lon1, lat0, lat1]
-    let westBox; // 西伸：华南–广东
-    if (m === 6) {
-      // 黄线≈江南；主体扁长，南缘约 18° 以北，140E/15N 开敞
-      mainBox = [128, 168, 18.0, 30.0];
-      westBox = [110, 134, 20.0, 29.5];
-    } else if (m === 8) {
-      mainBox = [130, 172, 22.5, 37.2];
-      westBox = [108, 132, 20.0, 36.5]; // 必盖广东
-    } else if (m === 9) {
-      mainBox = [130, 168, 17.5, 30.0];
-      westBox = [112, 134, 19.5, 28.5]; // 西伸收缩
+    const mo = Number(month) || 7;
+    // [lon0, lon1, lat0, lat1]：南界够低 → 黄线以南整片实体；西界含广东
+    let box;
+    if (mo === 6) {
+      box = [107.5, 169, 3.5, 30.15];
+    } else if (mo === 8) {
+      box = [107.5, 172, 3.5, 37.35];
+    } else if (mo === 9) {
+      box = [107.5, 169, 3.5, 30.15];
     } else {
-      // 7 月黄淮
-      mainBox = [129, 170, 21.0, 35.2];
-      westBox = [108, 132, 20.0, 34.5]; // 必盖广东
+      box = [107.5, 171, 3.5, 35.35]; // 7 月黄淮
     }
-    const [a0, a1, b0, b1] = mainBox;
-    const [w0, w1, x0, x1] = westBox;
-    // 扁长主脊 + 重叠西伸；少量中段衔接，避免“两大团中间空”又不为填海
+    const [lon0, lon1, lat0, lat1] = box;
+    // 单块近矩形：黄线以南一整片，无多块拼缝
     return [
       {
-        id: 'wnp_main',
-        name: '西北太主副高',
-        ring: roundedRectRing(a0, a1, b0, b1, 22, 0.28)
-      },
-      {
-        id: 'wnp_west',
-        name: '西伸脊（华南）',
-        ring: roundedRectRing(w0, w1, x0, x1, 18, 0.26)
-      },
-      {
-        id: 'wnp_join',
-        name: '脊西衔接',
-        ring: roundedRectRing(Math.min(a0, w1) - 2, Math.max(a0, w1) + 4, Math.max(b0, x0), Math.min(b1, x1), 14, 0.22)
+        id: 'wnp_slab',
+        name: '西北太副高',
+        ring: boxRing(lon0, lon1, lat0, lat1)
       }
     ];
   }
@@ -449,9 +446,9 @@
     return out;
   }
 
-  /** 空圈半径略大于 7 级风圈 */
+  /** 空圈：整块副高内台风进路；略放大便于沿引导移动 */
   function holeRadiusDeg(vmaxMs) {
-    return windRadiusDeg(vmaxMs) * 1.25 + 0.15;
+    return windRadiusDeg(vmaxMs) * 1.55 + 0.45;
   }
 
   /** km/h 近似：1° lat ≈ 111 km；经向随纬度变化 */

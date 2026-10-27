@@ -79,16 +79,22 @@
   let holeCircleLayer = null;
   const stormRefs = {
     trackLine: null,
+    trackLine2: null,
     windCircles: {},
-    marker: null
+    windCircles2: {},
+    marker: null,
+    marker2: null
   };
 
   function clearStormRefs() {
     layerGroups.track.clearLayers();
     layerGroups.storm.clearLayers();
     stormRefs.trackLine = null;
+    stormRefs.trackLine2 = null;
     stormRefs.windCircles = {};
+    stormRefs.windCircles2 = {};
     stormRefs.marker = null;
+    stormRefs.marker2 = null;
   }
 
   function cfgFromUI() {
@@ -585,12 +591,20 @@
   }
 
   // —— 风暴与路径 ——
-  function stormIcon() {
+  function stormIcon(label, secondary) {
+    const border = secondary ? '#1a5276' : '#c0392b';
+    const bg = secondary ? 'rgba(41,128,185,0.35)' : 'rgba(231,76,60,0.4)';
+    const col = secondary ? '#1a5276' : '#922';
+    const text = label || (secondary ? '2' : '台');
+    const size = secondary ? 16 : 20;
     return L.divIcon({
       className: '',
-      html: '<div style="width:20px;height:20px;border:2px solid #c0392b;border-radius:50%;background:rgba(231,76,60,0.4);text-align:center;line-height:16px;font-size:12px;color:#922;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">台</div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10]
+      html: '<div style="width:' + size + 'px;height:' + size + 'px;border:2px solid ' + border +
+        ';border-radius:50%;background:' + bg + ';text-align:center;line-height:' + (size - 4) +
+        'px;font-size:' + (secondary ? 10 : 12) + 'px;color:' + col +
+        ';font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">' + text + '</div>',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2]
     });
   }
 
@@ -598,6 +612,68 @@
   function redrawStorm() {
     clearStormRefs();
     updateStormInPlace();
+  }
+
+  function updateOneTrack(member, refsKey, style) {
+    if (!member || !member.track || member.track.length < 1) return;
+    const latlngs = member.track.map(function (p) { return [p.lat, p.lon]; });
+    if (latlngs.length < 2) return;
+    if (stormRefs[refsKey]) {
+      stormRefs[refsKey].setLatLngs(latlngs);
+    } else {
+      stormRefs[refsKey] = L.polyline(latlngs, style).addTo(layerGroups.track);
+    }
+  }
+
+  function updateWindRings(member, store, simplify) {
+    if (!member) {
+      Object.keys(store).forEach(function (g) {
+        layerGroups.track.removeLayer(store[g]);
+        delete store[g];
+      });
+      return;
+    }
+    let rings = (member.alive || member.vmax >= P.DISSIPATE_MS)
+      ? G.windRadiiForGrades(member.vmax)
+      : [];
+    // 第二台风：只留 7 级圈，简化视觉
+    if (simplify) rings = rings.filter(function (r) { return r.grade === 7; });
+    const seen = {};
+    rings.forEach(function (ring) {
+      seen[ring.grade] = true;
+      const existing = store[ring.grade];
+      const tip = (simplify ? '第二台风 · ' : '') + ring.label + ' · 当前 ' + G.gradeLabel(member.vmax);
+      const weight = simplify ? Math.max(1, (ring.weight || 2) - 0.5) : ring.weight;
+      const fillOp = simplify ? Math.min(0.08, ring.fillOpacity || 0.08) : ring.fillOpacity;
+      if (existing) {
+        existing.setLatLng([member.lat, member.lon]);
+        existing.setRadius(ring.radiusDeg * 111320);
+        existing.setStyle({
+          color: ring.color,
+          weight: weight,
+          fillColor: ring.fill,
+          fillOpacity: fillOp,
+          dashArray: simplify ? '4 3' : null
+        });
+        if (existing.setTooltipContent) existing.setTooltipContent(tip);
+        else if (existing.getTooltip()) existing.getTooltip().setContent(tip);
+      } else {
+        store[ring.grade] = L.circle([member.lat, member.lon], {
+          radius: ring.radiusDeg * 111320,
+          color: ring.color,
+          weight: weight,
+          fillColor: ring.fill,
+          fillOpacity: fillOp,
+          dashArray: simplify ? '4 3' : null
+        }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
+      }
+    });
+    Object.keys(store).forEach(function (g) {
+      if (!seen[g]) {
+        layerGroups.track.removeLayer(store[g]);
+        delete store[g];
+      }
+    });
   }
 
   /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
@@ -608,61 +684,36 @@
     }
 
     const main = state.members[0];
+    const sec = state.members[1] || null;
 
-    if (main.track.length >= 1) {
-      const latlngs = main.track.map(function (p) { return [p.lat, p.lon]; });
-      if (latlngs.length >= 2) {
-        if (stormRefs.trackLine) {
-          stormRefs.trackLine.setLatLngs(latlngs);
-        } else {
-          stormRefs.trackLine = L.polyline(latlngs, {
-            color: '#2980b9', weight: 2.5
-          }).addTo(layerGroups.track);
-        }
-      }
-
-      const rings = (main.alive || main.vmax >= P.DISSIPATE_MS)
-        ? G.windRadiiForGrades(main.vmax)
-        : [];
-      const seen = {};
-      rings.forEach(function (ring) {
-        seen[ring.grade] = true;
-        const existing = stormRefs.windCircles[ring.grade];
-        const tip = ring.label + ' · 当前 ' + G.gradeLabel(main.vmax);
-        if (existing) {
-          existing.setLatLng([main.lat, main.lon]);
-          existing.setRadius(ring.radiusDeg * 111320);
-          existing.setStyle({
-            color: ring.color,
-            weight: ring.weight,
-            fillColor: ring.fill,
-            fillOpacity: ring.fillOpacity
-          });
-          if (existing.setTooltipContent) existing.setTooltipContent(tip);
-          else if (existing.getTooltip()) existing.getTooltip().setContent(tip);
-        } else {
-          stormRefs.windCircles[ring.grade] = L.circle([main.lat, main.lon], {
-            radius: ring.radiusDeg * 111320,
-            color: ring.color,
-            weight: ring.weight,
-            fillColor: ring.fill,
-            fillOpacity: ring.fillOpacity
-          }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
-        }
-      });
-      Object.keys(stormRefs.windCircles).forEach(function (g) {
-        if (!seen[g]) {
-          layerGroups.track.removeLayer(stormRefs.windCircles[g]);
-          delete stormRefs.windCircles[g];
-        }
-      });
-    }
-
+    updateOneTrack(main, 'trackLine', { color: '#2980b9', weight: 3.2 });
+    updateWindRings(main, stormRefs.windCircles, false);
     if (stormRefs.marker) {
       stormRefs.marker.setLatLng([main.lat, main.lon]);
     } else {
-      stormRefs.marker = L.marker([main.lat, main.lon], { icon: stormIcon() })
+      stormRefs.marker = L.marker([main.lat, main.lon], { icon: stormIcon('台', false) })
         .addTo(layerGroups.storm);
+    }
+
+    if (sec) {
+      updateOneTrack(sec, 'trackLine2', { color: '#5dade2', weight: 1.8, dashArray: null });
+      updateWindRings(sec, stormRefs.windCircles2, true);
+      if (stormRefs.marker2) {
+        stormRefs.marker2.setLatLng([sec.lat, sec.lon]);
+      } else {
+        stormRefs.marker2 = L.marker([sec.lat, sec.lon], { icon: stormIcon('2', true) })
+          .addTo(layerGroups.storm);
+      }
+    } else {
+      if (stormRefs.trackLine2) {
+        layerGroups.track.removeLayer(stormRefs.trackLine2);
+        stormRefs.trackLine2 = null;
+      }
+      updateWindRings(null, stormRefs.windCircles2, true);
+      if (stormRefs.marker2) {
+        layerGroups.storm.removeLayer(stormRefs.marker2);
+        stormRefs.marker2 = null;
+      }
     }
   }
 
@@ -679,11 +730,14 @@
     }
 
     const m = state.members[0];
+    const n = state.members.length;
     let clockExtra = '';
-    if (!m.alive) clockExtra = ' · 已消亡';
+    if (!m.alive && !state.members.some(function (x) { return x.alive; })) clockExtra = ' · 已消亡';
     else if (state.paused) clockExtra = '（已暂停）';
     else if (state.running) clockExtra = '（运行中）';
     else clockExtra = ' · 已放置，选风力等级更新强度/风圈，按「开始」运行';
+    if (n >= 2) clockExtra += ' · 双台风（藤原互旋）';
+    else if (n === 1 && !state.running) clockExtra += ' · 再点地图可加第二台风';
     clock.textContent = '模拟时钟：' + timeStr + clockExtra;
   }
 
@@ -691,6 +745,28 @@
     const el = document.getElementById('initWindGrade');
     const v = parseFloat(el && el.value);
     return isFinite(v) ? v : 32.7;
+  }
+
+  function makeMember(lon, lat, vmax) {
+    return {
+      lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
+      phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
+      arcLat0: null,
+      arcLon0: null,
+      legTargetLat: null,
+      clearLon0: null,
+      clearLat0: null,
+      sAcc: 0,
+      cfgPerturb: null
+    };
+  }
+
+  function syncDualButtons() {
+    const btnAdd = document.getElementById('btnAddSecond');
+    const btnClr = document.getElementById('btnClearSecond');
+    const n = state.members.length;
+    if (btnAdd) btnAdd.disabled = n >= 2 || n < 1;
+    if (btnClr) btnClr.disabled = n < 2;
   }
 
   function placeStorm(lon, lat, vmax) {
@@ -703,25 +779,52 @@
     state.hours = 0;
     state.members = [];
 
-    const main = {
-      lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
-      phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
-      arcLat0: null,
-      sAcc: 0,
-      cfgPerturb: null
-    };
-    state.members.push(main);
+    state.members.push(makeMember(lon, lat, vmax));
 
     redrawFugen();
     redrawStorm();
     updateStatus();
+    syncDualButtons();
+  }
+
+  /** 放置第二台风；已有两个时返回 false（由调用方提示） */
+  function placeSecondStorm(lon, lat, vmax) {
+    if (state.members.length >= 2) return false;
+    if (!state.members.length) {
+      placeStorm(lon, lat, vmax);
+      return true;
+    }
+    lon = clamp(lon, G.DOMAIN.lonMin, G.DOMAIN.lonMax);
+    lat = clamp(lat, G.DOMAIN.latMin, G.DOMAIN.latMax);
+    if (vmax == null) vmax = initVmaxFromGrade();
+    state.members.push(makeMember(lon, lat, vmax));
+    // 不重置 hours / 主台风路径；空圈仍跟主台风
+    redrawStorm();
+    updateStatus();
+    syncDualButtons();
+    return true;
+  }
+
+  function clearSecondStorm() {
+    if (state.members.length < 2) {
+      syncDualButtons();
+      return;
+    }
+    state.members.splice(1, 1);
+    redrawStorm();
+    updateStatus();
+    syncDualButtons();
+  }
+
+  function alertTwoStorms() {
+    window.alert('已有两个台风，请先清除第二台风后再添加。');
   }
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
   function tick() {
     if (!state.running || state.paused) return;
-    if (!state.members.length || !state.members[0].alive) {
+    if (!state.members.length || !state.members.some(function (m) { return m.alive; })) {
       stopSim();
       updateStatus();
       return;
@@ -748,6 +851,10 @@
     for (const m of state.members) {
       P.stepMember(m, dt, cfg, state.fugen, state.sstRegions, state.hole);
     }
+    // 环境步之后叠加藤原互旋（质心已随大尺度平移）
+    if (state.members.length >= 2) {
+      P.applyFujiwhara(state.members, dt);
+    }
 
     state.hours += dt;
 
@@ -758,7 +865,8 @@
     maybeRefreshSteerAfterTick(holePresenceChanged);
     updateStatus();
 
-    if (!state.members[0].alive) {
+    const anyAlive = state.members.some(function (m) { return m.alive; });
+    if (!anyAlive) {
       stopSim();
       document.getElementById('clockBar').textContent += ' — 风力已低于7级，模拟结束';
     }
@@ -821,6 +929,7 @@
     // 副高全量重绘（会清 holeCircleLayer）；共用 steerRenderer，无孤儿 canvas
     redrawFugen();
     updateStatus();
+    syncDualButtons();
   }
 
   // —— 事件 ——
@@ -833,12 +942,43 @@
       return;
     }
     stopSim();
+    if (state.members.length >= 2) {
+      alertTwoStorms();
+      return;
+    }
+    if (state.members.length === 1) {
+      placeSecondStorm(lon, lat);
+      return;
+    }
     placeStorm(lon, lat);
   });
 
   document.getElementById('btnStart').onclick = startSim;
   document.getElementById('btnPause').onclick = pauseSim;
   document.getElementById('btnReset').onclick = resetSim;
+
+  document.getElementById('btnAddSecond').onclick = function () {
+    if (state.running && !state.paused) return;
+    if (state.members.length >= 2) {
+      alertTwoStorms();
+      return;
+    }
+    if (!state.members.length) {
+      window.alert('请先在地图上放置主台风。');
+      return;
+    }
+    stopSim();
+    // 默认放在主台风东侧约 4°，可再点图微调（已有两个时需先清除）
+    const main = state.members[0];
+    const lon = clamp(main.lon + 4, G.DOMAIN.lonMin, G.DOMAIN.lonMax);
+    const lat = clamp(main.lat + 0.5, G.DOMAIN.latMin, G.DOMAIN.latMax);
+    placeSecondStorm(lon, lat);
+  };
+  document.getElementById('btnClearSecond').onclick = function () {
+    if (state.running && !state.paused) return;
+    stopSim();
+    clearSecondStorm();
+  };
 
 
   /** 把风力等级同步到已放置风暴：更新 vmax、等级标签与 7/10/12 风圈；不启动模拟 */
@@ -851,10 +991,16 @@
     if (!state.running && m.track && m.track.length === 1) {
       m.track[0].vmax = vmax;
     }
+    // 待启动时第二台风也同步当前风力等级
+    if (!state.running && state.members[1] && state.members[1].track && state.members[1].track.length === 1) {
+      state.members[1].vmax = vmax;
+      state.members[1].track[0].vmax = vmax;
+    }
     state.hole = P.ensureBirthHole(m.lon, m.lat, vmax, state.fugen);
     redrawFugen();
     redrawStorm();
     updateStatus();
+    syncDualButtons();
     return vmax;
   }
 
@@ -903,4 +1049,5 @@
 
   // 默认放置一个示范台风
   placeStorm(140, 15);
+  syncDualButtons();
 })();

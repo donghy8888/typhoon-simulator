@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261027n" />
+  <link rel="stylesheet" href="css/style.css?v=20261028a" />
 </head>
 <body>
   <header class="site-header">
@@ -19,7 +19,7 @@
 
       <section class="panel" id="panel-init">
         <h2 class="panel-title">初始条件 <span class="badge">台风中心</span></h2>
-        <p class="hint" style="margin:0 0 0.6rem;font-size:0.85rem;color:#6a7a8a">点击地图放置台风中心</p>
+        <p class="hint" style="margin:0 0 0.6rem;font-size:0.85rem;color:#6a7a8a">点击地图放置主台风；再点一次（或下方按钮）添加第二台风</p>
         <div class="form-row">
           <label for="initWindGrade">风力等级</label>
           <select id="initWindGrade" title="按中国风力等级设定初始强度">
@@ -34,6 +34,10 @@
             <option value="51.0">16级 (51.0 m/s)</option>
             <option value="56.1">17级 (56.1 m/s)</option>
           </select>
+        </div>
+        <div class="btn-row tight" style="margin-top:0.55rem">
+          <button type="button" class="secondary" id="btnAddSecond" title="在主台风东侧约4°放置第二台风">添加第二台风</button>
+          <button type="button" class="secondary" id="btnClearSecond" title="移除第二台风及路径" disabled>清除第二台风</button>
         </div>
       </section>
 
@@ -71,7 +75,7 @@
     <div class="map-wrap">
       <div id="map"></div>
       <div class="map-toolbar" id="mapToolbar" title="操作提示">
-        操作：点击地图落点 · 选风力/副高月份 ·「开始」积分
+        操作：点地图放主台 → 再点加第二台 · 选风力/副高 ·「开始」
       </div>
       <div class="clock-bar" id="clockBar">模拟时钟：未开始 · 点击地图放置台风后按「开始」</div>
       <div class="map-legend">
@@ -85,7 +89,8 @@
         <div><span class="swatch" style="background:transparent;border:2px solid #2471a3"></span>7级风圈</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #d68910"></span>10级风圈</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #c0392b"></span>12级风圈</div>
-        <div><span class="swatch" style="background:#1a5276"></span>台风路径</div>
+        <div><span class="swatch" style="background:#2980b9"></span>主台风路径</div>
+        <div><span class="swatch" style="background:#5dade2"></span>第二台风路径</div>
         <div class="legend-sec">引导</div>
         <div><span class="swatch" style="background:transparent;border:2px dashed #1e8449"></span>副高北缘（绿线）</div>
       </div>
@@ -94,8 +99,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/geo.js?v=20261027n"></script>
-  <script src="js/physics.js?v=20261027n"></script>
-  <script src="js/app.js?v=20261027n"></script>
+  <script src="js/geo.js?v=20261028a"></script>
+  <script src="js/physics.js?v=20261028a"></script>
+  <script src="js/app.js?v=20261028a"></script>
 </body>
 </html>

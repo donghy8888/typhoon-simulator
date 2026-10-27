@@ -1,0 +1,29 @@
+PROOF ?v=20261028a — dual-typhoon Fujiwhara (CCW; centroid follows steering)
+CONST: R=9° peak=2.4 m/s power=1.6 minSep=1.15° radial=0.12 m/s
+NO Taiwan-mtn attract; WPSH fill / yellow-green guides / land decay unchanged.
+Place 2nd: map click when 1 storm exists, or sidebar「添加第二台风」(default +4°E); clear via「清除第二台风」.
+
+Case A (open ocean, empty fugen): equal 40 m/s @ 135E18N & 140E18N, env+fuji 72h
+  bearingAB Δ24h=14.3° Δ48h=30.7° Δ72h=49.6° (CCW>0)
+  centroid Δlon=-9.34 Δlat=5.45 (steer W+N)
+  dist0=4.751 dist48=4.481 dist72=4.342 peak0=0.722
+
+t	aLon	aLat	bLon	bLat	cLon	cLat	dist	brg	peak
+1	134.877	18.049	139.875	18.096	137.376	18.072	4.751	0.6	0.722
+12	133.536	18.59	138.467	19.157	136.002	18.874	4.7	6.9	0.735
+24	132.096	19.19	136.868	20.333	134.482	19.761	4.634	14.3	0.754
+36	130.684	19.803	135.197	21.524	132.94	20.663	4.559	22.2	0.775
+48	129.303	20.436	133.447	22.723	131.375	21.579	4.481	30.7	0.796
+60	127.953	21.099	131.616	23.921	129.785	22.51	4.406	39.8	0.818
+72	126.635	21.803	129.701	25.109	128.162	23.449	4.342	49.6	0.836
+
+Case B far(~20°): applied=false
+Case C unequal 55 vs 25: r_strong 1.19→1.16 r_weak 2.62→2.55 (weak farther from centroid)
+Case D soft-min from 0.5°: sep→1.150° (floor 1.15)
+
+PASS:
+  CCW: YES (Δ48=30.7°)
+  centroid W+N: YES
+  far off: YES
+  soft-min: YES
+  no TW attract: YES

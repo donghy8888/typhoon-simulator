@@ -754,6 +754,122 @@
     return { dV, phase, mpi: pot };
   }
 
+
+  // —— 双台风藤原效应（Fujiwhara）——
+  // 距离 < 阈值时，对强度加权质心叠加逆时针切向互旋；质心本身随各自环境移速走。
+  const FUJI_RADIUS_DEG = 9;       // 互旋起效半径 ~8–10°
+  const FUJI_PEAK_MS = 2.4;        // 极近时峰值切向速度 (m/s)；弱–中等弧线
+  const FUJI_POWER = 1.6;         // (1−r/R)^p：远端很快≈0
+  const FUJI_MIN_SEP_DEG = 1.15;  // 软最小间距，避免瞬间吸并
+  const FUJI_RADIAL_MS = 0.12;    // 极弱径向靠拢（距 > 最小间距时）
+
+  function fujiWeight(vmax) {
+    return Math.max(5, vmax || 5);
+  }
+
+  /** 强度加权质心（等面积近似：lon 按 cos(lat) 缩放） */
+  function intensityCentroid(members) {
+    let sw = 0, sx = 0, sy = 0, meanLat = 0;
+    const alive = members.filter(m => m && m.alive);
+    if (!alive.length) return null;
+    for (const m of alive) {
+      meanLat += m.lat;
+    }
+    meanLat /= alive.length;
+    const cos = Math.cos(meanLat * Math.PI / 180) || 1e-6;
+    for (const m of alive) {
+      const w = fujiWeight(m.vmax);
+      sw += w;
+      sx += w * m.lon * cos;
+      sy += w * m.lat;
+    }
+    return { lon: sx / sw / cos, lat: sy / sw, cos, meanLat };
+  }
+
+  /**
+   * 对两（或多）台风叠加藤原互旋位移。
+   * 约定：调用前已各自完成环境引导步（moveStep）；本函数只改相对质心的旋转 + 软间距。
+   * 返回 { applied, distDeg, peakUsed } 便于 track-proof。
+   */
+  function applyFujiwhara(members, dtHours) {
+    const alive = (members || []).filter(m => m && m.alive);
+    if (alive.length < 2) return { applied: false, distDeg: null, peakUsed: 0 };
+
+    const c = intensityCentroid(alive);
+    if (!c) return { applied: false, distDeg: null, peakUsed: 0 };
+
+    // 两台距离（等面积度）
+    const a = alive[0], b = alive[1];
+    const dxAB = (b.lon - a.lon) * c.cos;
+    const dyAB = b.lat - a.lat;
+    const distDeg = Math.hypot(dxAB, dyAB);
+    if (!(distDeg < FUJI_RADIUS_DEG) || distDeg < 1e-6) {
+      return { applied: false, distDeg, peakUsed: 0 };
+    }
+
+    const tNorm = 1 - distDeg / FUJI_RADIUS_DEG;
+    const envelope = Math.pow(Math.max(0, tNorm), FUJI_POWER);
+    const peakUsed = FUJI_PEAK_MS * envelope;
+
+    // 径向：距 > 最小 → 极弱靠拢；距 < 最小 → 软推开
+    let radialMs = 0;
+    if (distDeg < FUJI_MIN_SEP_DEG) {
+      radialMs = -FUJI_PEAK_MS * 0.55 * (1 - distDeg / FUJI_MIN_SEP_DEG); // 负 = 外推
+    } else {
+      radialMs = FUJI_RADIAL_MS * envelope;
+    }
+
+    for (const m of alive) {
+      const dx = (m.lon - c.lon) * c.cos;
+      const dy = m.lat - c.lat;
+      const r = Math.hypot(dx, dy);
+      if (r < 1e-6) continue;
+      // 逆时针切向单位向量（等面积平面）：(-dy, dx)/r
+      const tx = -dy / r;
+      const ty = dx / r;
+      // 径向单位（指向质心 = 靠拢）：(-dx, -dy)/r
+      const rx = -dx / r;
+      const ry = -dy / r;
+
+      const u = peakUsed * tx + radialMs * rx;
+      const v = peakUsed * ty + radialMs * ry;
+      const { dlon, dlat } = G.degPerHourFromMs(u, v, m.lat);
+      m.lon += dlon * dtHours;
+      m.lat += dlat * dtHours;
+      // 叠加到显示用速度（不改航向平滑的主源，只作示意）
+      m.u = (m.u || 0) + u;
+      m.v = (m.v || 0) + v;
+      // 同步末点 track（stepMember 已 push；此处覆写末点坐标）
+      if (m.track && m.track.length) {
+        const last = m.track[m.track.length - 1];
+        last.lon = m.lon;
+        last.lat = m.lat;
+      }
+    }
+
+    // 软最小间距：若仍过近，沿连线对称推开到 FUJI_MIN_SEP_DEG
+    const dx2 = (b.lon - a.lon) * c.cos;
+    const dy2 = b.lat - a.lat;
+    const d2 = Math.hypot(dx2, dy2);
+    if (d2 > 1e-6 && d2 < FUJI_MIN_SEP_DEG) {
+      const need = (FUJI_MIN_SEP_DEG - d2) * 0.5;
+      const nx = dx2 / d2, ny = dy2 / d2;
+      a.lon -= (need * nx) / c.cos;
+      a.lat -= need * ny;
+      b.lon += (need * nx) / c.cos;
+      b.lat += need * ny;
+      for (const m of [a, b]) {
+        if (m.track && m.track.length) {
+          const last = m.track[m.track.length - 1];
+          last.lon = m.lon;
+          last.lat = m.lat;
+        }
+      }
+    }
+
+    return { applied: true, distDeg, peakUsed };
+  }
+
   function stepMember(m, dtHours, baseCfg, fugenList, sstRegions, holeRef) {
     if (!m.alive) return;
 
@@ -831,6 +947,13 @@
 
   global.TyPhysics = {
     DISSIPATE_MS,
+    FUJI_RADIUS_DEG,
+    FUJI_PEAK_MS,
+    FUJI_POWER,
+    FUJI_MIN_SEP_DEG,
+    FUJI_RADIAL_MS,
+    intensityCentroid,
+    applyFujiwhara,
     NORTH_LEG_DEG,
     RECURVE_ARC_DEG,
     POST_GREEN_ARC_DEG,

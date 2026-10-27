@@ -233,18 +233,24 @@
         });
       }
 
-      // 可拖角点：draggable marker；拖动时只改多边形顶点
+      // 可拖角点：源环已稀疏（气候态约 8–12）；手柄最多 12，写回真实 ring 索引
       if (selected && !state._draggingVertex) {
-        // 去掉闭合重复末点，避免叠两个手柄
-        const ringPts = f.ring.slice();
-        if (ringPts.length >= 2) {
-          const a = ringPts[0], b = ringPts[ringPts.length - 1];
-          if (Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9) {
-            ringPts.pop();
+        const closed = f.ring.length >= 2 &&
+          Math.abs(f.ring[0][0] - f.ring[f.ring.length - 1][0]) < 1e-9 &&
+          Math.abs(f.ring[0][1] - f.ring[f.ring.length - 1][1]) < 1e-9;
+        const openLen = closed ? f.ring.length - 1 : f.ring.length;
+        const MAX_HANDLES = 12;
+        const handleIdx = [];
+        if (openLen <= MAX_HANDLES) {
+          for (let i = 0; i < openLen; i++) handleIdx.push(i);
+        } else {
+          for (let h = 0; h < MAX_HANDLES; h++) {
+            handleIdx.push(Math.round(h * (openLen - 1) / (MAX_HANDLES - 1)));
           }
         }
-        // 若顶点过多，仍全部可拖（顺滑环约 20–40 点）
-        ringPts.forEach((pt, pi) => {
+        handleIdx.forEach((pi) => {
+          const pt = f.ring[pi];
+          if (!pt) return;
           const marker = L.marker([pt[1], pt[0]], {
             draggable: true,
             autoPan: false,
@@ -270,12 +276,7 @@
           });
           marker.on('drag', function (ev) {
             const ll = ev.target.getLatLng();
-            // 写回开放环；若原 ring 闭合则同步末点
-            const closed = f.ring.length >= 2 &&
-              Math.abs(f.ring[0][0] - f.ring[f.ring.length - 1][0]) < 1e-9 &&
-              Math.abs(f.ring[0][1] - f.ring[f.ring.length - 1][1]) < 1e-9;
-            const openLen = closed ? f.ring.length - 1 : f.ring.length;
-            if (pi >= openLen) return;
+            if (pi < 0 || pi >= openLen) return;
             f.ring[pi] = [ll.lng, ll.lat];
             if (closed) {
               f.ring[f.ring.length - 1] = [f.ring[0][0], f.ring[0][1]];
@@ -350,7 +351,7 @@
     if (!state.fugen.length) {
       const empty = document.createElement('p');
       empty.className = 'hint';
-      empty.textContent = '暂无副高块，可点「添加副高块」或「恢复默认」。';
+      empty.textContent = '暂无副高。可点「恢复本月默认」。';
       el.appendChild(empty);
       return;
     }

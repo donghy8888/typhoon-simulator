@@ -1,0 +1,8 @@
+PROOF ?v=20261027j — curved WPSH northern ridge (not flat box); sparse ring ~9 verts (8–12); single wnp_slab south of yellow
+
+- Cause of straight yellow: boxRing north edge was constant lat → green/yellow horizontal.
+- Fix: fugenForMonth uses ridgeSlabRing with 6 west→east ridge control points of varying lat; no chaikin on climate ring.
+- Open vertices: 9 (SW, SE, 6 ridge E→W, west-mid); edit handles ≤12.
+- Month 7 ridge samples (lon→edge°N): 110→32.0, 120→34.5, 130→35.8, 140→36.3, 150→35.0, 160→33.7
+- Guangdong (113E,23N) inside solid for 6–9; south bound ~4°N.
+- holeRadiusDeg slightly larger (×1.6 + 0.5).

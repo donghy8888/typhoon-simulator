@@ -168,49 +168,91 @@
   }
 
   /**
-   * 近矩形单环（边上密采样 + 轻微圆角），用于「一整块」副高，避免超椭圆四角空缺。
+   * 西太副高气候态单环：稀疏顶点（约 10 个），北缘弯脊（lon→lat 起伏），
+   * 南界低、东西跨开 → 黄线以南一整块实体。不做 chaikin（避免编辑点爆炸）。
+   * ridgeW2E: 北缘控制点，自西向东 [[lon,lat],...]，各点纬度必须有明显起伏。
    */
-  function boxRing(lon0, lon1, lat0, lat1) {
+  function ridgeSlabRing(west, east, south, ridgeW2E, westMidLat) {
+    const ridge = ridgeW2E.slice();
+    // 保证脊两端贴东西界
+    ridge[0] = [west, ridge[0][1]];
+    ridge[ridge.length - 1] = [east, ridge[ridge.length - 1][1]];
     const pts = [];
-    const nx = 28;
-    const ny = 18;
-    for (let i = 0; i <= nx; i++) pts.push([lon0 + (lon1 - lon0) * (i / nx), lat0]);
-    for (let i = 1; i <= ny; i++) pts.push([lon1, lat0 + (lat1 - lat0) * (i / ny)]);
-    for (let i = 1; i <= nx; i++) pts.push([lon1 - (lon1 - lon0) * (i / nx), lat1]);
-    for (let i = 1; i < ny; i++) pts.push([lon0, lat1 - (lat1 - lat0) * (i / ny)]);
-    pts.push([pts[0][0], pts[0][1]]);
-    return chaikinSmooth(pts, 1);
+    // 南界：西南 → 东南（黄线以南整片实体）
+    pts.push([west, south]);
+    pts.push([east, south]);
+    // 北缘：自东向西沿弯脊（CCW）
+    for (let i = ridge.length - 1; i >= 0; i--) {
+      pts.push([ridge[i][0], ridge[i][1]]);
+    }
+    // 西界中点：经度盖广东一带，纬度落在华南沿海
+    pts.push([west, westMidLat == null ? 18 : westMidLat]);
+    pts.push([pts[0][0], pts[0][1]]); // 闭合
+    return pts;
   }
 
   /**
-   * 按月份气候态：黄线以南 = 一整块副热带高压（单多边形，无多块空档）。
-   * 绿线=该块北缘；黄线=绿线南约 0.15°。台风在实体内靠出生空圈移动
-   *（必须单块，否则空圈只打穿一块、其余重叠块仍会卡住）。
-   *   6 月：北缘/黄线 → 江南
+   * 按月份气候态：黄线以南 = 一整块副热带高压（单多边形 wnp_slab）。
+   * 绿线=弯脊北缘；黄线=绿线南约 0.15°。台风在实体内靠出生空圈移动。
+   *   6 月：北缘 → 江南（弯脊起伏）
    *   7 月：北缘 → 黄淮；西界盖广东
    *   8 月：北缘 → 华北南缘；西界盖广东
    *   9 月：北缘南撤江南
    */
   function fugenForMonth(month) {
     const mo = Number(month) || 7;
-    // [lon0, lon1, lat0, lat1]：南界够低 → 黄线以南整片实体；西界含广东
-    let box;
+    // 西界 ~107.5 盖广东；南界 ~4°N；北缘少量关键点构成弯脊（禁止整段同纬直线）
+    let west = 107.5, east, south = 4.0, westMid = 18.0, ridge;
     if (mo === 6) {
-      box = [107.5, 169, 3.5, 30.15];
+      // 江南：脊线 ~28–31°N，西低东有次峰
+      east = 169;
+      ridge = [
+        [107.5, 27.6],
+        [118, 30.4],
+        [128, 28.8],
+        [142, 31.0],
+        [155, 29.2],
+        [169, 27.5]
+      ];
     } else if (mo === 8) {
-      box = [107.5, 172, 3.5, 37.35];
+      // 华北南缘：脊线 ~34–38°N
+      east = 172;
+      ridge = [
+        [107.5, 32.8],
+        [116, 35.6],
+        [126, 37.4],
+        [140, 38.1],
+        [155, 36.2],
+        [172, 33.8]
+      ];
     } else if (mo === 9) {
-      box = [107.5, 169, 3.5, 30.15];
+      // 南撤江南
+      east = 169;
+      ridge = [
+        [107.5, 27.2],
+        [117, 29.8],
+        [129, 28.2],
+        [143, 30.4],
+        [156, 28.6],
+        [169, 26.8]
+      ];
     } else {
-      box = [107.5, 171, 3.5, 35.35]; // 7 月黄淮
+      // 7 月黄淮；西界盖广东
+      east = 171;
+      ridge = [
+        [107.5, 31.2],
+        [116, 33.8],
+        [126, 35.6],
+        [140, 36.3],
+        [154, 34.5],
+        [171, 32.2]
+      ];
     }
-    const [lon0, lon1, lat0, lat1] = box;
-    // 单块近矩形：黄线以南一整片，无多块拼缝
     return [
       {
         id: 'wnp_slab',
         name: '西北太副高',
-        ring: boxRing(lon0, lon1, lat0, lat1)
+        ring: ridgeSlabRing(west, east, south, ridge, westMid)
       }
     ];
   }
@@ -448,7 +490,7 @@
 
   /** 空圈：整块副高内台风进路；略放大便于沿引导移动 */
   function holeRadiusDeg(vmaxMs) {
-    return windRadiusDeg(vmaxMs) * 1.55 + 0.45;
+    return windRadiusDeg(vmaxMs) * 1.6 + 0.5;
   }
 
   /** km/h 近似：1° lat ≈ 111 km；经向随纬度变化 */

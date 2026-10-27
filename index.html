@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261027c" />
+  <link rel="stylesheet" href="css/style.css?v=20261027d" />
 </head>
 <body>
   <header class="site-header">
@@ -64,8 +64,18 @@
 
       <section class="panel" id="panel-fugen">
         <h2 class="panel-title">副热带高压</h2>
+        <div class="form-row">
+          <label for="fugenMonth">气候月份</label>
+          <select id="fugenMonth" title="选择副高气候态；黄线随副高北缘季节北跳/南撤">
+            <option value="6">6月 · 黄线江南</option>
+            <option value="7" selected>7月 · 黄线黄淮</option>
+            <option value="8">8月 · 黄线华北</option>
+            <option value="9">9月 · 黄线南撤江南</option>
+          </select>
+        </div>
+        <p class="hint" style="margin:0.35rem 0 0.55rem;font-size:0.8rem;color:#6a7a8a">副高实体在黄线以南；换月只改副高场，不自动开跑</p>
         <div class="btn-row tight">
-          <button type="button" class="secondary" id="btnResetFugen" title="恢复默认副高">恢复默认</button>
+          <button type="button" class="secondary" id="btnResetFugen" title="恢复当前月份气候态副高">恢复本月默认</button>
         </div>
         <div class="fugen-list" id="fugenList"></div>
       </section>
@@ -75,7 +85,7 @@
     <div class="map-wrap">
       <div id="map"></div>
       <div class="map-toolbar" id="mapToolbar" title="操作提示">
-        操作：点击地图落点 · 选风力等级 ·「开始」积分 · 副高为固定默认场
+        操作：点击地图落点 · 选风力/副高月份 ·「开始」积分
       </div>
       <div class="clock-bar" id="clockBar">模拟时钟：未开始 · 点击地图放置台风后按「开始」</div>
       <div class="map-legend">
@@ -98,8 +108,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/geo.js?v=20261027c"></script>
-  <script src="js/physics.js?v=20261027c"></script>
-  <script src="js/app.js?v=20261027c"></script>
+  <script src="js/geo.js?v=20261027d"></script>
+  <script src="js/physics.js?v=20261027d"></script>
+  <script src="js/app.js?v=20261027d"></script>
 </body>
 </html>

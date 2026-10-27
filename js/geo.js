@@ -168,22 +168,51 @@
   }
 
   /**
-   * 默认副高：顺滑卵形块（多顶点 + Chaikin），覆盖典型西北太副高位置
+   * 按月份的气候态副高（西北太主脊 + 南海段）。
+   * 黄线 = 副高北缘（绿线）以南约 0.15°：
+   *   6 月：黄线在江南一带（约 29–30°N）
+   *   7 月：黄线北抬至黄淮（约 34–35°N）
+   *   8 月：黄线进一步至华北南缘（约 36–37°N）
+   *   9 月：黄线南撤回江南；副高实体仍在黄线以南
    */
-  function defaultFugen() {
+  function fugenForMonth(month) {
+    const m = Number(month) || 7;
+    // [lon0, lon1, lat0, lat1] for main WNP ridge; SCS block lat band
+    let main, scs;
+    if (m === 6) {
+      // 北缘约 30° → 黄线约 29.85°（江南）
+      main = [124, 162, 17, 30];
+      scs = [108, 122, 12, 23];
+    } else if (m === 8) {
+      // 北缘约 37.2° → 黄线约 37.05°（黄淮–华北）
+      main = [126, 168, 22, 37.2];
+      scs = [109, 120, 13, 21];
+    } else if (m === 9) {
+      // 南撤：北缘约 30° → 黄线约 29.85°（江南）
+      main = [125, 164, 16, 30];
+      scs = [108, 121, 11, 22];
+    } else {
+      // 7 月默认：北缘约 35.2° → 黄线约 35.05°（黄淮）
+      main = [126, 166, 20, 35.2];
+      scs = [108, 121, 12, 22];
+    }
     return [
       {
         id: 'wnp_main',
         name: '西北太主副高',
-        ring: roundedRectRing(126, 168, 21, 35, 12, 0.3)
+        ring: roundedRectRing(main[0], main[1], main[2], main[3], 12, 0.3)
       },
       {
         id: 'scs',
         name: '南海副高段',
-        // 覆盖南海及其北缘附近，边缘顺滑
-        ring: roundedRectRing(108, 121, 12, 22, 14, 0.38)
+        ring: roundedRectRing(scs[0], scs[1], scs[2], scs[3], 14, 0.38)
       }
     ];
+  }
+
+  /** 默认副高：7 月气候态（黄淮） */
+  function defaultFugen() {
+    return fugenForMonth(7);
   }
 
   function pointInRing(lon, lat, ring) {
@@ -459,6 +488,7 @@
     MOUNTAIN_POLYS,
     defaultSstRegions,
     defaultFugen,
+    fugenForMonth,
     roundedRectRing,
     makeSmoothFugenRing,
     chaikinSmooth,

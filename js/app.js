@@ -15,7 +15,7 @@
     speed: 20,
     members: [],
     hole: null,
-    fugen: G.defaultFugen(),
+    fugen: G.fugenForMonth(7),
     sstRegions: G.defaultSstRegions(), // 固定默认背景场，无侧栏调节
     lastPlace: { lon: 140, lat: 15 },
     selectedFugen: null,
@@ -879,12 +879,34 @@
     if (this.value) applyInitWindToMember();
   };
 
-  document.getElementById('btnResetFugen').onclick = () => {
-    state.fugen = G.defaultFugen();
-    state.selectedFugen = null;
+
+  function currentFugenMonth() {
+    const el = document.getElementById('fugenMonth');
+    return el ? Number(el.value) || 7 : 7;
+  }
+
+  function applyFugenMonth(keepSelection) {
+    const month = currentFugenMonth();
+    state.fugen = G.fugenForMonth(month);
+    if (!keepSelection) state.selectedFugen = null;
     state.hole = null;
+    if (state.members && state.members[0]) {
+      const m = state.members[0];
+      state.hole = P.ensureBirthHole(m.lon, m.lat, m.vmax, state.fugen);
+    }
     renderFugenList();
     redrawFugen();
+    redrawSteer();
+    updateStatus();
+  }
+
+  document.getElementById('fugenMonth').onchange = function () {
+    // 换月只刷新副高/绿黄线，不自动开跑
+    applyFugenMonth(false);
+  };
+
+  document.getElementById('btnResetFugen').onclick = () => {
+    applyFugenMonth(false);
   };
 
   // 初始绘制

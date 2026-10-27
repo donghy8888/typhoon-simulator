@@ -63,7 +63,6 @@ header.site-header .subtitle {
   border-left: 5px solid #2f6fa8;
 }
 .panel#panel-run { border-left-color: #1f7a3a; }
-.panel#panel-status { border-left-color: #0e7cc0; }
 .panel#panel-fugen { border-left-color: #c0392b; }
 .panel#panel-init { border-left-color: #2a6ebb; }
 
@@ -286,57 +285,6 @@ button:disabled {
 .help-box p { margin: 0 0 10px; }
 .help-box p:last-child { margin-bottom: 0; }
 
-/* 状态信息卡 */
-.status-panel {
-  background: linear-gradient(180deg, #f3f8fc 0%, #e6eef6 100%);
-  border: 1px solid #9db8d0;
-  border-radius: 6px;
-  padding: 8px 11px 10px;
-  font-size: 13px;
-  line-height: 1.65;
-  box-shadow: inset 0 1px 0 #fff;
-}
-.status-panel .st-section {
-  margin: 6px 0 4px;
-  padding: 2px 0 3px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #1a5276;
-  border-bottom: 1px dashed #b7c9da;
-  text-transform: none;
-}
-.status-panel .st-section:first-child { margin-top: 0; }
-.status-panel .st-value.wind { color: #b03a2e; font-weight: 800; }
-.status-panel .st-value.sst { color: #1a6b8a; font-weight: 700; }
-.status-panel .st-value.mono { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
-.status-panel .st-row {
-  display: flex;
-  gap: 6px;
-  padding: 3px 0;
-  border-bottom: 1px solid rgba(160, 190, 215, 0.35);
-}
-.status-panel .st-row:last-child { border-bottom: none; }
-.status-panel .st-label {
-  color: #3d5a72;
-  min-width: 72px;
-  flex-shrink: 0;
-  font-weight: 600;
-  font-size: 12px;
-}
-.status-panel .st-value {
-  color: #0d2a42;
-  font-weight: 600;
-  word-break: break-all;
-}
-.status-panel .phase {
-  font-weight: 800;
-  color: #0a4f7a;
-  background: #dceaf5;
-  border: 1px solid #a8c6dc;
-  border-radius: 4px;
-  padding: 0 7px;
-}
 
 
 /* 副高列表 */

@@ -675,12 +675,6 @@
 
     if (!state.members.length) {
       clock.textContent = '模拟时钟：未开始 · 点击地图放置台风后按「开始」';
-      document.getElementById('stTime').textContent = '—';
-      document.getElementById('stPos').textContent = '—';
-      document.getElementById('stWind').textContent = '—';
-      document.getElementById('stSst').textContent = '—';
-      document.getElementById('stPhase').textContent = '待启动';
-      document.getElementById('stSteer').textContent = '—';
       return;
     }
 
@@ -691,17 +685,6 @@
     else if (state.running) clockExtra = '（运行中）';
     else clockExtra = ' · 已放置，选风力等级更新强度/风圈，按「开始」运行';
     clock.textContent = '模拟时钟：' + timeStr + clockExtra;
-
-    document.getElementById('stTime').textContent = timeStr;
-    document.getElementById('stPos').textContent =
-      m.lon.toFixed(2) + '°E, ' + m.lat.toFixed(2) + '°N';
-    document.getElementById('stWind').textContent =
-      m.vmax.toFixed(1) + ' m/s（' + G.gradeLabel(m.vmax) + '）';
-    document.getElementById('stSst').textContent =
-      (m.sst != null ? m.sst.toFixed(1) + '℃' : G.getSst(m.lon, m.lat, state.sstRegions).toFixed(1) + '℃');
-    document.getElementById('stPhase').textContent = m.phase;
-    document.getElementById('stSteer').textContent =
-      'u=' + m.u.toFixed(1) + ' v=' + m.v.toFixed(1) + ' m/s';
   }
 
   function initVmaxFromGrade() {

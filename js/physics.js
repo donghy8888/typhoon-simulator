@@ -710,42 +710,46 @@
     const pot = mpi(sst);
 
     if (land) {
-      // 登陆衰减略缓（相对 26d），仍明显快于海上
+      // 登陆衰减仍明显快于海上
       dV = -1.25 - (vmax / 35) * 1.45;
       if (mtn) dV -= 1.85;
       phase = mtn ? '登陆衰减（山地加速）' : '登陆衰减';
     } else {
       const gap = pot - vmax;
       if (sst < 26.5) {
-        // 冷海减弱明显放慢：强度在海上更耐用
-        dV = -0.32 - (26.5 - sst) * 0.18;
-        if (vmax > pot) dV -= 0.15;
+        // 冷海减弱再放慢：海上不要掉得太快
+        dV = -0.14 - (26.5 - sst) * 0.08;
+        if (vmax > pot) dV -= 0.06;
         phase = '海上减弱';
       } else if (sst >= 28.0) {
         // 向 MPI 松弛；未达 MPI 且暖海时可 RI；高纬扣减减弱
         dV = gap * 0.045;
         if (gap > 8 && vmax < 50) dV += 0.25 + (sst - 28) * 0.2;
-        if (lat > 28) dV -= (lat - 28) * 0.05;
+        if (lat > 28) dV -= (lat - 28) * 0.035;
         if (dV > 0.85) phase = '海上快速增强';
         else if (dV > 0.12) phase = '海上增强';
         else if (dV < -0.15) phase = '海上减弱';
         else phase = '海上维持';
       } else {
         dV = gap * 0.03 + (sst - 27.2) * 0.15;
-        if (lat > 30) dV -= 0.1;
+        if (lat > 30) dV -= 0.06;
         phase = dV >= 0.1 ? '海上增强' : (dV < -0.1 ? '海上减弱' : '海上维持');
       }
 
-      // 超过 MPI 回落（海上放慢，尤其开阔洋面）
-      if (vmax > pot) dV = Math.min(dV, -(vmax - pot) * 0.035 - 0.08);
+      // 超过 MPI 回落（海上再放慢）
+      if (vmax > pot) dV = Math.min(dV, -(vmax - pot) * 0.018 - 0.035);
 
       if (lat > 35 && sst < 27) {
-        dV -= 0.22;
+        dV -= 0.10;
         phase = '海上减弱';
       }
+
+      // 统一压低海上负倾向：减弱大约再慢约一半
+      if (dV < 0) dV *= 0.55;
     }
 
-    if (vmax < 18 && dV < 0) dV *= 1.2;
+    // 弱台风海上不要额外加速消亡；登陆仍略加快
+    if (vmax < 18 && dV < 0) dV *= land ? 1.2 : 1.0;
     return { dV, phase, mpi: pot };
   }
 

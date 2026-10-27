@@ -168,45 +168,47 @@
   }
 
   /**
-   * 按月份的气候态副高（西北太主脊 + 南海段）。
-   * 黄线 = 副高北缘（绿线）以南约 0.15°：
-   *   6 月：黄线在江南一带（约 29–30°N）
+   * 按月份的气候态副高：黄线以南连片铺满（含华南/广东与南海北缘），
+   * 不再留主脊–南海空档。黄线 = 副高北缘（绿线）南约 0.15°：
+   *   6 月：黄线北跳至江南（约 29–30°N）
    *   7 月：黄线北抬至黄淮（约 34–35°N）
-   *   8 月：黄线进一步至华北南缘（约 36–37°N）
-   *   9 月：黄线南撤回江南；副高实体仍在黄线以南
+   *   8 月：再抬至华北南缘（约 36–37°N）
+   *   9 月：黄线南撤江南；副高实体仍在黄线以南
+   *
+   * 用两块大幅重叠的卵形拼成近矩形连片，避免单椭圆在四角（尤其广东）留空。
    */
   function fugenForMonth(month) {
     const m = Number(month) || 7;
-    // [lon0, lon1, lat0, lat1] for main WNP ridge; SCS block lat band
-    let main, scs;
+    // [lon0, lon1, lat0, lat1] 北缘 lat1 决定绿/黄线；西界盖到两广
+    let box;
     if (m === 6) {
-      // 北缘约 30° → 黄线约 29.85°（江南）
-      main = [124, 162, 17, 30];
-      scs = [108, 122, 12, 23];
+      box = [107.5, 164, 10.5, 30.0];      // 黄线≈江南
     } else if (m === 8) {
-      // 北缘约 37.2° → 黄线约 37.05°（黄淮–华北）
-      main = [126, 168, 22, 37.2];
-      scs = [109, 120, 13, 21];
+      box = [107.5, 170, 10.5, 37.2];      // 黄线≈华北；覆盖广东
     } else if (m === 9) {
-      // 南撤：北缘约 30° → 黄线约 29.85°（江南）
-      main = [125, 164, 16, 30];
-      scs = [108, 121, 11, 22];
+      box = [107.5, 165, 10.5, 30.0];      // 南撤江南
     } else {
-      // 7 月默认：北缘约 35.2° → 黄线约 35.05°（黄淮）
-      main = [126, 166, 20, 35.2];
-      scs = [108, 121, 12, 22];
+      box = [107.5, 168, 10.5, 35.2];      // 7 月黄淮；覆盖广东
     }
+    const [lon0, lon1, lat0, lat1] = box;
+    // 多块大幅重叠拼近矩形：黄线以南尽量无空档；北缘横条保证黄线在目标纬度
+    const main = roundedRectRing(lon0, lon1, lat0, lat1, 32, 0.08);
+    const west = roundedRectRing(lon0 - 1.0, 132, lat0 - 0.5, lat1 + 0.1, 28, 0.05);
+    const east = roundedRectRing(lon1 - 28, lon1 + 0.5, lat0, lat1, 28, 0.06);
+    const mid = roundedRectRing(lon0 + 4, lon1 - 4, lat0 - 0.5, lat1, 28, 0.06);
+    const north = roundedRectRing(lon0 - 0.5, lon1 + 0.5, lat1 - 6.5, lat1 + 0.2, 32, 0.05);
+    // 广东 + 广西沿海 + 海峡西岸整片
+    const southChina = roundedRectRing(107, 123, 12, Math.min(lat1 + 0.15, 37.5), 28, 0.05);
+    // 底层填充条：压住东南/西南角低纬空隙
+    const south = roundedRectRing(lon0, lon1, lat0 - 0.8, lat0 + 8, 24, 0.08);
     return [
-      {
-        id: 'wnp_main',
-        name: '西北太主副高',
-        ring: roundedRectRing(main[0], main[1], main[2], main[3], 12, 0.3)
-      },
-      {
-        id: 'scs',
-        name: '南海副高段',
-        ring: roundedRectRing(scs[0], scs[1], scs[2], scs[3], 14, 0.38)
-      }
+      { id: 'wnp_main', name: '西北太主副高', ring: main },
+      { id: 'wnp_west', name: '华南–南海西段', ring: west },
+      { id: 'wnp_east', name: '副高东段', ring: east },
+      { id: 'wnp_mid', name: '副高中段填充', ring: mid },
+      { id: 'wnp_north', name: '副高北缘', ring: north },
+      { id: 'wnp_gd', name: '华南覆盖', ring: southChina },
+      { id: 'wnp_south', name: '副高南缘填充', ring: south }
     ];
   }
 

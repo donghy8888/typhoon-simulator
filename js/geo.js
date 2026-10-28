@@ -305,27 +305,16 @@
     return Math.max(18, 30 - lat * 0.18);
   }
 
-  /** hole 可为单个空圈或空圈数组（双台风各开出生空圈） */
-  function normalizeHoles(hole) {
-    if (!hole) return [];
-    return Array.isArray(hole) ? hole.filter(Boolean) : [hole];
-  }
-
   /** 点是否在任一副高实体内（扣除空洞后） */
   function inFugenSolid(lon, lat, fugenList, hole) {
-    const holes = normalizeHoles(hole);
     for (const f of fugenList) {
       if (!pointInRing(lon, lat, f.ring)) continue;
-      let punched = false;
-      for (let i = 0; i < holes.length; i++) {
-        const h = holes[i];
-        if (h.fugenId !== f.id) continue;
-        const dlon = (lon - h.lon) * Math.cos(lat * Math.PI / 180);
-        const dlat = lat - h.lat;
+      if (hole && hole.fugenId === f.id) {
+        const dlon = (lon - hole.lon) * Math.cos(lat * Math.PI / 180);
+        const dlat = lat - hole.lat;
         const distDeg = Math.sqrt(dlon * dlon + dlat * dlat);
-        if (distDeg < h.radiusDeg) { punched = true; break; }
+        if (distDeg < hole.radiusDeg) continue; // 空洞内不算副高
       }
-      if (punched) continue; // 空洞内不算副高
       return true;
     }
     return false;

@@ -1,0 +1,11 @@
+?v=20261028c — restore single typhoon (remove dual/Fujiwhara)
+
+- Removed: second-storm map click / sidebar buttons, Fujiwhara mutual orbit,
+  dual path styles, multi-hole birth punch-outs for second storm.
+- Restored: single storm + single path + single birth hole (ensureBirthHole /
+  state.hole) as at 6543ee9 (?v=20261027n).
+- Kept all prior finalized work through 6543ee9 (WPSH slab south of yellow,
+  sparse ridge verts, land decay ×0.30, no status panel, no ensemble, layers
+  always on, fixed guiding, wind sidebar, etc.).
+- Files restored from 6543ee9 then cache-bust bumped to 20261028c:
+  index.html, js/app.js, js/physics.js, js/geo.js

@@ -14,6 +14,7 @@
     hours: 0,
     speed: 20,
     members: [],
+    hole: null,
     fugen: G.fugenForMonth(7),
     sstRegions: G.defaultSstRegions(), // 固定默认背景场，无侧栏调节
     lastPlace: { lon: 140, lat: 15 },
@@ -75,25 +76,19 @@
   const steerRenderer = L.canvas({ padding: 0.5 });
 
   // 副高空圈与风暴图层的可复用引用（tick 时原地更新，避免每小时 clear+重建）
-  let holeCircleLayers = [];
+  let holeCircleLayer = null;
   const stormRefs = {
     trackLine: null,
-    trackLine2: null,
     windCircles: {},
-    windCircles2: {},
-    marker: null,
-    marker2: null
+    marker: null
   };
 
   function clearStormRefs() {
     layerGroups.track.clearLayers();
     layerGroups.storm.clearLayers();
     stormRefs.trackLine = null;
-    stormRefs.trackLine2 = null;
     stormRefs.windCircles = {};
-    stormRefs.windCircles2 = {};
     stormRefs.marker = null;
-    stormRefs.marker2 = null;
   }
 
   function cfgFromUI() {
@@ -140,22 +135,11 @@
     return pts;
   }
 
-  /** 各台风出生空圈（主台 + 第二台均可打穿副高） */
-  function collectHoles() {
-    const hs = [];
-    for (let i = 0; i < state.members.length; i++) {
-      const h = state.members[i].hole;
-      if (h) hs.push(h);
-    }
-    return hs;
-  }
-
   function applyPolyLatLngs(poly, f) {
     const outer = ringToLatLng(f.ring);
-    const hs = collectHoles().filter(function (h) { return h.fugenId === f.id; });
     let latlngs = outer;
-    if (hs.length) {
-      latlngs = [outer].concat(hs.map(function (h) { return circleHoleLatLngs(h); }));
+    if (state.hole && state.hole.fugenId === f.id) {
+      latlngs = [outer, circleHoleLatLngs(state.hole)];
     }
     poly.setLatLngs(latlngs);
   }
@@ -171,14 +155,13 @@
     opts = opts || {};
     layerGroups.fugen.clearLayers();
     fugenPolygons = [];
-    holeCircleLayers = [];
+    holeCircleLayer = null;
 
     state.fugen.forEach((f, idx) => {
       const outer = ringToLatLng(f.ring);
-      const hs = collectHoles().filter(function (h) { return h.fugenId === f.id; });
       let latlngs = outer;
-      if (hs.length) {
-        latlngs = [outer].concat(hs.map(function (h) { return circleHoleLatLngs(h); }));
+      if (state.hole && state.hole.fugenId === f.id) {
+        latlngs = [outer, circleHoleLatLngs(state.hole)];
       }
       const selected = state.selectedFugen === idx;
       const poly = L.polygon(latlngs, {
@@ -312,17 +295,16 @@
       fugenPolygons.push(poly);
     });
 
-    // 空洞描边提示（可多个：主台 + 第二台）
-    collectHoles().forEach(function (h) {
-      const c = L.circle([h.lat, h.lon], {
-        radius: h.radiusDeg * 111320,
+    // 空洞描边提示
+    if (state.hole) {
+      holeCircleLayer = L.circle([state.hole.lat, state.hole.lon], {
+        radius: state.hole.radiusDeg * 111320,
         color: '#922b21',
         weight: 2,
         dashArray: '6 4',
         fillOpacity: 0
       }).bindTooltip('副高空圈（随风圈变化）').addTo(layerGroups.fugen);
-      holeCircleLayers.push(c);
-    });
+    }
     // 用户编辑 / 选中 / 增删时立即刷新引导风；tick 路径不走这里
     if (opts.refreshSteer !== false) redrawSteerSoon();
   }
@@ -334,20 +316,14 @@
       if (poly) applyPolyLatLngs(poly, f);
     });
 
-    const hs = collectHoles();
-    while (holeCircleLayers.length > hs.length) {
-      const c = holeCircleLayers.pop();
-      if (c && layerGroups.fugen.hasLayer(c)) layerGroups.fugen.removeLayer(c);
-    }
-    for (let i = 0; i < hs.length; i++) {
-      const h = hs[i];
-      const latlng = [h.lat, h.lon];
-      const radiusM = h.radiusDeg * 111320;
-      if (holeCircleLayers[i] && layerGroups.fugen.hasLayer(holeCircleLayers[i])) {
-        holeCircleLayers[i].setLatLng(latlng);
-        holeCircleLayers[i].setRadius(radiusM);
+    if (state.hole) {
+      const latlng = [state.hole.lat, state.hole.lon];
+      const radiusM = state.hole.radiusDeg * 111320;
+      if (holeCircleLayer && layerGroups.fugen.hasLayer(holeCircleLayer)) {
+        holeCircleLayer.setLatLng(latlng);
+        holeCircleLayer.setRadius(radiusM);
       } else {
-        holeCircleLayers[i] = L.circle(latlng, {
+        holeCircleLayer = L.circle(latlng, {
           radius: radiusM,
           color: '#922b21',
           weight: 2,
@@ -355,6 +331,11 @@
           fillOpacity: 0
         }).bindTooltip('副高空圈（随风圈变化）').addTo(layerGroups.fugen);
       }
+    } else if (holeCircleLayer) {
+      if (layerGroups.fugen.hasLayer(holeCircleLayer)) {
+        layerGroups.fugen.removeLayer(holeCircleLayer);
+      }
+      holeCircleLayer = null;
     }
   }
 
@@ -495,13 +476,8 @@
    * 运行中走节流，避免每次 lat 微移都重绘。
    */
   function maybeRefreshSteerAfterTick(holeJustChangedPresence) {
-    const hs = collectHoles();
-    const present = hs.length > 0;
-    // 用最大半径作代理阈值；空圈数量变化也算几何变化
-    let radius = null;
-    for (let i = 0; i < hs.length; i++) {
-      if (radius == null || hs[i].radiusDeg > radius) radius = hs[i].radiusDeg;
-    }
+    const present = !!state.hole;
+    const radius = present ? state.hole.radiusDeg : null;
     let geometryChanged = holeJustChangedPresence;
     if (present && _lastSteerHoleRadius != null &&
         Math.abs(radius - _lastSteerHoleRadius) >= STEER_HOLE_RADIUS_EPS) {
@@ -531,7 +507,7 @@
     const yellowPts = [];
     const band = G.APPROACH_NORTH_BAND_DEG || 0.15;
     for (let lon = 105; lon <= 175; lon += 0.5) {
-      const edge = G.guidingNorthernEdgeLat(lon, state.fugen, collectHoles());
+      const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
       if (edge != null) {
         const yellowLat = edge - band; // yellowLat = greenEdge - 0.15°
         edgePts.push([edge, lon]);
@@ -568,14 +544,14 @@
     const baseSegs = [];
     for (let lat = 5; lat <= 45; lat += stepLat) {
       for (let lon = 105; lon <= 175; lon += stepLon) {
-        if (G.inFugenSolid(lon, lat, state.fugen, collectHoles())) continue;
-        const st = P.steeringAt(lon, lat, cfg, state.fugen, collectHoles());
+        if (G.inFugenSolid(lon, lat, state.fugen, state.hole)) continue;
+        const st = P.steeringAt(lon, lat, cfg, state.fugen, state.hole);
         const beta = P.betaDrift(lat, cfg.betaStrength);
         const u = st.u + beta.u * 0.5;
         const v = st.v + beta.v * 0.5;
         const spd = Math.hypot(u, v);
         if (spd < 0.25) continue;
-        const inWest = G.inWesterlyBelt(lon, lat, state.fugen, collectHoles());
+        const inWest = G.inWesterlyBelt(lon, lat, state.fugen, state.hole);
         // 箭头更长更大
         const scale = 0.55 + Math.min(0.35, spd * 0.03);
         const coslat = Math.cos(lat * Math.PI / 180) || 0.2;
@@ -609,20 +585,12 @@
   }
 
   // —— 风暴与路径 ——
-  function stormIcon(label, secondary) {
-    const border = secondary ? '#1a5276' : '#c0392b';
-    const bg = secondary ? 'rgba(41,128,185,0.35)' : 'rgba(231,76,60,0.4)';
-    const col = secondary ? '#1a5276' : '#922';
-    const text = label || (secondary ? '2' : '台');
-    const size = secondary ? 16 : 20;
+  function stormIcon() {
     return L.divIcon({
       className: '',
-      html: '<div style="width:' + size + 'px;height:' + size + 'px;border:2px solid ' + border +
-        ';border-radius:50%;background:' + bg + ';text-align:center;line-height:' + (size - 4) +
-        'px;font-size:' + (secondary ? 10 : 12) + 'px;color:' + col +
-        ';font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">' + text + '</div>',
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2]
+      html: '<div style="width:20px;height:20px;border:2px solid #c0392b;border-radius:50%;background:rgba(231,76,60,0.4);text-align:center;line-height:16px;font-size:12px;color:#922;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">台</div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10]
     });
   }
 
@@ -630,68 +598,6 @@
   function redrawStorm() {
     clearStormRefs();
     updateStormInPlace();
-  }
-
-  function updateOneTrack(member, refsKey, style) {
-    if (!member || !member.track || member.track.length < 1) return;
-    const latlngs = member.track.map(function (p) { return [p.lat, p.lon]; });
-    if (latlngs.length < 2) return;
-    if (stormRefs[refsKey]) {
-      stormRefs[refsKey].setLatLngs(latlngs);
-    } else {
-      stormRefs[refsKey] = L.polyline(latlngs, style).addTo(layerGroups.track);
-    }
-  }
-
-  function updateWindRings(member, store, simplify) {
-    if (!member) {
-      Object.keys(store).forEach(function (g) {
-        layerGroups.track.removeLayer(store[g]);
-        delete store[g];
-      });
-      return;
-    }
-    let rings = (member.alive || member.vmax >= P.DISSIPATE_MS)
-      ? G.windRadiiForGrades(member.vmax)
-      : [];
-    // 第二台风：只留 7 级圈，简化视觉
-    if (simplify) rings = rings.filter(function (r) { return r.grade === 7; });
-    const seen = {};
-    rings.forEach(function (ring) {
-      seen[ring.grade] = true;
-      const existing = store[ring.grade];
-      const tip = (simplify ? '第二台风 · ' : '') + ring.label + ' · 当前 ' + G.gradeLabel(member.vmax);
-      const weight = simplify ? Math.max(1, (ring.weight || 2) - 0.5) : ring.weight;
-      const fillOp = simplify ? Math.min(0.08, ring.fillOpacity || 0.08) : ring.fillOpacity;
-      if (existing) {
-        existing.setLatLng([member.lat, member.lon]);
-        existing.setRadius(ring.radiusDeg * 111320);
-        existing.setStyle({
-          color: ring.color,
-          weight: weight,
-          fillColor: ring.fill,
-          fillOpacity: fillOp,
-          dashArray: simplify ? '4 3' : null
-        });
-        if (existing.setTooltipContent) existing.setTooltipContent(tip);
-        else if (existing.getTooltip()) existing.getTooltip().setContent(tip);
-      } else {
-        store[ring.grade] = L.circle([member.lat, member.lon], {
-          radius: ring.radiusDeg * 111320,
-          color: ring.color,
-          weight: weight,
-          fillColor: ring.fill,
-          fillOpacity: fillOp,
-          dashArray: simplify ? '4 3' : null
-        }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
-      }
-    });
-    Object.keys(store).forEach(function (g) {
-      if (!seen[g]) {
-        layerGroups.track.removeLayer(store[g]);
-        delete store[g];
-      }
-    });
   }
 
   /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
@@ -702,36 +608,61 @@
     }
 
     const main = state.members[0];
-    const sec = state.members[1] || null;
 
-    updateOneTrack(main, 'trackLine', { color: '#2980b9', weight: 3.2 });
-    updateWindRings(main, stormRefs.windCircles, false);
+    if (main.track.length >= 1) {
+      const latlngs = main.track.map(function (p) { return [p.lat, p.lon]; });
+      if (latlngs.length >= 2) {
+        if (stormRefs.trackLine) {
+          stormRefs.trackLine.setLatLngs(latlngs);
+        } else {
+          stormRefs.trackLine = L.polyline(latlngs, {
+            color: '#2980b9', weight: 2.5
+          }).addTo(layerGroups.track);
+        }
+      }
+
+      const rings = (main.alive || main.vmax >= P.DISSIPATE_MS)
+        ? G.windRadiiForGrades(main.vmax)
+        : [];
+      const seen = {};
+      rings.forEach(function (ring) {
+        seen[ring.grade] = true;
+        const existing = stormRefs.windCircles[ring.grade];
+        const tip = ring.label + ' · 当前 ' + G.gradeLabel(main.vmax);
+        if (existing) {
+          existing.setLatLng([main.lat, main.lon]);
+          existing.setRadius(ring.radiusDeg * 111320);
+          existing.setStyle({
+            color: ring.color,
+            weight: ring.weight,
+            fillColor: ring.fill,
+            fillOpacity: ring.fillOpacity
+          });
+          if (existing.setTooltipContent) existing.setTooltipContent(tip);
+          else if (existing.getTooltip()) existing.getTooltip().setContent(tip);
+        } else {
+          stormRefs.windCircles[ring.grade] = L.circle([main.lat, main.lon], {
+            radius: ring.radiusDeg * 111320,
+            color: ring.color,
+            weight: ring.weight,
+            fillColor: ring.fill,
+            fillOpacity: ring.fillOpacity
+          }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
+        }
+      });
+      Object.keys(stormRefs.windCircles).forEach(function (g) {
+        if (!seen[g]) {
+          layerGroups.track.removeLayer(stormRefs.windCircles[g]);
+          delete stormRefs.windCircles[g];
+        }
+      });
+    }
+
     if (stormRefs.marker) {
       stormRefs.marker.setLatLng([main.lat, main.lon]);
     } else {
-      stormRefs.marker = L.marker([main.lat, main.lon], { icon: stormIcon('台', false) })
+      stormRefs.marker = L.marker([main.lat, main.lon], { icon: stormIcon() })
         .addTo(layerGroups.storm);
-    }
-
-    if (sec) {
-      updateOneTrack(sec, 'trackLine2', { color: '#5dade2', weight: 1.8, dashArray: null });
-      updateWindRings(sec, stormRefs.windCircles2, true);
-      if (stormRefs.marker2) {
-        stormRefs.marker2.setLatLng([sec.lat, sec.lon]);
-      } else {
-        stormRefs.marker2 = L.marker([sec.lat, sec.lon], { icon: stormIcon('2', true) })
-          .addTo(layerGroups.storm);
-      }
-    } else {
-      if (stormRefs.trackLine2) {
-        layerGroups.track.removeLayer(stormRefs.trackLine2);
-        stormRefs.trackLine2 = null;
-      }
-      updateWindRings(null, stormRefs.windCircles2, true);
-      if (stormRefs.marker2) {
-        layerGroups.storm.removeLayer(stormRefs.marker2);
-        stormRefs.marker2 = null;
-      }
     }
   }
 
@@ -748,14 +679,11 @@
     }
 
     const m = state.members[0];
-    const n = state.members.length;
     let clockExtra = '';
-    if (!m.alive && !state.members.some(function (x) { return x.alive; })) clockExtra = ' · 已消亡';
+    if (!m.alive) clockExtra = ' · 已消亡';
     else if (state.paused) clockExtra = '（已暂停）';
     else if (state.running) clockExtra = '（运行中）';
     else clockExtra = ' · 已放置，选风力等级更新强度/风圈，按「开始」运行';
-    if (n >= 2) clockExtra += ' · 双台风（藤原互旋）';
-    else if (n === 1 && !state.running) clockExtra += ' · 再点地图可加第二台风';
     clock.textContent = '模拟时钟：' + timeStr + clockExtra;
   }
 
@@ -765,112 +693,35 @@
     return isFinite(v) ? v : 32.7;
   }
 
-  function makeMember(lon, lat, vmax) {
-    return {
-      lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
-      phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
-      arcLat0: null,
-      arcLon0: null,
-      legTargetLat: null,
-      clearLon0: null,
-      clearLat0: null,
-      sAcc: 0,
-      cfgPerturb: null
-    };
-  }
-
-  function syncDualButtons() {
-    const btnAdd = document.getElementById('btnAddSecond');
-    const btnClr = document.getElementById('btnClearSecond');
-    const n = state.members.length;
-    if (btnAdd) btnAdd.disabled = n >= 2 || n < 1;
-    if (btnClr) btnClr.disabled = n < 2;
-  }
-
-  function attachBirthHole(m) {
-    m.hole = P.ensureBirthHole(m.lon, m.lat, m.vmax, state.fugen);
-    return m;
-  }
-
-  /** 跟随各台风更新空圈；离开母块后清除（与主台原逻辑一致，逐台执行；不中途补开） */
-  function syncMemberHoles() {
-    for (let i = 0; i < state.members.length; i++) {
-      const m = state.members[i];
-      if (!m.hole) continue;
-      P.updateHole(m.hole, m.lon, m.lat, m.vmax);
-      const stillInParent = state.fugen.some(function (f) {
-        return f.id === m.hole.fugenId && G.pointInRing(m.lon, m.lat, f.ring);
-      });
-      if (!stillInParent && !G.inFugenSolid(m.lon, m.lat, state.fugen, null)) {
-        const parent = state.fugen.find(function (f) { return f.id === m.hole.fugenId; });
-        if (parent && !G.pointInRing(m.lon, m.lat, parent.ring)) {
-          m.hole = null;
-        }
-      }
-    }
-  }
-
   function placeStorm(lon, lat, vmax) {
     lon = clamp(lon, G.DOMAIN.lonMin, G.DOMAIN.lonMax);
     lat = clamp(lat, G.DOMAIN.latMin, G.DOMAIN.latMax);
     state.lastPlace = { lon, lat };
     if (vmax == null) vmax = initVmaxFromGrade();
 
+    state.hole = P.ensureBirthHole(lon, lat, vmax, state.fugen);
     state.hours = 0;
     state.members = [];
 
-    const m = makeMember(lon, lat, vmax);
-    attachBirthHole(m);
-    state.members.push(m);
+    const main = {
+      lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
+      phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
+      arcLat0: null,
+      sAcc: 0,
+      cfgPerturb: null
+    };
+    state.members.push(main);
 
     redrawFugen();
     redrawStorm();
     updateStatus();
-    syncDualButtons();
-  }
-
-  /** 放置第二台风；已有两个时返回 false（由调用方提示） */
-  function placeSecondStorm(lon, lat, vmax) {
-    if (state.members.length >= 2) return false;
-    if (!state.members.length) {
-      placeStorm(lon, lat, vmax);
-      return true;
-    }
-    lon = clamp(lon, G.DOMAIN.lonMin, G.DOMAIN.lonMax);
-    lat = clamp(lat, G.DOMAIN.latMin, G.DOMAIN.latMax);
-    if (vmax == null) vmax = initVmaxFromGrade();
-    const m2 = makeMember(lon, lat, vmax);
-    attachBirthHole(m2); // 与主台同等：落点在副高体内则开出生空圈打穿
-    state.members.push(m2);
-    // 不重置 hours / 主台风路径；各台自带空圈
-    redrawFugen(); // 刷新副高挖洞（第二台空圈）
-    redrawStorm();
-    updateStatus();
-    syncDualButtons();
-    return true;
-  }
-
-  function clearSecondStorm() {
-    if (state.members.length < 2) {
-      syncDualButtons();
-      return;
-    }
-    state.members.splice(1, 1);
-    redrawFugen(); // 去掉第二台空圈挖洞
-    redrawStorm();
-    updateStatus();
-    syncDualButtons();
-  }
-
-  function alertTwoStorms() {
-    window.alert('已有两个台风，请先清除第二台风后再添加。');
   }
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
   function tick() {
     if (!state.running || state.paused) return;
-    if (!state.members.length || !state.members.some(function (m) { return m.alive; })) {
+    if (!state.members.length || !state.members[0].alive) {
       stopSim();
       updateStatus();
       return;
@@ -878,32 +729,36 @@
 
     const dt = 1.0;
     const cfg = cfgFromUI();
+    const main = state.members[0];
 
-    const holeCountBefore = collectHoles().length;
-    syncMemberHoles();
-    const holes = collectHoles();
+    const hadHole = !!state.hole;
+    if (state.hole) {
+      P.updateHole(state.hole, main.lon, main.lat, main.vmax);
+      const stillInParent = state.fugen.some(f =>
+        f.id === state.hole.fugenId && G.pointInRing(main.lon, main.lat, f.ring)
+      );
+      if (!stillInParent && !G.inFugenSolid(main.lon, main.lat, state.fugen, null)) {
+        const parent = state.fugen.find(f => f.id === state.hole.fugenId);
+        if (parent && !G.pointInRing(main.lon, main.lat, parent.ring)) {
+          state.hole = null;
+        }
+      }
+    }
 
     for (const m of state.members) {
-      P.stepMember(m, dt, cfg, state.fugen, state.sstRegions, holes);
-    }
-    // 环境步之后叠加藤原互旋（质心已随大尺度平移）
-    if (state.members.length >= 2) {
-      P.applyFujiwhara(state.members, dt);
-      // 互旋位移后空圈立刻跟上台心，避免下一拍卡在副高实体
-      syncMemberHoles();
+      P.stepMember(m, dt, cfg, state.fugen, state.sstRegions, state.hole);
     }
 
     state.hours += dt;
 
     // 原地更新空圈 / 路径 / 风圈 / 标记；不每小时 clearLayers+重建
-    const holePresenceChanged = holeCountBefore !== collectHoles().length;
+    const holePresenceChanged = hadHole !== !!state.hole;
     updateHoleVisualInPlace();
     updateStormInPlace();
     maybeRefreshSteerAfterTick(holePresenceChanged);
     updateStatus();
 
-    const anyAlive = state.members.some(function (m) { return m.alive; });
-    if (!anyAlive) {
+    if (!state.members[0].alive) {
       stopSim();
       document.getElementById('clockBar').textContent += ' — 风力已低于7级，模拟结束';
     }
@@ -959,13 +814,13 @@
     if (_steerThrottleTimer) { clearTimeout(_steerThrottleTimer); _steerThrottleTimer = null; }
     state.hours = 0;
     state.members = [];
+    state.hole = null;
     _lastSteerHoleRadius = null;
     _lastSteerHolePresent = false;
     clearStormRefs();
-    // 副高全量重绘（会清 holeCircleLayers）；共用 steerRenderer，无孤儿 canvas
+    // 副高全量重绘（会清 holeCircleLayer）；共用 steerRenderer，无孤儿 canvas
     redrawFugen();
     updateStatus();
-    syncDualButtons();
   }
 
   // —— 事件 ——
@@ -978,43 +833,12 @@
       return;
     }
     stopSim();
-    if (state.members.length >= 2) {
-      alertTwoStorms();
-      return;
-    }
-    if (state.members.length === 1) {
-      placeSecondStorm(lon, lat);
-      return;
-    }
     placeStorm(lon, lat);
   });
 
   document.getElementById('btnStart').onclick = startSim;
   document.getElementById('btnPause').onclick = pauseSim;
   document.getElementById('btnReset').onclick = resetSim;
-
-  document.getElementById('btnAddSecond').onclick = function () {
-    if (state.running && !state.paused) return;
-    if (state.members.length >= 2) {
-      alertTwoStorms();
-      return;
-    }
-    if (!state.members.length) {
-      window.alert('请先在地图上放置主台风。');
-      return;
-    }
-    stopSim();
-    // 默认放在主台风东侧约 4°，可再点图微调（已有两个时需先清除）
-    const main = state.members[0];
-    const lon = clamp(main.lon + 4, G.DOMAIN.lonMin, G.DOMAIN.lonMax);
-    const lat = clamp(main.lat + 0.5, G.DOMAIN.latMin, G.DOMAIN.latMax);
-    placeSecondStorm(lon, lat);
-  };
-  document.getElementById('btnClearSecond').onclick = function () {
-    if (state.running && !state.paused) return;
-    stopSim();
-    clearSecondStorm();
-  };
 
 
   /** 把风力等级同步到已放置风暴：更新 vmax、等级标签与 7/10/12 风圈；不启动模拟 */
@@ -1027,19 +851,10 @@
     if (!state.running && m.track && m.track.length === 1) {
       m.track[0].vmax = vmax;
     }
-    // 待启动时第二台风也同步当前风力等级
-    if (!state.running && state.members[1] && state.members[1].track && state.members[1].track.length === 1) {
-      state.members[1].vmax = vmax;
-      state.members[1].track[0].vmax = vmax;
-    }
-    // 各台按当前强度重开/更新出生空圈
-    for (let i = 0; i < state.members.length; i++) {
-      attachBirthHole(state.members[i]);
-    }
+    state.hole = P.ensureBirthHole(m.lon, m.lat, vmax, state.fugen);
     redrawFugen();
     redrawStorm();
     updateStatus();
-    syncDualButtons();
     return vmax;
   }
 
@@ -1058,11 +873,10 @@
     const month = currentFugenMonth();
     state.fugen = G.fugenForMonth(month);
     if (!keepSelection) state.selectedFugen = null;
-    // 换月后按新副高环，给仍在体内的各台重开出生空圈
-    if (state.members) {
-      for (let i = 0; i < state.members.length; i++) {
-        attachBirthHole(state.members[i]);
-      }
+    state.hole = null;
+    if (state.members && state.members[0]) {
+      const m = state.members[0];
+      state.hole = P.ensureBirthHole(m.lon, m.lat, m.vmax, state.fugen);
     }
     renderFugenList();
     redrawFugen();
@@ -1089,5 +903,4 @@
 
   // 默认放置一个示范台风
   placeStorm(140, 15);
-  syncDualButtons();
 })();

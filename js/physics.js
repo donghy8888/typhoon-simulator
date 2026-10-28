@@ -9,12 +9,13 @@
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
-  /** 海温决定的最大潜在强度 (m/s) */
+  /** 海温决定的最大潜在强度 (m/s)；暖海须能撑到 SSHWS Cat5（≥70.5） */
   function mpi(sst) {
     if (sst < 26.0) return 18;
     if (sst < 26.5) return 22;
-    if (sst < 28.0) return 28 + (sst - 26.5) * 8;
-    return 40 + (sst - 28) * 6; // 28℃→40, 30℃→52
+    if (sst < 28.0) return 28 + (sst - 26.5) * (40 / 3); // 26.5→28, 28→48
+    // 28℃→48 · 29.5℃→72 · 30℃→80（菲律宾海 29.5 可过 Cat5 ≥70.5）
+    return 48 + (sst - 28) * 16;
   }
 
   /** 最短路径角度插值（弧度） */
@@ -859,7 +860,7 @@
     const sst = G.getSst(m.lon, m.lat, sstRegions);
     m.sst = sst;
     const tend = intensityTendency(m.lon, m.lat, m.vmax, sst);
-    m.vmax = clamp(m.vmax + tend.dV * dtHours, 5, Math.max(75, tend.mpi + 5));
+    m.vmax = clamp(m.vmax + tend.dV * dtHours, 5, Math.max(85, tend.mpi + 5));
     m.phase = tend.phase;
 
     const t0 = m.track.length ? m.track[m.track.length - 1].t : 0;

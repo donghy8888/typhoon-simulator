@@ -1,0 +1,17 @@
+PROOF ?v=20261028h — US Cat5 reachable (sidebar vmax + MPI)
+
+Root cause (?v=20261028g):
+  - Sidebar initWindGrade max = 17级 56.1 m/s → SSHWS Cat3 only (<58.1)
+  - SSHWS map itself OK: Cat5 ≥70.5 m/s (#8400A8)
+  - Warm-SST MPI peaking ~49 (Philippine Sea 29.5℃) blocked growth to Cat5
+
+Fixes:
+  1) Sidebar options added: 61.0 (Cat4), 70.5 (Cat5), 80.0 (Cat5+)
+  2) MPI raised: 28℃→48 · 29.5℃→72 · 30℃→80 (Cat5 on warm SST)
+  3) vmax clamp ceiling 75→85
+  4) Saffir–Simpson thresholds/colors unchanged
+
+SSHWS check (sidebar):
+  56.1→Cat3 · 61.0→Cat4 · 70.5→Cat5 · 80.0→Cat5
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261028h

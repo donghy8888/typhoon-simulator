@@ -1,0 +1,10 @@
+PROOF ?v=20261028b — second typhoon birth hole punches WPSH
+FIX: each storm gets ensureBirthHole at place; inFugenSolid accepts hole[]; holes follow each member.
+NO change to yellow-south solid / bent ridge / land decay / steering zones / Fujiwhara consts.
+
+Case A deep WPSH (135E28N) NO own hole 24h: Δlat=-27.80 (pushed S / unplayable) PASS_bug=true
+Case B deep WPSH WITH own hole 24h: Δlon=-4.89 Δlat=2.48 (NW steer) PASS_fix=true
+Case C Fujiwhara 135E/140E 18N 48h Δbearing24=14.2° Δ48=30.1° (CCW>0) PASS=true
+  end A 126.29,21.85 B 130.47,24.08 holes true/true
+
+PASS all: true

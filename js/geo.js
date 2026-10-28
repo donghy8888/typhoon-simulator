@@ -468,19 +468,21 @@
   /**
    * 同时给出 7 / 10 / 12 级风圈半径（度）。
    * 外圈=7级，中圈=10级，内圈=12级；若当前最大风速未达该等级则不返回该项。
+   * WIND_CIRCLE_SCALE 只放大显示风圈，不影响 holeRadiusDeg / 空圈与路径。
    */
+  const WIND_CIRCLE_SCALE = 1.2; // ~20% larger concentric rings (was 1.0)
   function windRadiiForGrades(vmaxMs) {
     // 只有达到该风力等级才显示对应风圈（蒲福：7≥13.9，10≥24.5，12≥32.7 m/s）
-    const r7 = windRadiusDeg(vmaxMs);
+    const r7 = windRadiusDeg(vmaxMs) * WIND_CIRCLE_SCALE;
     const out = [];
     if (vmaxMs >= 13.9) {
       out.push({ grade: 7, radiusDeg: r7, color: '#2980b9', fill: '#3498db', fillOpacity: 0.05, weight: 2, label: '7级风圈' });
     }
     if (vmaxMs >= 24.5) {
-      out.push({ grade: 10, radiusDeg: Math.max(0.35, r7 * 0.58), color: '#e67e22', fill: '#f39c12', fillOpacity: 0.07, weight: 2, label: '10级风圈' });
+      out.push({ grade: 10, radiusDeg: Math.max(0.35 * WIND_CIRCLE_SCALE, r7 * 0.58), color: '#e67e22', fill: '#f39c12', fillOpacity: 0.07, weight: 2, label: '10级风圈' });
     }
     if (vmaxMs >= 32.7) {
-      out.push({ grade: 12, radiusDeg: Math.max(0.2, r7 * 0.34), color: '#c0392b', fill: '#e74c3c', fillOpacity: 0.1, weight: 2.5, label: '12级风圈' });
+      out.push({ grade: 12, radiusDeg: Math.max(0.2 * WIND_CIRCLE_SCALE, r7 * 0.34), color: '#c0392b', fill: '#e74c3c', fillOpacity: 0.1, weight: 2.5, label: '12级风圈' });
     }
     return out;
   }

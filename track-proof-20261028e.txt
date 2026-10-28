@@ -1,0 +1,39 @@
+PROOF ?v=20261028e — Taiwan Central Range weak attract (east-coast)
+CONST: lon=121.15 lat=23.55 R=3.8° peak=0.85 m/s power=1.5 eastGate=120.85 latBand=[21.2,26.2]
+NO dual typhoon; WPSH / yellow-green / land decay / wind-circle scale untouched.
+
+point	lon	lat	applied	mag	u	v	dist
+east_coast	122.2	23.5	true	0.548	-0.547	0.028	0.964
+east_offshore	123.5	23.5	true	0.242	-0.242	0.006	2.155
+farther_east	124.5	23.5	true	0.071	-0.071	0.001	3.071
+on_crest	121.15	23.55	false	0.000	0.000	0.000	0.000
+strait_west	119.5	23.5	false	0.000	0.000	0.000	null
+open_ocean	140	20	false	0.000	0.000	0.000	null
+south_of_band	122	18	false	0.000	0.000	0.000	null
+north_of_band	122	28	false	0.000	0.000	0.000	null
+
+Track 36h empty-fugen (WNW base):
+  nearTW 124E23.5N → 118.68E 26.19N  Δlon=-5.32
+  far    140E20N   → 135.29E 22.76N  Δlon=-4.71
+
+Approach sample (lon 125→121 @23.5N):
+lon	mag	u	v
+125.0	0.016	-0.016	0.000
+124.5	0.071	-0.071	0.001
+124.0	0.148	-0.148	0.003
+123.5	0.242	-0.242	0.006
+123.0	0.350	-0.350	0.010
+122.5	0.470	-0.470	0.019
+122.0	0.602	-0.601	0.039
+121.5	0.603	-0.596	0.093
+121.0	0.059	0.056	0.020
+
+PASS:
+  east_coast west-pull weak: YES (mag=0.548 u=-0.547)
+  strait_west off: YES
+  open_ocean off: YES
+  peak < 1.0 m/s: YES
+
+UNCHANGED checks (runtime):
+  WIND_CIRCLE_SCALE still in geo (display): radii@40ms grades=[3.144,1.824,1.069]
+  land decay phase@TW: 登陆衰减（山地加速） dV=-1.427

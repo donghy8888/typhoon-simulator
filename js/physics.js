@@ -293,31 +293,37 @@
   }
 
   /**
-   * 台湾中央山脉弱吸引（?v=20261028e）
-   * 靠近台湾东岸时，轻轻往岛内/中央山脉拽；力小可见，不压过引导气流。
+   * 台湾中央山脉弱吸引（?v=20261028f）
+   * 东岸（脊东）才触发：往岛内/中央山脉极弱拽；峰值仍 0.85，不压过引导。
+   * 东北引导占优时表现为「先往山脉轻轻折一下再东北」。
    * 只改运动叠加，不改副高/黄绿线/陆地衰减/风圈缩放；单台风。
    */
   const TW_MTN_LON = 121.15;   // 中央山脉示意中心经度
   const TW_MTN_LAT = 23.55;    // 中央山脉示意中心纬度
   const TW_MTN_R_DEG = 3.8;    // 影响半径（°）— 覆盖东岸外海至 ~125E
-  const TW_MTN_PEAK_MS = 0.85; // 峰值吸引 (m/s)；引导气流数 m/s 量级，勿压过
+  const TW_MTN_PEAK_MS = 0.85; // 峰值吸引 (m/s)；勿加档
   const TW_MTN_POWER = 1.5;    // (1−r/R)^p 远端很快≈0
   const TW_MTN_LAT0 = 21.2;    // 纬度门控：台湾岛段
   const TW_MTN_LAT1 = 26.2;
-  /** 东岸门控：脊西（海峡侧）几乎关闭，避免把西侧台风拽回岛上 */
-  const TW_MTN_EAST_GATE_LON = 120.85;
+  /** 东岸硬门控：必须脊东（lon>脊），海峡/脊西不触发；与旧 120.85 软门区分 */
+  const TW_MTN_EAST_GATE_LON = TW_MTN_LON;
 
   function taiwanMtnAttract(lon, lat) {
     if (lat < TW_MTN_LAT0 || lat > TW_MTN_LAT1) {
       return { u: 0, v: 0, mag: 0, dist: null, applied: false };
     }
-    // 东岸权重：脊西 ≈0，越往东岸/外海升到 1
-    const eastW = smoothstep((lon - TW_MTN_EAST_GATE_LON) / 0.9);
+    // 硬条件：只在中央山脉以东（东岸/外海）。旧版 GATE=120.85 让脊西也有权重，且易与
+    // 引导锁存叠加后看不出「朝山」；脊西应完全关闭，避免海峡侧被拽回。
+    if (!(lon > TW_MTN_EAST_GATE_LON)) {
+      return { u: 0, v: 0, mag: 0, dist: null, applied: false };
+    }
+    // 脊东 0→1° 升到满权，东岸附近必生效
+    const eastW = smoothstep((lon - TW_MTN_EAST_GATE_LON) / 1.0);
     if (eastW < 1e-3) {
       return { u: 0, v: 0, mag: 0, dist: null, applied: false };
     }
     const cos = Math.cos(TW_MTN_LAT * Math.PI / 180) || 1e-6;
-    const dx = (lon - TW_MTN_LON) * cos; // 等面积平面：东为正
+    const dx = (lon - TW_MTN_LON) * cos; // 等面积平面：东为正（此处必 >0）
     const dy = lat - TW_MTN_LAT;
     const dist = Math.hypot(dx, dy);
     if (!(dist < TW_MTN_R_DEG) || dist < 1e-6) {
@@ -326,10 +332,10 @@
     const tNorm = 1 - dist / TW_MTN_R_DEG;
     const envelope = Math.pow(Math.max(0, tNorm), TW_MTN_POWER) * eastW;
     const mag = TW_MTN_PEAK_MS * envelope;
-    // 指向中央山脉（靠拢）：(-dx,-dy)/dist
+    // 指向中央山脉（靠拢）：东岸 → 西向 u<0
     const u = mag * (-dx / dist);
     const v = mag * (-dy / dist);
-    return { u, v, mag, dist, applied: mag > 1e-4 };
+    return { u, v, mag, dist, eastW, applied: mag > 1e-4 };
   }
 
   /** 平滑副高法向（指向实体内部）。多点加权，抑制多边形折角造成的法向翻转。 */
@@ -670,13 +676,15 @@
       }
     }
 
-    // 台湾中央山脉弱吸引：叠在引导锁定之后，力小不改写锁存腿
+    // 台湾中央山脉弱吸引：必须叠在全部引导锁存/WNW·NE 改写之后，否则会被盖掉（表现为「不触发」）
+    // 东北占优时 u>0，叠上西向吸引 → 路径先往山脉轻轻折一下再继续东北
     {
       const twA = taiwanMtnAttract(lon, lat);
       if (twA.applied) {
         const inNorthLeg = arcState && arcState.legTargetLat != null && lat < arcState.legTargetLat;
         if (inNorthLeg) {
-          // 纯北腿：只许纬向微扰，勿破坏 u≡0
+          // 纯北腿：允许西向（朝山）极弱先折；禁止东向破坏 u≡0
+          if (twA.u < 0) u += twA.u;
           v += twA.v;
         } else {
           u += twA.u;

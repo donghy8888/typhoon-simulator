@@ -77,9 +77,13 @@
 
   // 副高空圈与风暴图层的可复用引用（tick 时原地更新，避免每小时 clear+重建）
   let holeCircleLayer = null;
+  /** 路径强度圆点：每 0.25 天（6h）一个，固定像素大小，色=当时 vmax */
+  const TRACK_MARK_DT_H = 6;
+
   const stormRefs = {
     trackLine: null,
     windCircles: {},
+    intensityMarks: [],
     marker: null
   };
 
@@ -88,7 +92,49 @@
     layerGroups.storm.clearLayers();
     stormRefs.trackLine = null;
     stormRefs.windCircles = {};
+    stormRefs.intensityMarks = [];
     stormRefs.marker = null;
+  }
+
+  function isQuarterDayMark(tHours) {
+    const t = Math.round(tHours * 1000) / 1000;
+    const rem = ((t % TRACK_MARK_DT_H) + TRACK_MARK_DT_H) % TRACK_MARK_DT_H;
+    return rem < 1e-6 || rem > TRACK_MARK_DT_H - 1e-6;
+  }
+
+  /** 按 track 增量补画 6h 强度圆点（不每 tick 全量重建） */
+  function syncIntensityMarks(track) {
+    if (!track || !track.length) return;
+    let have = stormRefs.intensityMarks.length;
+    // track 被截断或重置时重来
+    if (have && (track.length < have || !isQuarterDayMark(track[0].t))) {
+      // 若已有标记数多于应有，或起点变化：清掉重画
+      const expected = track.filter(function (p) { return isQuarterDayMark(p.t); });
+      if (have > expected.length) {
+        stormRefs.intensityMarks.forEach(function (c) { layerGroups.track.removeLayer(c); });
+        stormRefs.intensityMarks = [];
+        have = 0;
+      }
+    }
+    const needed = [];
+    for (let i = 0; i < track.length; i++) {
+      if (isQuarterDayMark(track[i].t)) needed.push(track[i]);
+    }
+    for (let i = have; i < needed.length; i++) {
+      const p = needed[i];
+      const fill = G.intensityTrackColor(p.vmax);
+      const tip = 't=' + (p.t / 24).toFixed(2) + '天 · ' + G.gradeLabel(p.vmax) +
+        ' · ' + p.vmax.toFixed(1) + ' m/s';
+      const c = L.circleMarker([p.lat, p.lon], {
+        radius: 5,
+        color: '#ffffff',
+        weight: 1.2,
+        fillColor: fill,
+        fillOpacity: 0.92,
+        opacity: 0.95
+      }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
+      stormRefs.intensityMarks.push(c);
+    }
   }
 
   function cfgFromUI() {
@@ -620,6 +666,7 @@
           }).addTo(layerGroups.track);
         }
       }
+      syncIntensityMarks(main.track);
 
       const rings = (main.alive || main.vmax >= P.DISSIPATE_MS)
         ? G.windRadiiForGrades(main.vmax)

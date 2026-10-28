@@ -528,6 +528,20 @@
     return g + '级';
   }
 
+  /**
+   * 路径强度圆点色阶（与 7/10/12 风圈色系连贯的 CMA 等级色）
+   * 灰 → 蓝(TD/TS) → 橙(STS) → 红(TY) → 深红(STY) → 紫(SuperTY)
+   */
+  function intensityTrackColor(vmaxMs) {
+    const g = beaufortGrade(vmaxMs);
+    if (g < 8) return '#7f8c8d';   // <8 热带低压：灰
+    if (g < 10) return '#3498db';  // 8–9 热带风暴：蓝（近7级风圈）
+    if (g < 12) return '#e67e22';  // 10–11 强热带风暴：橙（同10级风圈）
+    if (g < 14) return '#e74c3c';  // 12–13 台风：红
+    if (g < 16) return '#c0392b';  // 14–15 强台风：深红（同12级风圈）
+    return '#6c3483';             // 16–17 超强台风：紫
+  }
+
   global.TyGeo = {
     DOMAIN,
     LAND_POLYS,
@@ -553,6 +567,7 @@
     holeRadiusDeg,
     degPerHourFromMs,
     beaufortGrade,
-    gradeLabel
+    gradeLabel,
+    intensityTrackColor
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,17 +1,23 @@
-PROOF ?v=20261028g — path intensity dots → CMA familiar track colors
-Physics/attract/WIND_CIRCLE_SCALE untouched (still peak=0.85, R=3.8, scale=1.2).
+PROOF ?v=20261028g — CMA intensity colors + CN/US scale toggle
+Physics/attract/WIND_CIRCLE_SCALE untouched.
 
-User final scale (STY=紫, Super=红):
-  grade   CMA      Beaufort   vmax sample   hex
-  TD      热带低压   6–7级      15 m/s        #008000 绿
-  TS      热带风暴   8–9级      18 m/s        #0000FF 蓝
-  STS     强热带风暴 10–11级    26 m/s        #FFFF00 黄
-  TY      台风       12–13级    35 m/s        #FFA500 橙
-  STY     强台风     14–15级    48 m/s        #800080 紫
-  SuperTY 超强台风   ≥16级      55 m/s        #FF0000 红
+Sidebar「强度色阶」default=中国(cma); switch=美国(sshws). Path 6h dots + legend follow mode.
 
-Hex from common CMA-path visualization palette (#008000/#0000FF/#FFFF00/#FFA500/#800080/#FF0000),
-with STY/Super assigned per user (紫/红, not reversed).
+中国 CMA（用户定稿 STY紫 / Super红）:
+  TD   6–7级   #008000 绿
+  TS   8–9级   #0000FF 蓝
+  STS  10–11   #FFFF00 黄
+  TY   12–13   #FFA500 橙
+  STY  14–15   #800080 紫
+  Super ≥16    #FF0000 红
 
-Changed: js/geo.js intensityTrackColor + index.html legend + ?v=20261028g
-Unchanged: js/physics.js attract, wind circles, path integration
+美国 NHC / Saffir–Simpson（GIS 官方常用色）:
+  TD   <17.5 m/s   #00A9E6
+  TS   <33.0       #38A800
+  Cat1 <42.7       #E6E600
+  Cat2 <49.4       #FFAA00
+  Cat3 <58.1       #E60000
+  Cat4 <70.5       #FF00C5
+  Cat5 ≥70.5       #8400A8
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261028g

@@ -35,6 +35,14 @@
             <option value="56.1">17级 (56.1 m/s)</option>
           </select>
         </div>
+        <div class="form-row">
+          <label for="intensityScale">强度色阶</label>
+          <select id="intensityScale" title="路径圆点颜色：中国 CMA / 美国 NHC Saffir–Simpson">
+            <option value="cma" selected>中国 · TD绿→超强红</option>
+            <option value="sshws">美国 · TD/TS/Cat1–5</option>
+          </select>
+        </div>
+        <p class="hint" id="intensityScaleHint" style="margin:0.25rem 0 0;font-size:0.78rem;color:#6a7a8a">路径圆点：CMA 绿蓝黄橙紫红</p>
       </section>
 
       <section class="panel panel-sticky" id="panel-run">
@@ -86,12 +94,14 @@
         <div><span class="swatch" style="background:transparent;border:2px solid #d68910"></span>10级风圈</div>
         <div><span class="swatch" style="background:transparent;border:2px solid #c0392b"></span>12级风圈</div>
         <div><span class="swatch" style="background:#1a5276"></span>台风路径</div>
-        <div><span class="swatch" style="background:#008000;border-radius:50%"></span>TD 热带低压</div>
-        <div><span class="swatch" style="background:#0000FF;border-radius:50%"></span>TS 热带风暴</div>
-        <div><span class="swatch" style="background:#FFFF00;border-radius:50%"></span>STS 强热带风暴</div>
-        <div><span class="swatch" style="background:#FFA500;border-radius:50%"></span>TY 台风</div>
-        <div><span class="swatch" style="background:#800080;border-radius:50%"></span>STY 强台风</div>
-        <div><span class="swatch" style="background:#FF0000;border-radius:50%"></span>Super 超强台风</div>
+        <div id="intensityLegendItems">
+          <div><span class="swatch" style="background:#008000;border-radius:50%"></span>TD 热带低压</div>
+          <div><span class="swatch" style="background:#0000FF;border-radius:50%"></span>TS 热带风暴</div>
+          <div><span class="swatch" style="background:#FFFF00;border-radius:50%"></span>STS 强热带风暴</div>
+          <div><span class="swatch" style="background:#FFA500;border-radius:50%"></span>TY 台风</div>
+          <div><span class="swatch" style="background:#800080;border-radius:50%"></span>STY 强台风</div>
+          <div><span class="swatch" style="background:#FF0000;border-radius:50%"></span>Super 超强台风</div>
+        </div>
         <div class="legend-sec">引导</div>
         <div><span class="swatch" style="background:transparent;border:2px dashed #1e8449"></span>副高北缘（绿线）</div>
       </div>

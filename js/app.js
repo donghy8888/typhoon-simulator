@@ -102,17 +102,45 @@
     return rem < 1e-6 || rem > TRACK_MARK_DT_H - 1e-6;
   }
 
-  /** 按 track 增量补画 6h 强度圆点（不每 tick 全量重建） */
+  function getIntensityScale() {
+    const el = document.getElementById('intensityScale');
+    const v = el && el.value;
+    return v === G.INTENSITY_SCALE_SSHWS ? G.INTENSITY_SCALE_SSHWS : G.INTENSITY_SCALE_CMA;
+  }
+
+  function updateIntensityLegend() {
+    const scale = getIntensityScale();
+    const box = document.getElementById('intensityLegendItems');
+    if (box) {
+      const items = G.intensityLegendItems(scale);
+      box.innerHTML = items.map(function (it) {
+        return '<div><span class="swatch" style="background:' + it.hex +
+          ';border-radius:50%"></span>' + it.text + '</div>';
+      }).join('');
+    }
+    const hint = document.getElementById('intensityScaleHint');
+    if (hint) {
+      hint.textContent = scale === G.INTENSITY_SCALE_SSHWS
+        ? '路径圆点：NHC TD/TS/Cat1–5'
+        : '路径圆点：CMA 绿蓝黄橙紫红';
+    }
+  }
+
+  function clearIntensityMarks() {
+    stormRefs.intensityMarks.forEach(function (c) { layerGroups.track.removeLayer(c); });
+    stormRefs.intensityMarks = [];
+  }
+
+  /** 按 track 增量补画 6h 强度圆点（不每 tick 全量重建）；色随当前色阶模式 */
   function syncIntensityMarks(track) {
     if (!track || !track.length) return;
+    const scale = getIntensityScale();
     let have = stormRefs.intensityMarks.length;
     // track 被截断或重置时重来
     if (have && (track.length < have || !isQuarterDayMark(track[0].t))) {
-      // 若已有标记数多于应有，或起点变化：清掉重画
       const expected = track.filter(function (p) { return isQuarterDayMark(p.t); });
       if (have > expected.length) {
-        stormRefs.intensityMarks.forEach(function (c) { layerGroups.track.removeLayer(c); });
-        stormRefs.intensityMarks = [];
+        clearIntensityMarks();
         have = 0;
       }
     }
@@ -122,9 +150,10 @@
     }
     for (let i = have; i < needed.length; i++) {
       const p = needed[i];
-      const fill = G.intensityTrackColor(p.vmax);
-      const tip = 't=' + (p.t / 24).toFixed(2) + '天 · ' + G.gradeLabel(p.vmax) +
-        ' · ' + p.vmax.toFixed(1) + ' m/s';
+      const fill = G.intensityTrackColor(p.vmax, scale);
+      const cat = G.intensityScaleLabel(p.vmax, scale);
+      const tip = 't=' + (p.t / 24).toFixed(2) + '天 · ' + cat +
+        ' · ' + G.gradeLabel(p.vmax) + ' · ' + p.vmax.toFixed(1) + ' m/s';
       const c = L.circleMarker([p.lat, p.lon], {
         radius: 5,
         color: '#ffffff',
@@ -132,9 +161,32 @@
         fillColor: fill,
         fillOpacity: 0.92,
         opacity: 0.95
-      }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
+      });
+      c._tyVmax = p.vmax;
+      c.bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
       stormRefs.intensityMarks.push(c);
     }
+  }
+
+  /** 切换色阶后：已有圆点按新色阶重上色并刷新图例 */
+  function recolorIntensityMarks() {
+    const scale = getIntensityScale();
+    updateIntensityLegend();
+    stormRefs.intensityMarks.forEach(function (c) {
+      const vmax = c._tyVmax;
+      if (vmax == null) return;
+      const fill = G.intensityTrackColor(vmax, scale);
+      const cat = G.intensityScaleLabel(vmax, scale);
+      c.setStyle({ fillColor: fill });
+      // tip 尽量保留时间信息：从现有 tip 抽 t=…天
+      let tPart = '';
+      const old = c.getTooltip() && c.getTooltip().getContent();
+      if (typeof old === 'string') {
+        const m = old.match(/t=[0-9.]+天/);
+        if (m) tPart = m[0] + ' · ';
+      }
+      c.setTooltipContent(tPart + cat + ' · ' + G.gradeLabel(vmax) + ' · ' + (+vmax).toFixed(1) + ' m/s');
+    });
   }
 
   function cfgFromUI() {
@@ -904,6 +956,11 @@
     updateStatus();
     return vmax;
   }
+
+  document.getElementById('intensityScale').onchange = function () {
+    recolorIntensityMarks();
+  };
+  updateIntensityLegend();
 
   document.getElementById('initWindGrade').onchange = function () {
     // 已放置：立刻同步 vmax / 等级标签 / 七·十·十二级风圈；不自动开跑

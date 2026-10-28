@@ -529,19 +529,86 @@
   }
 
   /**
-   * 路径强度圆点色阶 — 中央气象台/中国天气网路径图熟悉色
-   * TD绿 → TS蓝 → STS黄 → TY橙 → STY紫 → Super红
-   * 阈值：CMA 常见路径点色（#008000/#0000FF/#FFFF00/#FFA500/#800080/#FF0000）
-   * 档位按 GB/T 19201 风力：6–7 / 8–9 / 10–11 / 12–13 / 14–15 / ≥16
+   * 路径强度色阶模式：
+   *   cma   — 中国中央气象台路径点熟悉色（默认）
+   *   sshws — 美国 NHC / Saffir–Simpson 飓风官方色
    */
-  function intensityTrackColor(vmaxMs) {
+  const INTENSITY_SCALE_CMA = 'cma';
+  const INTENSITY_SCALE_SSHWS = 'sshws';
+
+  /** CMA：TD绿 TS蓝 STS黄 TY橙 STY紫 Super红（用户定稿） */
+  function intensityTrackColorCma(vmaxMs) {
     const g = beaufortGrade(vmaxMs);
-    if (g < 8) return '#008000';   // TD 热带低压 6–7级：绿
-    if (g < 10) return '#0000FF';  // TS 热带风暴 8–9级：蓝
-    if (g < 12) return '#FFFF00';  // STS 强热带风暴 10–11级：黄
-    if (g < 14) return '#FFA500';  // TY 台风 12–13级：橙
-    if (g < 16) return '#800080';  // STY 强台风 14–15级：紫
-    return '#FF0000';             // SuperTY 超强台风 ≥16级：红
+    if (g < 8) return '#008000';
+    if (g < 10) return '#0000FF';
+    if (g < 12) return '#FFFF00';
+    if (g < 14) return '#FFA500';
+    if (g < 16) return '#800080';
+    return '#FF0000';
+  }
+
+  /**
+   * NHC / Saffir–Simpson 路径色（GIS 常用官方色）
+   * 取值：TD #00A9E6 · TS #38A800 · C1 #E6E600 · C2 #FFAA00 · C3 #E60000 · C4 #FF00C5 · C5 #8400A8
+   * 档位按 1-min 风速换算 m/s：<17.5 / <33 / <42.7 / <49.4 / <58.1 / <70.5 / ≥70.5
+   */
+  function intensityTrackColorSshws(vmaxMs) {
+    const v = +vmaxMs || 0;
+    if (v < 17.5) return '#00A9E6';  // TD
+    if (v < 33.0) return '#38A800';  // TS
+    if (v < 42.7) return '#E6E600';  // Cat 1
+    if (v < 49.4) return '#FFAA00';  // Cat 2
+    if (v < 58.1) return '#E60000';  // Cat 3
+    if (v < 70.5) return '#FF00C5';  // Cat 4
+    return '#8400A8';               // Cat 5
+  }
+
+  function intensityTrackColor(vmaxMs, scale) {
+    if (scale === INTENSITY_SCALE_SSHWS) return intensityTrackColorSshws(vmaxMs);
+    return intensityTrackColorCma(vmaxMs);
+  }
+
+  function intensityScaleLabel(vmaxMs, scale) {
+    if (scale === INTENSITY_SCALE_SSHWS) {
+      const v = +vmaxMs || 0;
+      if (v < 17.5) return 'TD';
+      if (v < 33.0) return 'TS';
+      if (v < 42.7) return 'Cat 1';
+      if (v < 49.4) return 'Cat 2';
+      if (v < 58.1) return 'Cat 3';
+      if (v < 70.5) return 'Cat 4';
+      return 'Cat 5';
+    }
+    const g = beaufortGrade(vmaxMs);
+    if (g < 8) return 'TD';
+    if (g < 10) return 'TS';
+    if (g < 12) return 'STS';
+    if (g < 14) return 'TY';
+    if (g < 16) return 'STY';
+    return 'SuperTY';
+  }
+
+  /** 图例条目：[{hex, text}] */
+  function intensityLegendItems(scale) {
+    if (scale === INTENSITY_SCALE_SSHWS) {
+      return [
+        { hex: '#00A9E6', text: 'TD Depression' },
+        { hex: '#38A800', text: 'TS Storm' },
+        { hex: '#E6E600', text: 'Cat 1' },
+        { hex: '#FFAA00', text: 'Cat 2' },
+        { hex: '#E60000', text: 'Cat 3' },
+        { hex: '#FF00C5', text: 'Cat 4' },
+        { hex: '#8400A8', text: 'Cat 5' }
+      ];
+    }
+    return [
+      { hex: '#008000', text: 'TD 热带低压' },
+      { hex: '#0000FF', text: 'TS 热带风暴' },
+      { hex: '#FFFF00', text: 'STS 强热带风暴' },
+      { hex: '#FFA500', text: 'TY 台风' },
+      { hex: '#800080', text: 'STY 强台风' },
+      { hex: '#FF0000', text: 'Super 超强台风' }
+    ];
   }
 
   global.TyGeo = {
@@ -570,6 +637,12 @@
     degPerHourFromMs,
     beaufortGrade,
     gradeLabel,
-    intensityTrackColor
+    INTENSITY_SCALE_CMA,
+    INTENSITY_SCALE_SSHWS,
+    intensityTrackColor,
+    intensityTrackColorCma,
+    intensityTrackColorSshws,
+    intensityScaleLabel,
+    intensityLegendItems
   };
 })(typeof window !== 'undefined' ? window : globalThis);

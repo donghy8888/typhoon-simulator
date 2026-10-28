@@ -529,17 +529,19 @@
   }
 
   /**
-   * 路径强度圆点色阶（与 7/10/12 风圈色系连贯的 CMA 等级色）
-   * 灰 → 蓝(TD/TS) → 橙(STS) → 红(TY) → 深红(STY) → 紫(SuperTY)
+   * 路径强度圆点色阶 — 中央气象台/中国天气网路径图熟悉色
+   * TD绿 → TS蓝 → STS黄 → TY橙 → STY紫 → Super红
+   * 阈值：CMA 常见路径点色（#008000/#0000FF/#FFFF00/#FFA500/#800080/#FF0000）
+   * 档位按 GB/T 19201 风力：6–7 / 8–9 / 10–11 / 12–13 / 14–15 / ≥16
    */
   function intensityTrackColor(vmaxMs) {
     const g = beaufortGrade(vmaxMs);
-    if (g < 8) return '#7f8c8d';   // <8 热带低压：灰
-    if (g < 10) return '#3498db';  // 8–9 热带风暴：蓝（近7级风圈）
-    if (g < 12) return '#e67e22';  // 10–11 强热带风暴：橙（同10级风圈）
-    if (g < 14) return '#e74c3c';  // 12–13 台风：红
-    if (g < 16) return '#c0392b';  // 14–15 强台风：深红（同12级风圈）
-    return '#6c3483';             // 16–17 超强台风：紫
+    if (g < 8) return '#008000';   // TD 热带低压 6–7级：绿
+    if (g < 10) return '#0000FF';  // TS 热带风暴 8–9级：蓝
+    if (g < 12) return '#FFFF00';  // STS 强热带风暴 10–11级：黄
+    if (g < 14) return '#FFA500';  // TY 台风 12–13级：橙
+    if (g < 16) return '#800080';  // STY 强台风 14–15级：紫
+    return '#FF0000';             // SuperTY 超强台风 ≥16级：红
   }
 
   global.TyGeo = {

@@ -1,0 +1,17 @@
+PROOF ?v=20261028g — path intensity dots → CMA familiar track colors
+Physics/attract/WIND_CIRCLE_SCALE untouched (still peak=0.85, R=3.8, scale=1.2).
+
+User final scale (STY=紫, Super=红):
+  grade   CMA      Beaufort   vmax sample   hex
+  TD      热带低压   6–7级      15 m/s        #008000 绿
+  TS      热带风暴   8–9级      18 m/s        #0000FF 蓝
+  STS     强热带风暴 10–11级    26 m/s        #FFFF00 黄
+  TY      台风       12–13级    35 m/s        #FFA500 橙
+  STY     强台风     14–15级    48 m/s        #800080 紫
+  SuperTY 超强台风   ≥16级      55 m/s        #FF0000 红
+
+Hex from common CMA-path visualization palette (#008000/#0000FF/#FFFF00/#FFA500/#800080/#FF0000),
+with STY/Super assigned per user (紫/红, not reversed).
+
+Changed: js/geo.js intensityTrackColor + index.html legend + ?v=20261028g
+Unchanged: js/physics.js attract, wind circles, path integration

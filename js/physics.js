@@ -38,6 +38,12 @@
     return t * t * (3 - 2 * t);
   }
 
+  /** C2 缓入缓出：半弧航向更圆，端点二阶连续，少棱角 */
+  function smootherstep(t) {
+    t = clamp(t, 0, 1);
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
   /**
    * 是否贴在副高北缘 fringe（实体内，或外侧近邻探测到红区）。
    * 深 fringe 可用较长预备抬升；可见转向几何不依赖此门控。
@@ -63,7 +69,7 @@
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿）
    *   绿线以北：NE 稍微偏东 ≈45° from N；杀深 ENE / 大 u；
    *             转向再稍微大一点 life Δlon≈12–14（相对 26e ~10；仍非旧 20°）；
-   *             半圆光滑半弧：曲率连续 due-N→NE，无 tip kink / 边角。
+   *             半圆光滑半弧：曲率连续 due-N→NE，无 tip kink / 棱角（20261028n 再圆）。
    *
    * 状态机（arcState）：
    *   A) 首次进入绿南 ~0.22°：legTargetLat=max(edge,lat+0.15)，u≡0 往北直到越过；
@@ -71,9 +77,9 @@
    */
   const NORTH_LEG_DEG = 0.15;
   const RECURVE_ARC_DEG = 7.0;
-  const POST_GREEN_ARC_DEG = 4.7;  // 半弧 lat 跨度：较低纬收束，留 NE 巡航攒 lon
-  const TARGET_ARC_DLON_DEG = 14.8; // 稍微大一小点 → life Δlon≈12–14
-  const ARC_BOW_LON_DEG = 6.1;     // 半圆东鼓（sin 峰值中段，无尖角）
+  const POST_GREEN_ARC_DEG = 5.9;  // 半弧 lat 再拉长：同 Δheading 更圆、少棱角
+  const TARGET_ARC_DLON_DEG = 14.8; // life Δlon≈12–14（分区/目标不变）
+  const ARC_BOW_LON_DEG = 5.8;     // 东鼓略收：中段鼓包别成折肩
   /** atan2(v,u)≈45° → 地理约 45° from N（NE 稍微偏东） */
   const NE_TARGET_HDG = 45 * Math.PI / 180;
   /** 下限：勿扁成东北偏东（atan2 过小 / fromN 过大 / 深 ENE） */
@@ -82,10 +88,10 @@
   const NE_MAX_HDG = 52 * Math.PI / 180;
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
-  /** 越绿后立刻开始 N→NE 平滑弧（小真弯，非 tip kink） */
-  const CLEAR_NORTH_DEG = 0.05;
+  /** 越绿后短净空再接 N→NE 半弧（略加长，避免竖段→弯瞬间折尖） */
+  const CLEAR_NORTH_DEG = 0.10;
   const CLEAR_LAT_MIN = 0;
-  const CLEAR_NORTHOF_MIN = 0.04;
+  const CLEAR_NORTHOF_MIN = 0.06;
 
   function approachNorthUV(northOf, band, spdW) {
     const u = 0;
@@ -113,19 +119,20 @@
     const s = clamp(sRaw, 0, 1);
     const ang0 = Math.PI * 0.5; // due-N 接竖段（C1：s=0 时 u≈0, dθ/ds≈0）
     const angEnd = NE_TARGET_HDG; // NE ≈45° from N
-    // 半圆参数：余弦缓入缓出 = 端点曲率连续，无 tip kink / 边角
-    // （相对 linear 更像半圆弧；相对 pow 前载不会在绿线折尖）
-    const te = 0.5 * (1 - Math.cos(Math.PI * s));
+    // 半圆参数：smootherstep = 端点 C2，中段更圆，少棱角/折肩
+    // （相对 cosine 再软一点；相对 pow 前载不会在绿线折尖）
+    const te = smootherstep(s);
     let ang = lerpAngle(ang0, angEnd, te);
     const spd = Math.max(spdW * 1.12, 9.2);
     let u = Math.cos(ang) * spd;
     let v = Math.sin(ang) * spd;
-    // 半椭圆东鼓：sin(πs) 两端 0、中段最大 → 东向拉长的光滑半弧
-    const bowU = (1.18 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * s);
+    // 半椭圆东鼓：前段 lat 主导、东鼓稍后抬头 → 圆角半弧而非折肩
+    const sBow = Math.pow(s, 1.25);
+    const bowU = (1.05 * ARC_BOW_LON_DEG) * Math.sin(Math.PI * sBow);
     u += bowU;
-    const uCap = Math.cos(NE_MIN_HDG) * spd + ARC_BOW_LON_DEG * (0.55 + 0.45 * Math.sin(Math.PI * s));
+    const uCap = Math.cos(NE_MIN_HDG) * spd + ARC_BOW_LON_DEG * (0.50 + 0.40 * Math.sin(Math.PI * sBow));
     if (u > uCap) u = uCap;
-    if (s >= 0.2) ({ u, v } = enforceNeHeading(u, v, s));
+    if (s >= 0.28) ({ u, v } = enforceNeHeading(u, v, s));
     else {
       if (u < 0) u = 0;
       if (v < 0) v = 0;
@@ -160,9 +167,9 @@
     if (arcState.arcLon0 == null) arcState.arcLon0 = lon;
     const sLat = (lat - arcState.arcLat0) / POST_GREEN_ARC_DEG;
     const sLon = (lon - arcState.arcLon0) / TARGET_ARC_DLON_DEG;
-    // 半圆振幅：lon 主导收束，弧内先攒东移；lat 辅助
-    let s = clamp(Math.max(sLat * 0.60, sLon * 0.95), 0, 1);
-    s = clamp(Math.min(s, (arcState.sAcc || 0) + 0.10), 0, 1);
+    // 半圆振幅：lon 主导收束；sAcc 每步限幅更小 → 航向连续、少棱角
+    let s = clamp(Math.max(sLat * 0.55, sLon * 0.90), 0, 1);
+    s = clamp(Math.min(s, (arcState.sAcc || 0) + 0.055), 0, 1);
     if (write) arcState.sAcc = Math.max(arcState.sAcc || 0, s);
     return s;
   }
@@ -645,8 +652,9 @@
             v = b.v + beta.v * 0.08;
             ({ u, v } = enforceNeHeading(u, v, s));
           } else {
+            // 弧末柔接入 NE 巡航：去掉 +2 东踢，避免收束折尖
             const spd = Math.max(spdW * 1.12, 11.0);
-            u = Math.cos(NE_TARGET_HDG) * spd + beta.u * 0.05 + 2.0;
+            u = Math.cos(NE_TARGET_HDG) * spd + beta.u * 0.05 + 0.55;
             v = Math.sin(NE_TARGET_HDG) * spd + beta.v * 0.08;
             ({ u, v } = enforceNeHeading(u, v, 1));
           }
@@ -660,8 +668,9 @@
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.15) u = -Math.max(v * 1.15, 4.0);
         // 接近黄线时渐收西向（不抬北速），避免 WNW→正北硬折，并保留黄→绿纯北腿
-        const ease = clamp((-band - northOf) / 0.85, 0, 1);
-        u *= smoothstep(ease);
+        // 接近黄线更早收西向：WNW→纯北过渡更圆（分区不变）
+        const ease = clamp((-band - northOf) / 1.15, 0, 1);
+        u *= smootherstep(ease);
       }
     }
     if (edge != null) {
@@ -710,8 +719,8 @@
       if (inLeg) stepLim = 0.018;
       else if (!arcOn && northOf >= -LEG_TRIGGER_DEG && northOf < 0) stepLim = 0.02;
       else if (!arcOn && dist <= band + 0.35) stepLim = 0.035;
-      else if (arcOn && arcState.clearLon0 == null) stepLim = 0.08; // 短净空
-      else if (arcOn && arcState.clearLon0 != null && (arcState.sAcc || 0) < 1) stepLim = 0.28;
+      else if (arcOn && arcState.clearLon0 == null) stepLim = 0.06; // 短净空更细
+      else if (arcOn && arcState.clearLon0 != null && (arcState.sAcc || 0) < 1) stepLim = 0.12; // 半弧细步：少折线棱角
       else if (northOf >= 0 && sArc <= 1.05) stepLim = 0.10;
       else if (dist <= 3.0) stepLim = 0.16;
     }
@@ -754,7 +763,7 @@
       if (inLeg) n = Math.max(n, Math.min(20, Math.ceil(dtHours / 0.08)));
       else if (!(arcState && arcState.arcLat0) && northOf >= -LEG_TRIGGER_DEG && northOf < 0.05)
         n = Math.max(n, Math.min(18, Math.ceil(dtHours / 0.1)));
-      else if (arcState && arcState.arcLat0 != null && (arcState.sAcc || 0) < 1) n = Math.max(n, Math.min(12, Math.ceil(dtHours / 0.22)));
+      else if (arcState && arcState.arcLat0 != null && (arcState.sAcc || 0) < 1) n = Math.max(n, Math.min(18, Math.ceil(dtHours / 0.11)));
       else if (!(arcState && arcState.arcLat0) && dist <= G.APPROACH_NORTH_BAND_DEG + 0.25) n = Math.max(n, Math.min(16, Math.ceil(dtHours / 0.12)));
       else if (northOf >= 0 && sArc <= 1.1) n = Math.max(n, Math.min(12, Math.ceil(dtHours / 0.2)));
       else if (dist <= 3.0) n = Math.max(n, Math.min(10, Math.ceil(dtHours / 0.28)));
@@ -850,7 +859,7 @@
     if (m.clearLat0 === undefined) m.clearLat0 = null;
     const arcState = m; // 就地写入 arcLat0 / legTargetLat
     const moved = moveStep(m.lon, m.lat, m.vmax, dtHours, cfg, fugenList, holeRef, arcState);
-    // 步间航向平滑：贴副高缘时限幅，消尖角；越绿半弧放宽以免抹掉转向
+    // 步间航向平滑：贴副高缘限幅消尖角；半弧内也做温和限幅（勿关死→折线棱角）
     const nearEdge = (() => {
       const e = G.guidingNorthernEdgeLat(moved.lon, fugenList, holeRef);
       if (e == null) return false;
@@ -858,7 +867,10 @@
     })();
     const arcTurning = m.clearLon0 != null && (m.sAcc || 0) < 1;
     let ou = moved.u, ov = moved.v;
-    if (nearEdge && !arcTurning) {
+    if (arcTurning) {
+      // 半弧：允许转向，但掐掉单步尖折（比缘滑行更宽）
+      ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(26, 38 * Math.min(1, dtHours))));
+    } else if (nearEdge) {
       ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(18, 28 * Math.min(1, dtHours))));
     }
     m.lon = moved.lon;

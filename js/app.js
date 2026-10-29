@@ -87,7 +87,7 @@
     windCircles: {},
     intensityMarks: [],
     marker: null,
-    landfallFlag: null
+    landfallFlags: []
   };
 
   function clearStormRefs() {
@@ -97,7 +97,7 @@
     stormRefs.windCircles = {};
     stormRefs.intensityMarks = [];
     stormRefs.marker = null;
-    stormRefs.landfallFlag = null;
+    stormRefs.landfallFlags = [];
   }
 
   function isQuarterDayMark(tHours) {
@@ -714,45 +714,57 @@
     });
   }
 
-  /** 首个海→陆穿越点；结果缓存在 member.landfall 以免路径截断后丢失 */
-  function ensureLandfallPoint(member) {
-    if (!member) return null;
-    if (member.landfall && isFinite(member.landfall.lat) && isFinite(member.landfall.lon)) {
-      return member.landfall;
-    }
+  /** 所有海→陆穿越点；缓存在 member.landfalls，路径截断后仍保留已发现的登陆点 */
+  function ensureLandfallPoints(member) {
+    if (!member) return [];
+    if (!member.landfalls) member.landfalls = [];
     const track = member.track;
-    if (!track || track.length < 2) return null;
+    if (!track || track.length < 2) return member.landfalls;
+
+    const seenT = {};
+    member.landfalls.forEach(function (lf) {
+      if (lf && isFinite(lf.t)) seenT[lf.t] = true;
+    });
+
     for (let i = 1; i < track.length; i++) {
       const a = track[i - 1];
       const b = track[i];
       if (!G.isLand(a.lon, a.lat) && G.isLand(b.lon, b.lat)) {
-        member.landfall = { lon: b.lon, lat: b.lat, t: b.t };
-        return member.landfall;
+        if (!seenT[b.t]) {
+          member.landfalls.push({ lon: b.lon, lat: b.lat, t: b.t });
+          seenT[b.t] = true;
+        }
       }
     }
-    return null;
+    member.landfalls.sort(function (x, y) { return x.t - y.t; });
+    return member.landfalls;
   }
 
-  function syncLandfallFlag(member, untilT) {
-    const lf = ensureLandfallPoint(member);
-    const hide = !lf || (untilT != null && lf.t > untilT + 1e-6);
-    if (hide) {
-      if (stormRefs.landfallFlag) {
-        layerGroups.track.removeLayer(stormRefs.landfallFlag);
-        stormRefs.landfallFlag = null;
+  function syncLandfallFlags(member, untilT) {
+    const all = ensureLandfallPoints(member);
+    const visible = all.filter(function (lf) {
+      return lf && isFinite(lf.lat) && isFinite(lf.lon) &&
+        (untilT == null || lf.t <= untilT + 1e-6);
+    });
+
+    while (stormRefs.landfallFlags.length > visible.length) {
+      const mk = stormRefs.landfallFlags.pop();
+      layerGroups.track.removeLayer(mk);
+    }
+
+    for (let i = 0; i < visible.length; i++) {
+      const lf = visible[i];
+      if (i < stormRefs.landfallFlags.length) {
+        stormRefs.landfallFlags[i].setLatLng([lf.lat, lf.lon]);
+      } else {
+        stormRefs.landfallFlags.push(L.marker([lf.lat, lf.lon], {
+          icon: landfallFlagIcon(),
+          interactive: false,
+          keyboard: false,
+          zIndexOffset: 200
+        }).addTo(layerGroups.track));
       }
-      return;
     }
-    if (stormRefs.landfallFlag) {
-      stormRefs.landfallFlag.setLatLng([lf.lat, lf.lon]);
-      return;
-    }
-    stormRefs.landfallFlag = L.marker([lf.lat, lf.lon], {
-      icon: landfallFlagIcon(),
-      interactive: false,
-      keyboard: false,
-      zIndexOffset: 200
-    }).addTo(layerGroups.track);
   }
 
   /** 完整重建（放置 / 重置） */
@@ -903,7 +915,7 @@
         stormRefs.trackLine = null;
       }
       syncIntensityMarks(track);
-      syncLandfallFlag(main, scrubbing ? dT : null);
+      syncLandfallFlags(main, scrubbing ? dT : null);
 
       const showRings = scrubbing
         ? (dVmax >= P.DISSIPATE_MS)

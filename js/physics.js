@@ -62,9 +62,24 @@
   }
 
   /**
-   * 引导气流（绿线 = guidingNorthernEdgeLat；黄线 = 绿线南 0.15°≈50km）
+   * 分区/绿黄线用脊线：空圈打穿副高北缘时，带 hole 的 guidingNorthernEdgeLat
+   * 会塌到空圈南侧，northOf 假变正 → 沿缘 WNW 突然锁北腿/半弧，路径出凸尖角。
+   * 取 max(有洞, 无洞) 保住真副高北缘；不改 WNW / due-N / 绿后 ENE 分区与航向目标。
+   */
+  function ridgeGuidingEdgeLat(lon, fugenList, hole) {
+    const e0 = G.guidingNorthernEdgeLat(lon, fugenList, null);
+    if (!hole) return e0;
+    const eH = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    if (e0 == null) return eH;
+    if (eH == null) return e0;
+    // hole 只删实体，塌边时 eH≪e0；取 max 即真脊
+    return Math.max(e0, eH);
+  }
+
+  /**
+   * 引导气流（绿线 = 真副高北缘 ridgeGuidingEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261028q）：
+   * 分区（20261028s）：
    *   黄线以南 (northOf < −0.15)：明确 WNW 西北偏西（|u|>v，西多于北；非 NNW）
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿）
    *   绿线以北：更东北偏东（≈55–58° from N / atan2≈32–35°；相对 28p 的 ≈45° 明显加大东分量）；
@@ -189,7 +204,7 @@
     let u = cfg.steerU;
     let v = cfg.steerV;
 
-    const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    const edge = ridgeGuidingEdgeLat(lon, fugenList, hole);
     const band = (typeof G !== 'undefined' && G.APPROACH_NORTH_BAND_DEG) ? G.APPROACH_NORTH_BAND_DEG : 0.15;
     if (edge != null) {
       const northOf = lat - edge;
@@ -401,7 +416,7 @@
    * 绿北半弧（bowOn）不调用。
    */
   function clipAndSlide(lon, lat, nlon, nlat, u, v, fugenList, hole) {
-    const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    const edge = ridgeGuidingEdgeLat(lon, fugenList, hole);
     const southOfGreen = edge != null && lat < edge;
 
     if (!G.inFugenSolid(nlon, nlat, fugenList, hole)) {
@@ -497,7 +512,7 @@
    *  20261027b：南缘滑行时外推更轻、法向更平滑，配合 clipAndSlide 消锯齿。
    */
   function slideAlongFugen(lon, lat, u, v, fugenList, hole) {
-    const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    const edge = ridgeGuidingEdgeLat(lon, fugenList, hole);
     const southOfGreen = edge != null && lat < edge;
     const probes = [0.35, 0.7, 1.05];
     let hit = false;
@@ -526,24 +541,34 @@
     // 否则路径会贴南缘纯西爬行，拖到南海脊经度触发假“绿北”尖折。
     const into = u * nx + v * ny;
     if (into > 0) {
-      const strip = southOfGreen ? 0.55 : 1.0;
+      const strip = southOfGreen ? 0.55 : 0.82; // 绿北缘：留一点法向柔过渡，少锯齿尖
       u -= into * strip * nx;
       v -= into * strip * ny;
     }
-    // 外推：绿南更轻，避免南北弹跳；仍靠 clipAndSlide 保外侧间隙
-    const outKick = southOfGreen ? 0.08 : 0.28;
+    // 外推：绿南更轻；绿北缘也略收，避免弹离后折尖（28r）
+    const outKick = southOfGreen ? 0.08 : 0.16;
     u -= nx * outKick;
     v -= ny * outKick;
 
-    // 切向：保持原速度在切向上的投影
+    // 切向：加长贴缘滑行，航向与切向再融一层，抑 rim→NE 凸尖
     const tx = -ny, ty = nx;
     let along = u * tx + v * ty;
     if (Math.abs(along) < 0.55) {
       const prefer = along >= 0 ? 1 : -1;
-      const boost = southOfGreen ? 2.8 : 2.4;
+      const boost = southOfGreen ? 2.8 : 2.7;
       along = boost * prefer;
       u = tx * along - nx * outKick;
       v = ty * along - ny * outKick;
+    } else if (!southOfGreen) {
+      // 北缘：速度更贴切向（长滑），再混回一点原引导，拐弯圆角
+      const tl = Math.hypot(tx, ty) || 1;
+      const spd = Math.hypot(u, v) || 1;
+      const tu = (tx / tl) * Math.sign(along || 1) * spd;
+      const tv = (ty / tl) * Math.sign(along || 1) * spd;
+      u = 0.72 * tu + 0.28 * u;
+      v = 0.72 * tv + 0.28 * v;
+      u -= nx * outKick * 0.5;
+      v -= ny * outKick * 0.5;
     }
 
     // 绿南：强制保持 WNW 北分量下限，路径沿南缘斜上而非锯齿纯西
@@ -569,6 +594,28 @@
 
   /** 步间航向限幅：抑制 fringe/slide 造成的尖角折转 */
 
+  /**
+   * 贴缘折线消尖：若新点相对末两轨点外角过大，把新点沿弦向回拉，
+   * 专打 along-副高 → NE 的凸尖/锯齿；不改分区航向目标。
+   */
+  function antiKinkPos(track, lon, lat, maxTurnDeg) {
+    if (!track || track.length < 2) return { lon, lat };
+    const a = track[track.length - 2];
+    const b = track[track.length - 1];
+    const ax = b.lon - a.lon, ay = b.lat - a.lat;
+    const bx = lon - b.lon, by = lat - b.lat;
+    const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+    if (la < 1e-5 || lb < 1e-5) return { lon, lat };
+    let ang = Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
+    const maxRad = (maxTurnDeg * Math.PI) / 180;
+    if (Math.abs(ang) <= maxRad) return { lon, lat };
+    const t = clamp(1 - (Math.abs(ang) - maxRad) / (Math.PI * 0.55), 0.28, 0.85);
+    //  Continuity: blend new step toward previous heading chord
+    const ux = ax / la, uy = ay / la;
+    const nx = lon - b.lon, ny = lat - b.lat;
+    const px = ux * lb, py = uy * lb;
+    return { lon: b.lon + px * (1 - t) + nx * t, lat: b.lat + py * (1 - t) + ny * t };
+  }
 
   function blendHeading(prevU, prevV, u, v, maxTurnDeg) {
     if (prevU == null || prevV == null) return { u, v };
@@ -597,7 +644,7 @@
 
     ({ u, v } = slideAlongFugen(lon, lat, u, v, fugenList, hole));
 
-    const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    const edge = ridgeGuidingEdgeLat(lon, fugenList, hole);
     const band = G.APPROACH_NORTH_BAND_DEG;
     const onFringe = nearNorthernFugenFringe(lon, lat, fugenList, hole);
     if (edge != null) {
@@ -667,8 +714,8 @@
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.15) u = -Math.max(v * 1.15, 4.0);
         // 接近黄线时渐收西向（不抬北速），避免 WNW→正北硬折，并保留黄→绿纯北腿
-        // 接近黄线更早更软收西向：WNW→纯北过渡更圆（分区不变；28o）
-        const ease = clamp((-band - northOf) / 1.55, 0, 1);
+        // 接近黄线更早更软收西向：WNW→纯北过渡更圆（分区不变；28r 再拉长）
+        const ease = clamp((-band - northOf) / 1.85, 0, 1);
         u *= smootherstep(ease);
       }
     }
@@ -750,7 +797,7 @@
 
   function moveStep(lon, lat, vmax, dtHours, cfg, fugenList, hole, arcState) {
     // 大时间步拆成子步；往北腿与绿北半弧加密采样
-    const edge = G.guidingNorthernEdgeLat(lon, fugenList, hole);
+    const edge = ridgeGuidingEdgeLat(lon, fugenList, hole);
     let n = Math.max(1, Math.min(6, Math.ceil(dtHours / 0.75)));
     if (edge != null) {
       const northOf = lat - edge;
@@ -860,21 +907,30 @@
     const moved = moveStep(m.lon, m.lat, m.vmax, dtHours, cfg, fugenList, holeRef, arcState);
     // 步间航向平滑：贴副高缘限幅消尖角；半弧内也做温和限幅（勿关死→折线棱角）
     const nearEdge = (() => {
-      const e = G.guidingNorthernEdgeLat(moved.lon, fugenList, holeRef);
+      const e = ridgeGuidingEdgeLat(moved.lon, fugenList, holeRef);
       if (e == null) return false;
-      return Math.abs(moved.lat - e) < 4.5 || G.inFugenSolid(moved.lon, moved.lat, fugenList, holeRef);
+      // 加宽缘带：沿副高滑行→NE 整段都限航向，专抑凸尖
+      return Math.abs(moved.lat - e) < 7.5 || G.inFugenSolid(moved.lon, moved.lat, fugenList, holeRef);
     })();
     const arcTurning = m.clearLon0 != null && (m.sAcc || 0) < 1;
+    const arcDone = m.clearLon0 != null && (m.sAcc || 0) >= 1;
     let ou = moved.u, ov = moved.v;
     if (arcTurning) {
-      // 半弧：更强航向融合，掐掉单步尖折（28o：比 28n 更紧）
-      ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(14, 22 * Math.min(1, dtHours))));
-    } else if (nearEdge) {
-      // 缘带（含 WNW→N）：更紧限幅，少棱角
-      ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(12, 20 * Math.min(1, dtHours))));
+      // 半弧：温和限幅即可（勿过紧拖死 ENE 目标角）；尖角已由真脊 edge 消除
+      ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(16, 26 * Math.min(1, dtHours))));
+    } else if (nearEdge && !arcDone) {
+      // 仅 along-副高 / WNW→N 缘带：紧限幅 + 下方 antiKink，专打凸尖角
+      ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(8, 13 * Math.min(1, dtHours))));
     }
-    m.lon = moved.lon;
-    m.lat = moved.lat;
+    let nlon = moved.lon, nlat = moved.lat;
+    // 折线消尖：绿前缘滑行要紧；半弧中放宽，避免把 ENE 弯掰回正北
+    if (nearEdge && !arcTurning && !arcDone) {
+      ({ lon: nlon, lat: nlat } = antiKinkPos(m.track, nlon, nlat, 16));
+    } else if (arcTurning) {
+      ({ lon: nlon, lat: nlat } = antiKinkPos(m.track, nlon, nlat, 32));
+    }
+    m.lon = nlon;
+    m.lat = nlat;
     m.u = ou;
     m.v = ov;
 

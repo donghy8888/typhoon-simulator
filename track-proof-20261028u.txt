@@ -1,0 +1,26 @@
+PROOF ?v=20261028u — turn farther SOUTH of yellow + larger amplitude
+
+User (zh): 黄线更南的地方转向；转向幅度太小。
+Zones unchanged: WNW south yellow; due N yellow→green; immediate full ENE past green; no arc north of green.
+
+Root (28t): WNW→N ease span only 1.85° → bend hugged yellow, tiny amplitude.
+
+Fixes:
+  1) WNW_EASE_DEG = 5.2 (was hardcoded 1.85) — fade starts ~5.2° south of yellow
+  2) RECURVE_ARC_DEG 7.0 → 10.5 — wider WNW approach
+  3) steeringAt + moveStepOnce share same ease; deep WNW kept clear (|u|≥v)
+  4) Cache bust ?v=20261028t → 20261028u
+
+Knobs:
+  WNW_EASE_DEG=5.2  RECURVE_ARC_DEG=10.5  band(yellow)=0.15
+  NE_TARGET_HDG=33° (≈57° from N / ENE)  LEG_TRIGGER=0.55
+  CLEAR_NORTH_DEG=0 (no post-green arc)
+
+Sample 150E22N:
+  nOf≈-5: WNW u≈-6.8 hdg≈152
+  nOf≈-3: turning hdg≈135
+  nOf≈-1: near due-N; u→0 ~1° south of yellow
+  yellow→green: u≡0
+  past green: fromN≈58 sAcc=1 immediate ENE
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261028u

@@ -79,18 +79,21 @@
   /**
    * 引导气流（绿线 = 真副高北缘 ridgeGuidingEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261028t）：
-   *   黄线以南 (northOf < −0.15)：明确 WNW；转向弧（WNW→N 收束）在黄线以南完成
+   * 分区（20261028u）：
+   *   黄线以南 (northOf < −0.15)：明确 WNW；转向弧（WNW→N）在黄线更南完成（非贴黄）
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，leg 止于绿线）
    *   绿线以北：立刻东北偏东（≈55–58° from N / atan2≈32–35°；继承 28q ENE）；
-   *             线北无 CLEAR / 无 N→ENE 过渡弧带（28s 把半弧推到绿线以北，回退）。
+   *             线北无 CLEAR / 无 N→ENE 过渡弧带。
    *
    * 状态机（arcState）：
    *   A) 进入黄线附近：legTargetLat=edge（止于绿），u≡0 往北；
    *   B) 越绿：sAcc=1，直接 ENE 巡航（不启 post-green 半弧）。
+   *
+   * 28u：WNW→N 收束跨度加大且更南（WNW_EASE_DEG≈5.2，相对 28t 的 1.85）；
+   *       RECURVE_ARC_DEG 7→10.5 + 深南更西 → 转向幅度更大。
    */
   const NORTH_LEG_DEG = 0.15;
-  const RECURVE_ARC_DEG = 7.0;
+  const RECURVE_ARC_DEG = 10.5;
   const POST_GREEN_ARC_DEG = 7.2;  // 半弧略拉长：Δheading 更大仍圆、少棱角（28q）
   const TARGET_ARC_DLON_DEG = 17.5; // life Δlon≈16–18（更东转向）
   const ARC_BOW_LON_DEG = 7.8;     // 东鼓加大：中段东分量更明显，仍不折肩
@@ -102,7 +105,9 @@
   const NE_MAX_HDG = 52 * Math.PI / 180;
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
-  /** 28t：线北不再做 CLEAR / 半弧；常量保留以免外部引用断裂 */
+  /** 黄南 WNW→N 收束跨度（°）：到黄线 u→0；起点 = 黄线南 WNW_EASE_DEG（更南、幅度更大） */
+  const WNW_EASE_DEG = 5.2;
+  /** 28t/28u：线北不再做 CLEAR / 半弧；常量保留以免外部引用断裂 */
   const CLEAR_NORTH_DEG = 0.0;
   const CLEAR_LAT_MIN = 0;
   const CLEAR_NORTHOF_MIN = 0.0;
@@ -244,18 +249,21 @@
         u = Math.cos(NE_TARGET_HDG) * spd + 0.45;
         v = Math.sin(NE_TARGET_HDG) * spd;
       } else if (northOf < -band) {
-        // 黄线以南：明确 WNW 西北偏西（西分量 ≥ 北分量），非 NNW 西北偏北
+        // 黄线以南：明确 WNW；转向在黄线更南完成（WNW_EASE），幅度加大
         const t = clamp((northOf + RECURVE_ARC_DEG) / (RECURVE_ARC_DEG - band), 0, 1);
         const te = smoothstep(t);
         let uBase = Math.min(u, 0);
         if (uBase < -4.2) uBase = -4.2 + (uBase + 4.2) * 0.28;
-        // 目标 hdg≈140–150（地理 ~300–310° / fromN≈−50~−60）：u≈−4.35~−6.5，v≈3.5~4.2（略更西仍 WNW）
-        u = uBase * (1 - 0.1 * te) - 4.35 * te;
+        // 深南明确 WNW；幅度靠更南的长收束（WNW_EASE）而非过猛西踢
+        u = uBase * (1 - 0.1 * te) - 4.7 * te;
         v = Math.max(v, 0) * (1 - 0.55 * te) + (3.4 + 0.8 * te) * te;
-        if (u < -6.5) u = -6.5;
-        if (u > -4.5 && te > 0.18) u = -4.5 - 1.5 * te; // 西分量主导
+        if (u < -6.8) u = -6.8;
+        if (u > -4.7 && te > 0.18) u = -4.7 - 1.6 * te; // 西分量主导
         if (v > 4.5) v = 4.5;
-        if (Math.abs(u) < v * 1.15) u = -Math.max(v * 1.15, 4.0); // |u|≥v → WNW not NNW
+        if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2); // |u|≥v → WNW not NNW
+        // 黄更南收束：跨 WNW_EASE_DEG 到黄线 u→0（非贴黄才折）
+        const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
+        u *= smootherstep(ease);
       }
 
       if (inNorthLeg) {
@@ -667,16 +675,16 @@
         v = Math.sin(NE_TARGET_HDG) * spd + beta.v * 0.08;
         ({ u, v } = enforceNeHeading(u, v, 1));
       } else if (northOf < -band) {
-        // 黄南：明确 WNW（西 ≥ 北），非 NNW
+        // 黄南：明确 WNW（西 ≥ 北），非 NNW；幅度靠 WNW_EASE 更南长收束
         let uBase = Math.min(u, 0);
         if (uBase < -4.2) uBase = -4.2 + (uBase + 4.2) * 0.28;
-        u = Math.min(Math.max(uBase, -6.5) - 2.6, -4.5);
-        if (u < -6.5) u = -6.5;
+        u = Math.min(Math.max(uBase, -6.8) - 2.8, -4.7);
+        if (u < -6.8) u = -6.8;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
-        if (Math.abs(u) < v * 1.15) u = -Math.max(v * 1.15, 4.0);
-        // 黄南完成 WNW→N 收束（转向弧 ≤ 黄线）；到黄线 u→0，黄→绿纯北
-        // 接近黄线更早更软收西向：WNW→纯北过渡更圆（28t 弧不得过绿）
-        const ease = clamp((-band - northOf) / 1.85, 0, 1);
+        if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2);
+        // 28u：WNW→N 在黄线更南完成（跨 WNW_EASE_DEG≈5.2，非贴黄 1.85）
+        // 到黄线 u→0；黄→绿纯北；绿北立刻 ENE（弧不得过绿）
+        const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
         u *= smootherstep(ease);
       }
     }
@@ -941,6 +949,7 @@
     DISSIPATE_MS,
     NORTH_LEG_DEG,
     RECURVE_ARC_DEG,
+    WNW_EASE_DEG,
     POST_GREEN_ARC_DEG,
     TARGET_ARC_DLON_DEG,
     ARC_BOW_LON_DEG,

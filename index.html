@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261028q" />
+  <link rel="stylesheet" href="css/style.css?v=20261028r" />
 </head>
 <body>
   <header class="site-header">
@@ -54,6 +54,19 @@
           <button type="button" class="primary" id="btnStart" title="开始或继续模拟">开始</button>
           <button type="button" class="secondary" id="btnPause" disabled title="暂停 / 继续">暂停</button>
           <button type="button" class="secondary" id="btnReset" title="清空路径并回到待启动">重置</button>
+        </div>
+        <div class="timeline-scrub" id="timelineScrub">
+          <div class="timeline-head">
+            <label for="scrubRange">时间轴</label>
+            <span class="timeline-day" id="scrubDayLabel">Day 0</span>
+          </div>
+          <input type="range" id="scrubRange" min="0" max="0" value="0" step="1" disabled
+                 title="拖动查看某一天的台风位置与风圈（浏览已生成路径，不改模拟）" />
+          <div class="timeline-ends">
+            <span>Day 0</span>
+            <span id="scrubMaxLabel">Day 0</span>
+          </div>
+          <p class="hint timeline-hint" id="scrubHint">路径生成后可拖动回看风圈；拖动时暂停，按「开始」恢复实时</p>
         </div>
       </section>
 
@@ -113,8 +126,8 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/geo.js?v=20261028q"></script>
-  <script src="js/physics.js?v=20261028q"></script>
-  <script src="js/app.js?v=20261028q"></script>
+  <script src="js/geo.js?v=20261028r"></script>
+  <script src="js/physics.js?v=20261028r"></script>
+  <script src="js/app.js?v=20261028r"></script>
 </body>
 </html>

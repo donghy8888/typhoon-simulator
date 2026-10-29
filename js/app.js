@@ -21,7 +21,9 @@
     selectedFugen: null,
     _draggingVertex: false,
     _draggingBlock: false,
-    timer: null
+    timer: null,
+    /** null = 跟随实时末端；数字 = 浏览 track[index]（只读，不改物理） */
+    scrubIndex: null
   };
 
   // —— 地图（Canvas 渲染，缩放更顺）——
@@ -165,6 +167,7 @@
         opacity: 0.95
       });
       c._tyVmax = p.vmax;
+      c._tyT = p.t;
       c.bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
       stormRefs.intensityMarks.push(c);
     }
@@ -727,9 +730,16 @@
     return null;
   }
 
-  function syncLandfallFlag(member) {
+  function syncLandfallFlag(member, untilT) {
     const lf = ensureLandfallPoint(member);
-    if (!lf) return;
+    const hide = !lf || (untilT != null && lf.t > untilT + 1e-6);
+    if (hide) {
+      if (stormRefs.landfallFlag) {
+        layerGroups.track.removeLayer(stormRefs.landfallFlag);
+        stormRefs.landfallFlag = null;
+      }
+      return;
+    }
     if (stormRefs.landfallFlag) {
       stormRefs.landfallFlag.setLatLng([lf.lat, lf.lon]);
       return;
@@ -748,17 +758,135 @@
     updateStormInPlace();
   }
 
+  function formatDayLabel(tHours) {
+    const t = Math.max(0, +tHours || 0);
+    const d = Math.floor(t / 24);
+    const h = Math.floor(t % 24);
+    return h ? ('Day ' + d + ' · ' + h + 'h') : ('Day ' + d);
+  }
+
+  function getMainTrack() {
+    return (state.members[0] && state.members[0].track) || [];
+  }
+
+  function clearIntensityHighlight() {
+    stormRefs.intensityMarks.forEach(function (c) {
+      c.setStyle({ radius: 5, weight: 1.2, fillOpacity: 0.92, opacity: 0.95 });
+    });
+  }
+
+  /** 高亮 scrub 时刻最近的强度圆点；之后的点变淡 */
+  function highlightIntensityAt(tHours) {
+    let best = -1;
+    let bestDt = Infinity;
+    stormRefs.intensityMarks.forEach(function (c, i) {
+      const tt = c._tyT;
+      if (tt == null || tt > tHours + 1e-6) return;
+      const dt = Math.abs(tt - tHours);
+      if (dt < bestDt) {
+        bestDt = dt;
+        best = i;
+      }
+    });
+    stormRefs.intensityMarks.forEach(function (c, i) {
+      const tt = c._tyT;
+      const past = tt != null && tt <= tHours + 1e-6;
+      const isBest = i === best && past;
+      c.setStyle({
+        radius: isBest ? 8 : 5,
+        weight: isBest ? 2.4 : 1.2,
+        fillOpacity: past ? 0.92 : 0.22,
+        opacity: past ? 0.95 : 0.28
+      });
+    });
+  }
+
+  function syncTimelineUI() {
+    const range = document.getElementById('scrubRange');
+    const dayEl = document.getElementById('scrubDayLabel');
+    const maxEl = document.getElementById('scrubMaxLabel');
+    const wrap = document.getElementById('timelineScrub');
+    if (!range) return;
+    const track = getMainTrack();
+    if (wrap) wrap.classList.toggle('is-scrubbing', state.scrubIndex != null);
+    if (track.length < 2) {
+      range.disabled = true;
+      range.min = '0';
+      range.max = '0';
+      range.value = '0';
+      if (dayEl) dayEl.textContent = 'Day 0';
+      if (maxEl) maxEl.textContent = 'Day 0';
+      return;
+    }
+    const liveIdx = track.length - 1;
+    const idx = state.scrubIndex != null
+      ? Math.max(0, Math.min(liveIdx, state.scrubIndex))
+      : liveIdx;
+    range.disabled = false;
+    range.min = '0';
+    range.max = String(liveIdx);
+    range.value = String(idx);
+    if (dayEl) dayEl.textContent = formatDayLabel(track[idx].t);
+    if (maxEl) maxEl.textContent = formatDayLabel(track[liveIdx].t);
+  }
+
+  /** 进入路径回看；离开末端即暂停。scrub 只读，不改成员物理状态。 */
+  function setScrubIndex(idx) {
+    const track = getMainTrack();
+    if (track.length < 2) {
+      state.scrubIndex = null;
+      syncTimelineUI();
+      return;
+    }
+    idx = Math.max(0, Math.min(track.length - 1, idx | 0));
+    if (idx >= track.length - 1) {
+      state.scrubIndex = null;
+    } else {
+      state.scrubIndex = idx;
+      if (state.running && !state.paused) {
+        state.paused = true;
+        const btn = document.getElementById('btnPause');
+        if (btn) btn.textContent = '继续';
+      }
+    }
+    updateStormInPlace();
+    updateStatus();
+  }
+
+  function exitScrubView() {
+    if (state.scrubIndex == null) {
+      syncTimelineUI();
+      return;
+    }
+    state.scrubIndex = null;
+    updateStormInPlace();
+    updateStatus();
+  }
+
   /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
   function updateStormInPlace() {
     if (!state.members.length) {
       clearStormRefs();
+      syncTimelineUI();
       return;
     }
 
     const main = state.members[0];
+    const track = main.track || [];
+    const liveIdx = Math.max(0, track.length - 1);
+    const scrubbing = state.scrubIndex != null && track.length > 0;
+    const idx = scrubbing
+      ? Math.max(0, Math.min(liveIdx, state.scrubIndex))
+      : liveIdx;
+    const view = track.length ? track[idx] : null;
+    const dLat = view ? view.lat : main.lat;
+    const dLon = view ? view.lon : main.lon;
+    const dVmax = view ? view.vmax : main.vmax;
+    const dT = view ? view.t : state.hours;
 
-    if (main.track.length >= 1) {
-      const latlngs = main.track.map(function (p) { return [p.lat, p.lon]; });
+    if (track.length >= 1) {
+      const slice = scrubbing ? track.slice(0, idx + 1) : track;
+      const latlngs = slice.map(function (p) { return [p.lat, p.lon]; });
       if (latlngs.length >= 2) {
         if (stormRefs.trackLine) {
           stormRefs.trackLine.setLatLngs(latlngs);
@@ -767,20 +895,24 @@
             color: '#2980b9', weight: 2.5
           }).addTo(layerGroups.track);
         }
+      } else if (stormRefs.trackLine) {
+        layerGroups.track.removeLayer(stormRefs.trackLine);
+        stormRefs.trackLine = null;
       }
-      syncIntensityMarks(main.track);
-      syncLandfallFlag(main);
+      syncIntensityMarks(track);
+      syncLandfallFlag(main, scrubbing ? dT : null);
 
-      const rings = (main.alive || main.vmax >= P.DISSIPATE_MS)
-        ? G.windRadiiForGrades(main.vmax)
-        : [];
+      const showRings = scrubbing
+        ? (dVmax >= P.DISSIPATE_MS)
+        : (main.alive || main.vmax >= P.DISSIPATE_MS);
+      const rings = showRings ? G.windRadiiForGrades(dVmax) : [];
       const seen = {};
       rings.forEach(function (ring) {
         seen[ring.grade] = true;
         const existing = stormRefs.windCircles[ring.grade];
-        const tip = ring.label + ' · 当前 ' + G.gradeLabel(main.vmax);
+        const tip = ring.label + ' · 当时 ' + G.gradeLabel(dVmax);
         if (existing) {
-          existing.setLatLng([main.lat, main.lon]);
+          existing.setLatLng([dLat, dLon]);
           existing.setRadius(ring.radiusDeg * 111320);
           existing.setStyle({
             color: ring.color,
@@ -791,7 +923,7 @@
           if (existing.setTooltipContent) existing.setTooltipContent(tip);
           else if (existing.getTooltip()) existing.getTooltip().setContent(tip);
         } else {
-          stormRefs.windCircles[ring.grade] = L.circle([main.lat, main.lon], {
+          stormRefs.windCircles[ring.grade] = L.circle([dLat, dLon], {
             radius: ring.radiusDeg * 111320,
             color: ring.color,
             weight: ring.weight,
@@ -806,21 +938,31 @@
           delete stormRefs.windCircles[g];
         }
       });
+
+      if (scrubbing) highlightIntensityAt(dT);
+      else clearIntensityHighlight();
     }
 
     if (stormRefs.marker) {
-      stormRefs.marker.setLatLng([main.lat, main.lon]);
+      stormRefs.marker.setLatLng([dLat, dLon]);
     } else {
-      stormRefs.marker = L.marker([main.lat, main.lon], { icon: stormIcon() })
+      stormRefs.marker = L.marker([dLat, dLon], { icon: stormIcon() })
         .addTo(layerGroups.storm);
     }
+    syncTimelineUI();
   }
 
   function updateStatus() {
     const clock = document.getElementById('clockBar');
-    const days = Math.floor(state.hours / 24);
-    const hrs = Math.floor(state.hours % 24);
-    const mins = Math.floor((state.hours * 60) % 60);
+    const track = getMainTrack();
+    let showHours = state.hours;
+    if (state.scrubIndex != null && track.length) {
+      const i = Math.max(0, Math.min(track.length - 1, state.scrubIndex));
+      showHours = track[i].t;
+    }
+    const days = Math.floor(showHours / 24);
+    const hrs = Math.floor(showHours % 24);
+    const mins = Math.floor((showHours * 60) % 60);
     const timeStr = '第 ' + days + ' 天 ' + hrs + ' 小时' + (mins ? (' ' + mins + ' 分') : '');
 
     if (!state.members.length) {
@@ -830,10 +972,17 @@
 
     const m = state.members[0];
     let clockExtra = '';
-    if (!m.alive) clockExtra = ' · 已消亡';
-    else if (state.paused) clockExtra = '（已暂停）';
-    else if (state.running) clockExtra = '（运行中）';
-    else clockExtra = ' · 已放置，选风力等级更新强度/风圈，按「开始」运行';
+    if (state.scrubIndex != null) {
+      clockExtra = '（回看 · 拖时间轴）';
+    } else if (!m.alive) {
+      clockExtra = ' · 已消亡';
+    } else if (state.paused) {
+      clockExtra = '（已暂停）';
+    } else if (state.running) {
+      clockExtra = '（运行中）';
+    } else {
+      clockExtra = ' · 已放置，选风力等级更新强度/风圈，按「开始」运行';
+    }
     clock.textContent = '模拟时钟：' + timeStr + clockExtra;
   }
 
@@ -851,6 +1000,7 @@
 
     state.hole = P.ensureBirthHole(lon, lat, vmax, state.fugen);
     state.hours = 0;
+    state.scrubIndex = null;
     state.members = [];
 
     const main = {
@@ -926,6 +1076,8 @@
       applyInitWindToMember();
     }
 
+    // 回看只读：开始后回到实时末端继续积分
+    state.scrubIndex = null;
     state.running = true;
     state.paused = false;
     document.getElementById('btnStart').disabled = true;
@@ -936,12 +1088,18 @@
     const baseMs = 400;
     const interval = Math.max(40, baseMs / state.speed);
     state.timer = setInterval(tick, interval);
+    updateStormInPlace();
     updateStatus();
   }
 
   function pauseSim() {
     if (!state.running) return;
     state.paused = !state.paused;
+    // 「继续」退出回看，恢复实时显示
+    if (!state.paused) {
+      state.scrubIndex = null;
+      updateStormInPlace();
+    }
     document.getElementById('btnPause').textContent = state.paused ? '继续' : '暂停';
     updateStatus();
   }
@@ -965,11 +1123,13 @@
     state.hours = 0;
     state.members = [];
     state.hole = null;
+    state.scrubIndex = null;
     _lastSteerHoleRadius = null;
     _lastSteerHolePresent = false;
     clearStormRefs();
     // 副高全量重绘（会清 holeCircleLayer）；共用 steerRenderer，无孤儿 canvas
     redrawFugen();
+    syncTimelineUI();
     updateStatus();
   }
 
@@ -989,6 +1149,16 @@
   document.getElementById('btnStart').onclick = startSim;
   document.getElementById('btnPause').onclick = pauseSim;
   document.getElementById('btnReset').onclick = resetSim;
+
+  (function wireTimelineScrub() {
+    const range = document.getElementById('scrubRange');
+    if (!range) return;
+    function onScrub() {
+      setScrubIndex(parseInt(range.value, 10) || 0);
+    }
+    range.addEventListener('input', onScrub);
+    range.addEventListener('change', onScrub);
+  })();
 
 
   /** 把风力等级同步到已放置风暴：更新 vmax、等级标签与 7/10/12 风圈；不启动模拟 */

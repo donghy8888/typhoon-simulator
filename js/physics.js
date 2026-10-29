@@ -239,13 +239,13 @@
         const te = smoothstep(t);
         let uBase = Math.min(u, 0);
         if (uBase < -4.2) uBase = -4.2 + (uBase + 4.2) * 0.28;
-        // 目标 hdg≈140–150（地理 ~300–310° / fromN≈−50~−60）：u≈−4.6~−5.4，v≈3.5~4.2
-        u = uBase * (1 - 0.1 * te) - 3.4 * te;
+        // 目标 hdg≈140–150（地理 ~300–310° / fromN≈−50~−60）：u≈−4.2~−6.2，v≈3.5~4.2
+        u = uBase * (1 - 0.1 * te) - 4.0 * te;
         v = Math.max(v, 0) * (1 - 0.55 * te) + (3.4 + 0.8 * te) * te;
-        if (u < -5.5) u = -5.5;
-        if (u > -3.6 && te > 0.18) u = -3.6 - 1.5 * te; // 西分量主导
+        if (u < -6.2) u = -6.2;
+        if (u > -4.2 && te > 0.18) u = -4.2 - 1.5 * te; // 西分量主导
         if (v > 4.5) v = 4.5;
-        if (Math.abs(u) < v * 1.05) u = -Math.max(v * 1.1, 4.0); // |u|≥v → WNW not NNW
+        if (Math.abs(u) < v * 1.15) u = -Math.max(v * 1.15, 4.0); // |u|≥v → WNW not NNW
       }
 
       if (inNorthLeg) {
@@ -655,10 +655,10 @@
         // 黄南：明确 WNW（西 ≥ 北），非 NNW
         let uBase = Math.min(u, 0);
         if (uBase < -4.2) uBase = -4.2 + (uBase + 4.2) * 0.28;
-        u = Math.min(Math.max(uBase, -5.5) - 2.0, -3.8);
-        if (u < -5.5) u = -5.5;
+        u = Math.min(Math.max(uBase, -6.2) - 2.6, -4.2);
+        if (u < -6.2) u = -6.2;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
-        if (Math.abs(u) < v * 1.05) u = -Math.max(v * 1.1, 4.0);
+        if (Math.abs(u) < v * 1.15) u = -Math.max(v * 1.15, 4.0);
         // 接近黄线时渐收西向（不抬北速），避免 WNW→正北硬折，并保留黄→绿纯北腿
         const ease = clamp((-band - northOf) / 0.85, 0, 1);
         u *= smoothstep(ease);

@@ -1,0 +1,21 @@
+PROOF ?v=20261028x — mid-arc SOUTH of yellow; start not too far south
+
+User: 黄线以南一小点不是开始转，而是转向已经转了一半了（中弧在黄南）。
+Also: 开始转的时候不要太南.
+
+Zones unchanged: far-south WNW → arc toward due-N finishing by yellow →
+yellow→green pure N → green+ full ENE. CLEAR_NORTH=0. No intensity change.
+
+28w WNW_EASE=8.8 still looked like turn only beginning just south of yellow.
+28x: WNW_EASE 8.8→14 (moderate; not 18), RECURVE 12.5→16.
+
+Geometry @145E Jul fugen:
+  visible start (hdg<150) ≈11–12° south of yellow (not extreme)
+  mid-arc (hdg~122) ≈7° south of yellow
+  mostly due-N by ≈3.5° south; at yellow u≡0
+  yellow→green pure N; green+ full ENE (antiKink handoff kept)
+
+Knobs: WNW_EASE_DEG=14  RECURVE_ARC_DEG=16  band=0.15
+       NE_TARGET=33°  LEG_TRIGGER=0.55  CLEAR_NORTH=0
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261028x

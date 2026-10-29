@@ -79,8 +79,8 @@
   /**
    * 引导气流（绿线 = 真副高北缘 ridgeGuidingEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261028w）：
-   *   黄线以南 (northOf < −0.15)：明确 WNW；转向弧（WNW→N）在黄线更南完成（非贴黄）
+   * 分区（20261028x）：
+   *   黄线以南 (northOf < −0.15)：明确 WNW；转向弧在黄更南：中弧仍在黄南，近黄已近 due-N
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，leg 止于绿线）
    *   绿线以北：立刻东北偏东（≈55–58° from N / atan2≈32–35°；继承 28q ENE）；
    *             线北无 CLEAR / 无 N→ENE 过渡弧带（目标角立刻 ENE）。
@@ -90,11 +90,11 @@
    *   B) 越绿：sAcc=1，目标立刻 ENE（不启 post-green 半弧）；
    *      步间 blendHeading + antiKink 消 due-N→ENE 直角折（非弧带）。
    *
-   * 28w：WNW_EASE_DEG 5.2→8.8（转向更南）；RECURVE_ARC_DEG 10.5→12.5；
-   *       绿后仍 sAcc=1，但对 arcDone 开 blend/antiKink，抹掉绿北直角菱角。
+   * 28x：WNW_EASE_DEG 8.8→14（中弧在黄南、起点不过分南；非贴黄才开转）；
+   *       RECURVE_ARC_DEG 12.5→16；近黄已基本收束完，黄→绿纯北。
    */
   const NORTH_LEG_DEG = 0.15;
-  const RECURVE_ARC_DEG = 12.5;
+  const RECURVE_ARC_DEG = 16.0;
   const POST_GREEN_ARC_DEG = 7.2;  // 半弧略拉长：Δheading 更大仍圆、少棱角（28q）
   const TARGET_ARC_DLON_DEG = 17.5; // life Δlon≈16–18（更东转向）
   const ARC_BOW_LON_DEG = 7.8;     // 东鼓加大：中段东分量更明显，仍不折肩
@@ -107,7 +107,7 @@
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
   /** 黄南 WNW→N 收束跨度（°）：到黄线 u→0；起点 = 黄线南 WNW_EASE_DEG（更南、幅度更大） */
-  const WNW_EASE_DEG = 8.8;
+  const WNW_EASE_DEG = 14.0;
   /** 28t/28u：线北不再做 CLEAR / 半弧；常量保留以免外部引用断裂 */
   const CLEAR_NORTH_DEG = 0.0;
   const CLEAR_LAT_MIN = 0;
@@ -687,7 +687,7 @@
         if (u < -6.8) u = -6.8;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2);
-        // 28w：WNW→N 在黄线更南完成（跨 WNW_EASE_DEG≈8.8，非贴黄）
+        // 28x：WNW→N 跨 WNW_EASE_DEG≈14：中弧在黄南，近黄已近 due-N（不过分南起转）
         // 到黄线 u→0；黄→绿纯北；绿北立刻 ENE（弧不得过绿）
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
         const easeS = smootherstep(ease);

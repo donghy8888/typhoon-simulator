@@ -79,21 +79,22 @@
   /**
    * 引导气流（绿线 = 真副高北缘 ridgeGuidingEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261028u）：
+   * 分区（20261028w）：
    *   黄线以南 (northOf < −0.15)：明确 WNW；转向弧（WNW→N）在黄线更南完成（非贴黄）
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，leg 止于绿线）
    *   绿线以北：立刻东北偏东（≈55–58° from N / atan2≈32–35°；继承 28q ENE）；
-   *             线北无 CLEAR / 无 N→ENE 过渡弧带。
+   *             线北无 CLEAR / 无 N→ENE 过渡弧带（目标角立刻 ENE）。
    *
    * 状态机（arcState）：
    *   A) 进入黄线附近：legTargetLat=edge（止于绿），u≡0 往北；
-   *   B) 越绿：sAcc=1，直接 ENE 巡航（不启 post-green 半弧）。
+   *   B) 越绿：sAcc=1，目标立刻 ENE（不启 post-green 半弧）；
+   *      步间 blendHeading + antiKink 消 due-N→ENE 直角折（非弧带）。
    *
-   * 28u：WNW→N 收束跨度加大且更南（WNW_EASE_DEG≈5.2，相对 28t 的 1.85）；
-   *       RECURVE_ARC_DEG 7→10.5 + 深南更西 → 转向幅度更大。
+   * 28w：WNW_EASE_DEG 5.2→8.8（转向更南）；RECURVE_ARC_DEG 10.5→12.5；
+   *       绿后仍 sAcc=1，但对 arcDone 开 blend/antiKink，抹掉绿北直角菱角。
    */
   const NORTH_LEG_DEG = 0.15;
-  const RECURVE_ARC_DEG = 10.5;
+  const RECURVE_ARC_DEG = 12.5;
   const POST_GREEN_ARC_DEG = 7.2;  // 半弧略拉长：Δheading 更大仍圆、少棱角（28q）
   const TARGET_ARC_DLON_DEG = 17.5; // life Δlon≈16–18（更东转向）
   const ARC_BOW_LON_DEG = 7.8;     // 东鼓加大：中段东分量更明显，仍不折肩
@@ -106,7 +107,7 @@
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
   /** 黄南 WNW→N 收束跨度（°）：到黄线 u→0；起点 = 黄线南 WNW_EASE_DEG（更南、幅度更大） */
-  const WNW_EASE_DEG = 5.2;
+  const WNW_EASE_DEG = 8.8;
   /** 28t/28u：线北不再做 CLEAR / 半弧；常量保留以免外部引用断裂 */
   const CLEAR_NORTH_DEG = 0.0;
   const CLEAR_LAT_MIN = 0;
@@ -261,9 +262,12 @@
         if (u > -4.7 && te > 0.18) u = -4.7 - 1.6 * te; // 西分量主导
         if (v > 4.5) v = 4.5;
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2); // |u|≥v → WNW not NNW
-        // 黄更南收束：跨 WNW_EASE_DEG 到黄线 u→0（非贴黄才折）
+        // 黄更南收束：跨 WNW_EASE_DEG 到黄线 u→0（非贴黄才折）；末段抬北使弧更圆
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
-        u *= smootherstep(ease);
+        const easeS = smootherstep(ease);
+        u *= easeS;
+        const dueNV = Math.max(5.8, spdW * 0.72);
+        v = v * easeS + dueNV * (1 - easeS);
       }
 
       if (inNorthLeg) {
@@ -595,7 +599,7 @@
    * 贴缘折线消尖：若新点相对末两轨点外角过大，把新点沿弦向回拉，
    * 专打 along-副高 → NE 的凸尖/锯齿；不改分区航向目标。
    */
-  function antiKinkPos(track, lon, lat, maxTurnDeg) {
+  function antiKinkPos(track, lon, lat, maxTurnDeg, minNewBlend) {
     if (!track || track.length < 2) return { lon, lat };
     const a = track[track.length - 2];
     const b = track[track.length - 1];
@@ -606,8 +610,9 @@
     let ang = Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
     const maxRad = (maxTurnDeg * Math.PI) / 180;
     if (Math.abs(ang) <= maxRad) return { lon, lat };
-    const t = clamp(1 - (Math.abs(ang) - maxRad) / (Math.PI * 0.55), 0.28, 0.85);
-    //  Continuity: blend new step toward previous heading chord
+    const tMin = (minNewBlend != null) ? minNewBlend : 0.28;
+    const t = clamp(1 - (Math.abs(ang) - maxRad) / (Math.PI * 0.55), tMin, 0.85);
+    // Continuity: blend new step toward previous heading chord
     const ux = ax / la, uy = ay / la;
     const nx = lon - b.lon, ny = lat - b.lat;
     const px = ux * lb, py = uy * lb;
@@ -682,10 +687,14 @@
         if (u < -6.8) u = -6.8;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2);
-        // 28u：WNW→N 在黄线更南完成（跨 WNW_EASE_DEG≈5.2，非贴黄 1.85）
+        // 28w：WNW→N 在黄线更南完成（跨 WNW_EASE_DEG≈8.8，非贴黄）
         // 到黄线 u→0；黄→绿纯北；绿北立刻 ENE（弧不得过绿）
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
-        u *= smootherstep(ease);
+        const easeS = smootherstep(ease);
+        u *= easeS;
+        // 收束末段把北分量抬向 due-N，弧更圆、少贴黄折肩
+        const dueNV = Math.max(5.8, spdW * 0.72);
+        v = v * easeS + dueNV * (1 - easeS);
       }
     }
     if (edge != null) {
@@ -736,6 +745,7 @@
       else if (!arcOn && dist <= band + 0.35) stepLim = 0.028;
       else if (arcOn && arcState.clearLon0 == null) stepLim = 0.045; // 短净空更细
       else if (arcOn && arcState.clearLon0 != null && (arcState.sAcc || 0) < 1) stepLim = 0.085; // 半弧细步：少折线棱角（28o）
+      else if (northOf >= 0 && northOf < 0.45 && (arcState.sAcc || 0) >= 1) stepLim = 0.032; // 28w：绿后首段细步，配合 antiKink 抹直角
       else if (northOf >= 0 && sArc <= 1.05) stepLim = 0.08;
       else if (dist <= 3.0) stepLim = 0.14;
     }
@@ -779,6 +789,8 @@
       else if (!(arcState && arcState.arcLat0) && northOf >= -LEG_TRIGGER_DEG && northOf < 0.05)
         n = Math.max(n, Math.min(20, Math.ceil(dtHours / 0.085)));
       else if (arcState && arcState.arcLat0 != null && (arcState.sAcc || 0) < 1) n = Math.max(n, Math.min(22, Math.ceil(dtHours / 0.09)));
+      else if (northOf >= 0 && northOf < 0.45 && arcState && (arcState.sAcc || 0) >= 1)
+        n = Math.max(n, Math.min(24, Math.ceil(dtHours / 0.06))); // 28w：绿后首段加密
       else if (!(arcState && arcState.arcLat0) && dist <= G.APPROACH_NORTH_BAND_DEG + 0.25) n = Math.max(n, Math.min(18, Math.ceil(dtHours / 0.10)));
       else if (northOf >= 0 && sArc <= 1.1) n = Math.max(n, Math.min(14, Math.ceil(dtHours / 0.16)));
       else if (dist <= 3.0) n = Math.max(n, Math.min(12, Math.ceil(dtHours / 0.24)));
@@ -887,14 +899,22 @@
     if (arcTurning) {
       // 半弧：温和限幅即可（勿过紧拖死 ENE 目标角）；尖角已由真脊 edge 消除
       ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(16, 26 * Math.min(1, dtHours))));
+    } else if (arcDone && nearEdge) {
+      // 28w：目标仍立刻 ENE（sAcc=1，无 post-green 弧带）；紧限幅抹 due-N→ENE 直角菱角
+      ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(8, 11 * Math.min(1, dtHours))));
     } else if (nearEdge && !arcDone) {
-      // 仅 along-副高 / WNW→N 缘带：紧限幅 + 下方 antiKink，专打凸尖角
+      // along-副高 / WNW→N 缘带：紧限幅 + 下方 antiKink，专打凸尖角
       ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(8, 13 * Math.min(1, dtHours))));
     }
     let nlon = moved.lon, nlat = moved.lat;
-    // 折线消尖：绿前缘滑行要紧；半弧中放宽，避免把 ENE 弯掰回正北
+    // 折线消尖：绿前缘滑行要紧；绿后 arcDone 也消尖（直角菱角）；半弧中放宽
     if (nearEdge && !arcTurning && !arcDone) {
       ({ lon: nlon, lat: nlat } = antiKinkPos(m.track, nlon, nlat, 16));
+    } else if (arcDone && nearEdge) {
+      // 迭代消尖：绿北 due-N→ENE 直角多拉几回（非 post-green 弧带）
+      for (let k = 0; k < 4; k++) {
+        ({ lon: nlon, lat: nlat } = antiKinkPos(m.track, nlon, nlat, 8, 0.08));
+      }
     } else if (arcTurning) {
       ({ lon: nlon, lat: nlat } = antiKinkPos(m.track, nlon, nlat, 32));
     }

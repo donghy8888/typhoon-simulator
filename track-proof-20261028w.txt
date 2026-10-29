@@ -1,0 +1,34 @@
+PROOF ?v=20261028w — turn farther SOUTH of yellow + no green right-angle kink
+
+User (zh): 黄线更南的地方转向，不是贴近黄线。圈出绿线北直角菱角。
+Zones unchanged: WNW south yellow; due N yellow→green; immediate full ENE past green;
+CLEAR_NORTH=0 (no post-green arc band / no N→ENE transition arc geometry).
+
+Root:
+  1) WNW_EASE 5.2° still hugged yellow for visible bend start.
+  2) Crossing green set sAcc=1 → arcDone skipped blendHeading/antiKink
+     → due-N (u≡0) snapped to full ENE in one track step → right-angle kink
+     just north of green (user circle).
+
+Fixes:
+  1) WNW_EASE_DEG 5.2 → 8.8 — fade/turn starts ~8.8° south of yellow
+  2) RECURVE_ARC_DEG 10.5 → 12.5 — wider deep-south WNW approach
+  3) WNW→N ease also lifts v toward due-N (smootherstep) — rounder arc into yellow
+  4) arcDone near edge: blendHeading (≤11°/step) + iterative antiKink (4×, 8°, minBlend 0.08)
+     — target still sAcc=1 full ENE; only rate-limits polyline corner (not an arc band)
+  5) Finer stepLim/substeps for first 0.45° north of green
+  6) Cache bust ?v=20261028v → 20261028w
+
+Knobs:
+  WNW_EASE_DEG=8.8  RECURVE_ARC_DEG=12.5  band(yellow)=0.15
+  NE_TARGET_HDG=33° (≈57° from N / ENE)  LEG_TRIGGER=0.55
+  CLEAR_NORTH_DEG=0
+
+Sample 145E18N (Jul fugen + hole), dt=1h:
+  nOf≈-8: WNW turning; nOf≈-4: hdg~115; nOf≈-2: near due-N
+  yellow→green: u≡0 hdg≈90
+  past green: heading eases 90→79→68→57→46→35→32 over ~1° lat;
+              max |track turn| ≈17° (was ~57–90° right angle)
+  sAcc=1 immediate; full ENE by nOf≈1.1
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261028w

@@ -1,11 +1,11 @@
 /**
  * 地理与环境场：陆掩码、山地、SST 区域、副高多边形工具
- * 西北太平洋域：lon 100–180°E, lat 0–50°N
+ * 西北太平洋域：lon 100–180°E, lat 0–66°N（北至白令海峡）
  */
 (function (global) {
   'use strict';
 
-  const DOMAIN = { lonMin: 100, lonMax: 180, latMin: 0, latMax: 50 };
+  const DOMAIN = { lonMin: 100, lonMax: 180, latMin: 0, latMax: 66 };
 
   /** 简化陆地多边形 [lat, lon]（Leaflet 用）— 粗略海岸 */
   const LAND_POLYS = [

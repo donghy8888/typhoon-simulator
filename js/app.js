@@ -46,7 +46,7 @@
     maxNativeZoom: 8
   }).addTo(map);
 
-  map.setMaxBounds([[-5, 95], [55, 185]]);
+  map.setMaxBounds([[-5, 95], [70, 185]]);
 
   // 引导黄/绿线专用 pane：z 高于 overlay(400)，避免被副高 SVG 填充盖住
   // （黄线在绿线南 0.15°，落在副高实体内侧，canvas 箭头层会被 SVG 副高盖死）

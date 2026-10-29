@@ -45,6 +45,17 @@
   }
 
   /**
+   * 黄南 WNW→N 收束形函数（28y）：地理跨度仍 = WNW_EASE_DEG（起点同 28w），
+   * 但进度前载 —— 黄南中段已约一半航向，近黄已近 due-N（非贴黄才开转）。
+   * pow>1：ease 从 1→0 时 u 在南半带掉得更快；端点仍 1/0。
+   */
+  const WNW_EASE_POWER = 2.15;
+  function wnwEaseFade(ease) {
+    ease = clamp(ease, 0, 1);
+    return Math.pow(ease, WNW_EASE_POWER);
+  }
+
+  /**
    * 是否贴在副高北缘 fringe（实体内，或外侧近邻探测到红区）。
    * 深 fringe 可用较长预备抬升；可见转向几何不依赖此门控。
    */
@@ -79,8 +90,9 @@
   /**
    * 引导气流（绿线 = 真副高北缘 ridgeGuidingEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261028x）：
-   *   黄线以南 (northOf < −0.15)：明确 WNW；转向弧在黄更南：中弧仍在黄南，近黄已近 due-N
+   * 分区（20261028y）：
+   *   黄线以南 (northOf < −0.15)：明确 WNW；转向起点纬度同 28w（WNW_EASE=8.8 不南移）；
+   *             带内进度前载：黄南已约一半航向，近黄收束完 due-N
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，leg 止于绿线）
    *   绿线以北：立刻东北偏东（≈55–58° from N / atan2≈32–35°；继承 28q ENE）；
    *             线北无 CLEAR / 无 N→ENE 过渡弧带（目标角立刻 ENE）。
@@ -90,11 +102,11 @@
    *   B) 越绿：sAcc=1，目标立刻 ENE（不启 post-green 半弧）；
    *      步间 blendHeading + antiKink 消 due-N→ENE 直角折（非弧带）。
    *
-   * 28x：WNW_EASE_DEG 8.8→14（中弧在黄南、起点不过分南；非贴黄才开转）；
-   *       RECURVE_ARC_DEG 12.5→16；近黄已基本收束完，黄→绿纯北。
+   * 28y：撤回 28x 的 EASE 南移；WNW_EASE=8.8、RECURVE=12.5 同 28w 起点；
+   *       wnwEaseFade=ease^2.15 前载进度 → 中弧在黄南，起点纬度不变。
    */
   const NORTH_LEG_DEG = 0.15;
-  const RECURVE_ARC_DEG = 16.0;
+  const RECURVE_ARC_DEG = 12.5;
   const POST_GREEN_ARC_DEG = 7.2;  // 半弧略拉长：Δheading 更大仍圆、少棱角（28q）
   const TARGET_ARC_DLON_DEG = 17.5; // life Δlon≈16–18（更东转向）
   const ARC_BOW_LON_DEG = 7.8;     // 东鼓加大：中段东分量更明显，仍不折肩
@@ -107,7 +119,7 @@
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
   /** 黄南 WNW→N 收束跨度（°）：到黄线 u→0；起点 = 黄线南 WNW_EASE_DEG（更南、幅度更大） */
-  const WNW_EASE_DEG = 14.0;
+  const WNW_EASE_DEG = 8.8;
   /** 28t/28u：线北不再做 CLEAR / 半弧；常量保留以免外部引用断裂 */
   const CLEAR_NORTH_DEG = 0.0;
   const CLEAR_LAT_MIN = 0;
@@ -262,9 +274,9 @@
         if (u > -4.7 && te > 0.18) u = -4.7 - 1.6 * te; // 西分量主导
         if (v > 4.5) v = 4.5;
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2); // |u|≥v → WNW not NNW
-        // 黄更南收束：跨 WNW_EASE_DEG 到黄线 u→0（非贴黄才折）；末段抬北使弧更圆
+        // 黄南收束：跨度同 28w（WNW_EASE）；wnwEaseFade 前载 → 中弧在黄南
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
-        const easeS = smootherstep(ease);
+        const easeS = wnwEaseFade(ease);
         u *= easeS;
         const dueNV = Math.max(5.8, spdW * 0.72);
         v = v * easeS + dueNV * (1 - easeS);
@@ -687,10 +699,10 @@
         if (u < -6.8) u = -6.8;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2);
-        // 28x：WNW→N 跨 WNW_EASE_DEG≈14：中弧在黄南，近黄已近 due-N（不过分南起转）
+        // 28y：跨度同 28w（WNW_EASE≈8.8，起点不南移）；wnwEaseFade 前载中弧在黄南
         // 到黄线 u→0；黄→绿纯北；绿北立刻 ENE（弧不得过绿）
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
-        const easeS = smootherstep(ease);
+        const easeS = wnwEaseFade(ease);
         u *= easeS;
         // 收束末段把北分量抬向 due-N，弧更圆、少贴黄折肩
         const dueNV = Math.max(5.8, spdW * 0.72);
@@ -970,6 +982,7 @@
     NORTH_LEG_DEG,
     RECURVE_ARC_DEG,
     WNW_EASE_DEG,
+    WNW_EASE_POWER,
     POST_GREEN_ARC_DEG,
     TARGET_ARC_DLON_DEG,
     ARC_BOW_LON_DEG,

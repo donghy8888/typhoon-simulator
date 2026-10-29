@@ -1,0 +1,24 @@
+PROOF ?v=20261028y — same start lat as 28w; front-load mid-arc south of yellow
+
+User: 开始转向的地点还是不要变动. 黄南时已转一半（中弧在黄南）. 不要太南起转.
+
+28x wrongly moved start by WNW_EASE 8.8→14. Reverted.
+
+Fix (28y):
+  1) WNW_EASE_DEG = 8.8 (restore 28w start latitude band)
+  2) RECURVE_ARC_DEG = 12.5 (restore 28w)
+  3) wnwEaseFade = ease^2.15 (front-load within SAME band; not smootherstep)
+     → mid-arc still south of yellow; near yellow already due-N
+  4) Zones unchanged; intensity unchanged; green antiKink kept
+  5) Cache ?v=20261028y
+
+Geometry @145E:
+  band start northOf = -0.15-8.8 = -8.95 (same as 28w)
+  visible start hdg<150 ≈ -8.3 (near band start; NOT 28x's -12)
+  mid-arc hdg~122 ≈ -6.5 to -7 (south of yellow -0.15)
+  near yellow u≡0 due-N; yellow→green pure N; green+ ENE
+
+Knobs: WNW_EASE_DEG=8.8  WNW_EASE_POWER=2.15  RECURVE_ARC_DEG=12.5
+       band=0.15  NE_TARGET=33°  CLEAR_NORTH=0
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261028y

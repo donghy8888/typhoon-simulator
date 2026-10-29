@@ -464,3 +464,21 @@ footer.site-footer { display: none; }
 .leaflet-interactive.fugen-draggable-fill {
   cursor: grab !important;
 }
+
+
+/* 登陆点小红旗（无文字） */
+.landfall-flag-wrap {
+  background: transparent !important;
+  border: none !important;
+}
+.landfall-flag {
+  width: 14px;
+  height: 16px;
+  line-height: 0;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 1px 1px rgba(40, 20, 10, 0.35));
+}
+.landfall-flag svg {
+  display: block;
+}

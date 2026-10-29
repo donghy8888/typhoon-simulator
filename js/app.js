@@ -84,7 +84,8 @@
     trackLine: null,
     windCircles: {},
     intensityMarks: [],
-    marker: null
+    marker: null,
+    landfallFlag: null
   };
 
   function clearStormRefs() {
@@ -94,6 +95,7 @@
     stormRefs.windCircles = {};
     stormRefs.intensityMarks = [];
     stormRefs.marker = null;
+    stormRefs.landfallFlag = null;
   }
 
   function isQuarterDayMark(tHours) {
@@ -692,6 +694,54 @@
     });
   }
 
+  /** 登陆点小红旗（无文字、无 tooltip/popup） */
+  function landfallFlagIcon() {
+    return L.divIcon({
+      className: 'landfall-flag-wrap',
+      html: '<div class="landfall-flag" aria-hidden="true">' +
+        '<svg width="14" height="16" viewBox="0 0 14 16" xmlns="http://www.w3.org/2000/svg">' +
+        '<line x1="2" y1="1" x2="2" y2="15" stroke="#5c4033" stroke-width="1.6" stroke-linecap="round"/>' +
+        '<path d="M2.7 1.4 L12.2 5 L2.7 8.6 Z" fill="#c62828" stroke="#8e1b1b" stroke-width="0.45"/>' +
+        '</svg></div>',
+      iconSize: [14, 16],
+      iconAnchor: [2, 15]
+    });
+  }
+
+  /** 首个海→陆穿越点；结果缓存在 member.landfall 以免路径截断后丢失 */
+  function ensureLandfallPoint(member) {
+    if (!member) return null;
+    if (member.landfall && isFinite(member.landfall.lat) && isFinite(member.landfall.lon)) {
+      return member.landfall;
+    }
+    const track = member.track;
+    if (!track || track.length < 2) return null;
+    for (let i = 1; i < track.length; i++) {
+      const a = track[i - 1];
+      const b = track[i];
+      if (!G.isLand(a.lon, a.lat) && G.isLand(b.lon, b.lat)) {
+        member.landfall = { lon: b.lon, lat: b.lat, t: b.t };
+        return member.landfall;
+      }
+    }
+    return null;
+  }
+
+  function syncLandfallFlag(member) {
+    const lf = ensureLandfallPoint(member);
+    if (!lf) return;
+    if (stormRefs.landfallFlag) {
+      stormRefs.landfallFlag.setLatLng([lf.lat, lf.lon]);
+      return;
+    }
+    stormRefs.landfallFlag = L.marker([lf.lat, lf.lon], {
+      icon: landfallFlagIcon(),
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: 200
+    }).addTo(layerGroups.track);
+  }
+
   /** 完整重建（放置 / 重置） */
   function redrawStorm() {
     clearStormRefs();
@@ -719,6 +769,7 @@
         }
       }
       syncIntensityMarks(main.track);
+      syncLandfallFlag(main);
 
       const rings = (main.alive || main.vmax >= P.DISSIPATE_MS)
         ? G.windRadiiForGrades(main.vmax)

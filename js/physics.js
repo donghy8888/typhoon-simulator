@@ -79,15 +79,15 @@
   /**
    * 引导气流（绿线 = 真副高北缘 ridgeGuidingEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261028s）：
-   *   黄线以南 (northOf < −0.15)：明确 WNW 西北偏西（|u|>v，西多于北；非 NNW）
-   *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿）
-   *   绿线以北：更东北偏东（≈55–58° from N / atan2≈32–35°；相对 28p 的 ≈45° 明显加大东分量）；
-   *             life Δlon≈16–18；半圆仍 smootherstep 光滑 due-N→ENE 向（继承 28o，无尖折）。
+   * 分区（20261028t）：
+   *   黄线以南 (northOf < −0.15)：明确 WNW；转向弧（WNW→N 收束）在黄线以南完成
+   *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，leg 止于绿线）
+   *   绿线以北：立刻东北偏东（≈55–58° from N / atan2≈32–35°；继承 28q ENE）；
+   *             线北无 CLEAR / 无 N→ENE 过渡弧带（28s 把半弧推到绿线以北，回退）。
    *
    * 状态机（arcState）：
-   *   A) 首次进入绿南 ~0.22°：legTargetLat=max(edge,lat+0.15)，u≡0 往北直到越过；
-   *   B) 越过后锁存 arcLat0，常数曲率半圆 N→ENE 向（不因 edge 回追重置）。
+   *   A) 进入黄线附近：legTargetLat=edge（止于绿），u≡0 往北；
+   *   B) 越绿：sAcc=1，直接 ENE 巡航（不启 post-green 半弧）。
    */
   const NORTH_LEG_DEG = 0.15;
   const RECURVE_ARC_DEG = 7.0;
@@ -102,10 +102,10 @@
   const NE_MAX_HDG = 52 * Math.PI / 180;
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
-  /** 越绿后短净空再接 N→NE 半弧（略加长，避免竖段→弯瞬间折尖） */
-  const CLEAR_NORTH_DEG = 0.14;
+  /** 28t：线北不再做 CLEAR / 半弧；常量保留以免外部引用断裂 */
+  const CLEAR_NORTH_DEG = 0.0;
   const CLEAR_LAT_MIN = 0;
-  const CLEAR_NORTHOF_MIN = 0.06;
+  const CLEAR_NORTHOF_MIN = 0.0;
 
   function approachNorthUV(northOf, band, spdW) {
     const u = 0;
@@ -157,15 +157,15 @@
   function ensureLegTarget(northOf, lat, edge, arcState) {
     if (!arcState) return null;
     if (arcState.legTargetLat != null) return arcState.legTargetLat;
-    // 进入黄线附近即锁存：目标至少到绿线，且自当前位置再抬 ≥0.15°，
-    // 防止西缘圆角 edge 突降 / 单步跨带导致看不见纯北段。
+    // 进入黄线附近即锁存：腿止于绿线（不越过）。转向弧在黄南已完成；
+    // 黄→绿只跑 due-N，绿北直接 ENE（28t：禁 leg 推到绿线以北）。
     if (northOf >= -LEG_TRIGGER_DEG && northOf < 0) {
-      arcState.legTargetLat = Math.max(edge + 0.02, lat + NORTH_LEG_DEG);
+      arcState.legTargetLat = edge;
       return arcState.legTargetLat;
     }
     if (northOf >= 0) {
-      // 已越绿仍未锁：强制再抬一段纯北，再进入 NE 弧
-      arcState.legTargetLat = lat + NORTH_LEG_DEG;
+      // 已越绿：不再追加纯北腿；标腿已完成，交由 ENE
+      arcState.legTargetLat = Math.min(lat, edge);
       return arcState.legTargetLat;
     }
     return null;
@@ -191,7 +191,13 @@
   function approachBendUV(northOf, arcDeg, wU, wVE, spdW) {
     const band = (typeof G !== 'undefined' && G.APPROACH_NORTH_BAND_DEG) ? G.APPROACH_NORTH_BAND_DEG : 0.15;
     if (northOf >= 0) {
-      return postGreenArcUV(northOf / POST_GREEN_ARC_DEG, 30, wU, wVE, spdW);
+      // 28t：绿北直接 ENE，不再走 post-green 半弧
+      const spd = Math.max(spdW * 1.12, 11.0);
+      return {
+        u: Math.cos(NE_TARGET_HDG) * spd + 0.45,
+        v: Math.sin(NE_TARGET_HDG) * spd,
+        s: 1
+      };
     }
     return approachNorthUV(northOf, band, spdW);
   }
@@ -224,36 +230,19 @@
         u = 0;
         v = b.v;
       } else if (arcActive || northOf >= 0) {
-        // 绿北：短净空后 N→NE；无 arcState 时按 northOf 直接给箭头/场
-        const clearLat = Math.max(
-          (arcState && arcState.legTargetLat != null ? arcState.legTargetLat : edge) + CLEAR_NORTH_DEG,
-          edge + CLEAR_NORTH_DEG
-        );
-        const cleared = lat >= clearLat || northOf >= CLEAR_NORTHOF_MIN;
-        const needClear = arcState && (arcState.clearLon0 == null) && !cleared && arcActive;
-        if (needClear) {
-          const base = arcState.arcLat0 != null ? arcState.arcLat0 : lat;
-          const span = Math.max(1e-3, clearLat - base);
-          const tc = clamp((lat - base) / span, 0, 1);
-          const spd = Math.max(spdW, 8.0);
-          // 极短净空：保持近正北，半圆弧 s=0 处以 due-N 连续接入（无尖角）
-          u = spd * (0.003 * smootherstep(tc));
-          v = spd * (0.999 - 0.008 * smootherstep(tc));
-        } else {
-          const s = arcState
-            ? arcProgress(lat, lon, arcState, false)
-            : clamp(northOf / POST_GREEN_ARC_DEG, 0, 1);
-          if (s < 1) {
-            const b = postGreenArcUV(s, lat, wU, wVE, spdW);
-            u = b.u;
-            v = b.v;
-          } else {
-            // 收束在东北偏东（~57° from N）；略提速攒 life Δlon
-            const spd = Math.max(spdW * 1.12, 11.0);
-            u = Math.cos(NE_TARGET_HDG) * spd + 0.45; // 弧后东踢
-            v = Math.sin(NE_TARGET_HDG) * spd;
+        // 28t：绿北立刻东北偏东（28q ENE）；线北无 CLEAR / 无过渡半弧
+        if (arcState) {
+          if (arcState.clearLon0 == null) {
+            arcState.clearLon0 = lon;
+            arcState.clearLat0 = lat;
+            if (arcState.arcLat0 == null) arcState.arcLat0 = lat;
+            if (arcState.arcLon0 == null) arcState.arcLon0 = lon;
           }
+          arcState.sAcc = 1;
         }
+        const spd = Math.max(spdW * 1.12, 11.0);
+        u = Math.cos(NE_TARGET_HDG) * spd + 0.45;
+        v = Math.sin(NE_TARGET_HDG) * spd;
       } else if (northOf < -band) {
         // 黄线以南：明确 WNW 西北偏西（西分量 ≥ 北分量），非 NNW 西北偏北
         const t = clamp((northOf + RECURVE_ARC_DEG) / (RECURVE_ARC_DEG - band), 0, 1);
@@ -662,49 +651,21 @@
         const b = approachNorthUV(northOf, band, spdW);
         u = 0;
         v = Math.max(b.v, 5.5);
-      } else if (arcActive) {
-        const clearLat = (arcState.legTargetLat != null ? arcState.legTargetLat : edge) + CLEAR_NORTH_DEG;
-        const cleared = lat >= clearLat || northOf >= CLEAR_NORTHOF_MIN;
-        const needClear = (arcState.clearLon0 == null) && !cleared;
-        if (needClear) {
-          if (arcState.arcLat0 == null) {
-            arcState.arcLat0 = lat;
-            arcState.arcLon0 = lon;
-            if (arcState.sAcc == null) arcState.sAcc = 0;
-          }
-          const span = Math.max(1e-3, clearLat - arcState.arcLat0);
-          const tc = clamp((lat - arcState.arcLat0) / span, 0, 1);
-          const spd = Math.max(spdW, 8.0);
-          // 极短净空：近正北，半圆弧以 due-N 连续接入（无 tip kink）
-          u = spd * (0.003 * smootherstep(tc));
-          v = Math.max(spd * (0.999 - 0.008 * smootherstep(tc)), 7.5);
-          if (G.inFugenSolid(lon, lat, fugenList, hole) || northOf < 0.35) {
-            u = Math.min(u, spd * 0.04);
-            v = Math.max(v, 9.0);
-          }
-        } else {
+      } else if (arcActive || northOf >= 0) {
+        // 28t：过绿立刻东北偏东；线北无 CLEAR、无 N→ENE 半弧（转向弧已在黄南完成）
+        if (arcState) {
           if (arcState.clearLon0 == null) {
             arcState.clearLon0 = lon;
             arcState.clearLat0 = lat;
-            arcState.arcLat0 = lat;
-            arcState.arcLon0 = lon;
-            arcState.sAcc = 0;
+            if (arcState.arcLat0 == null) arcState.arcLat0 = lat;
+            if (arcState.arcLon0 == null) arcState.arcLon0 = lon;
           }
-          const s = arcProgress(lat, lon, arcState, true);
-          if (s < 1) {
-            const b = postGreenArcUV(s, lat, wU, wVE, spdW);
-            // β 漂移轻微；勿把西向吃掉东北的东分量
-            u = b.u + beta.u * 0.05 * smoothstep(s);
-            v = b.v + beta.v * 0.08;
-            ({ u, v } = enforceNeHeading(u, v, s));
-          } else {
-            // 弧末柔接入东北偏东巡航：保留东踢，smootherstep 弧已圆（28q）
-            const spd = Math.max(spdW * 1.12, 11.0);
-            u = Math.cos(NE_TARGET_HDG) * spd + beta.u * 0.05 + 0.45;
-            v = Math.sin(NE_TARGET_HDG) * spd + beta.v * 0.08;
-            ({ u, v } = enforceNeHeading(u, v, 1));
-          }
+          arcState.sAcc = 1;
         }
+        const spd = Math.max(spdW * 1.12, 11.0);
+        u = Math.cos(NE_TARGET_HDG) * spd + beta.u * 0.05 + 0.45;
+        v = Math.sin(NE_TARGET_HDG) * spd + beta.v * 0.08;
+        ({ u, v } = enforceNeHeading(u, v, 1));
       } else if (northOf < -band) {
         // 黄南：明确 WNW（西 ≥ 北），非 NNW
         let uBase = Math.min(u, 0);
@@ -713,8 +674,8 @@
         if (u < -6.5) u = -6.5;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.15) u = -Math.max(v * 1.15, 4.0);
-        // 接近黄线时渐收西向（不抬北速），避免 WNW→正北硬折，并保留黄→绿纯北腿
-        // 接近黄线更早更软收西向：WNW→纯北过渡更圆（分区不变；28r 再拉长）
+        // 黄南完成 WNW→N 收束（转向弧 ≤ 黄线）；到黄线 u→0，黄→绿纯北
+        // 接近黄线更早更软收西向：WNW→纯北过渡更圆（28t 弧不得过绿）
         const ease = clamp((-band - northOf) / 1.85, 0, 1);
         u *= smootherstep(ease);
       }
@@ -986,6 +947,7 @@
     NE_TARGET_HDG,
     NE_MIN_HDG,
     NE_MAX_HDG,
+    ridgeGuidingEdgeLat,
     TW_MTN_LON,
     TW_MTN_LAT,
     TW_MTN_R_DEG,

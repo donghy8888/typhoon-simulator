@@ -610,7 +610,10 @@
     const yellowPts = [];
     const band = G.APPROACH_NORTH_BAND_DEG || 0.15;
     for (let lon = 105; lon <= 175; lon += 0.5) {
-      const edge = G.guidingNorthernEdgeLat(lon, state.fugen, state.hole);
+      // 与 physics 分区同脊：真副高北缘（max hole/no-hole），避免空圈塌边把绿线画到弧南
+      const edge = (P.ridgeGuidingEdgeLat
+        ? P.ridgeGuidingEdgeLat(lon, state.fugen, state.hole)
+        : G.guidingNorthernEdgeLat(lon, state.fugen, state.hole));
       if (edge != null) {
         const yellowLat = edge - band; // yellowLat = greenEdge - 0.15°
         edgePts.push([edge, lon]);

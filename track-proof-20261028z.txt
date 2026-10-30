@@ -1,0 +1,21 @@
+PROOF ?v=20261028z — start slightly north; smooth northern arc (no small right-angle)
+
+User: 开始拐弯的地方稍微北一点；正常弧形，不是北边又一点小直角。
+
+Changes:
+  1) WNW_EASE_DEG 8.8 → 7.8 (start ~1° farther north; still south of yellow)
+  2) WNW_EASE_POWER 2.15 → 2.25 (keep mid-arc south of yellow in shorter band)
+  3) Stronger north-shoulder blendHeading + iterative antiKink (yellow rim → green+);
+     greener post-green stepLim/substeps — kill northern corner, keep continuous arc
+  4) RECURVE=12.5; zones/intensity unchanged
+  5) Cache ?v=20261028z
+
+Geometry @145E:
+  band start northOf ≈ -7.95 (was -8.95 @28y)
+  visible start ≈ -7.5; mid-arc ≈ -5.8…-6.3 (south of yellow)
+  near yellow due-N; max |track turn| north band ≈11° (no ≥20° kink)
+
+Knobs: WNW_EASE_DEG=7.8  WNW_EASE_POWER=2.25  RECURVE_ARC_DEG=12.5
+       band=0.15  NE_TARGET=33°  CLEAR_NORTH=0
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261028z

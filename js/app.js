@@ -1342,9 +1342,32 @@
           ' · ' + (s.points ? s.points.length : 0) + ' 点';
       }
     } else {
-      html += '<br><span style="color:#5a6a7a">点击路径或下拉可选中单台；色点=强度色阶</span>';
+      html += '<br><span style="color:#5a6a7a">点击路径或下拉选中单台（其余隐藏）；再点或「全部」恢复</span>';
     }
     el.innerHTML = html;
+  }
+
+  function selectHistStorm(id, opts) {
+    opts = opts || {};
+    // 再点同一台 → 取消选中，恢复全年
+    if (id && state.histSelectedId === id && opts.toggle !== false) {
+      id = null;
+    }
+    state.histSelectedId = id || null;
+    const sel = document.getElementById('histStorm');
+    if (sel) sel.value = state.histSelectedId || '';
+    redrawHistoryTracks();
+    if (state.histSelectedId && state.histData && opts.fit !== false) {
+      const storm = (state.histData.storms || []).find(function (s) { return s.id === state.histSelectedId; });
+      if (storm && H) H.fitStorm(map, storm);
+    }
+    setHistMeta(state.histData, state.histSelectedId);
+    if (state.histSelectedId) {
+      const s = (state.histData.storms || []).find(function (x) { return x.id === state.histSelectedId; });
+      setHistStatus('已选中：' + ((s && s.name) || 'UNNAMED') + ' · 再点路径或「全部」可取消');
+    } else {
+      setHistStatus('只读 · IBTrACS WP · ' + (state.histYear || '') + ' 年 · 点选路径或下拉单台');
+    }
   }
 
   function redrawHistoryTracks() {
@@ -1352,14 +1375,9 @@
     H.drawYear(layerGroups.history, state.histData, {
       scale: getIntensityScale(),
       selectedId: state.histSelectedId,
+      hideOthers: true,
       onSelect: function (id) {
-        state.histSelectedId = id;
-        const sel = document.getElementById('histStorm');
-        if (sel) sel.value = id;
-        redrawHistoryTracks();
-        const storm = (state.histData.storms || []).find(function (s) { return s.id === id; });
-        if (storm) H.fitStorm(map, storm);
-        setHistMeta(state.histData, id);
+        selectHistStorm(id, { toggle: true, fit: true });
       }
     });
     setHistMeta(state.histData, state.histSelectedId);
@@ -1401,15 +1419,18 @@
     document.getElementById('btnModeHistory').classList.remove('secondary');
     document.getElementById('btnModeHistory').classList.add('primary');
 
-    // 隐藏模拟风暴图层，挂上历史层
+    // 隐藏模拟风暴图层 + 副高/海温/引导（纪录模式不显示环境场）
     if (map.hasLayer(layerGroups.track)) map.removeLayer(layerGroups.track);
     if (map.hasLayer(layerGroups.storm)) map.removeLayer(layerGroups.storm);
+    if (map.hasLayer(layerGroups.fugen)) map.removeLayer(layerGroups.fugen);
+    if (map.hasLayer(layerGroups.sst)) map.removeLayer(layerGroups.sst);
+    if (map.hasLayer(layerGroups.steer)) map.removeLayer(layerGroups.steer);
     if (!map.hasLayer(layerGroups.history)) layerGroups.history.addTo(map);
 
     const clock = document.getElementById('clockBar');
-    if (clock) clock.textContent = '台风纪录模式 · 1949–2026 西北太平洋（IBTrACS）· 只读';
+    if (clock) clock.textContent = '台风纪录模式 · 1949–2026 西北太平洋（IBTrACS）· 只读 · 无副高/海温';
     const tb = document.getElementById('mapToolbar');
-    if (tb) tb.textContent = '纪录：选年份 → 浏览路径色点 · 点选/下拉单台 ·「返回模拟」';
+    if (tb) tb.textContent = '纪录：选年份 → 点选/下拉单台高亮 · 再点或「全部」恢复 ·「返回模拟」';
 
     populateHistYears();
     const yEl = document.getElementById('histYear');
@@ -1432,6 +1453,9 @@
     if (map.hasLayer(layerGroups.history)) map.removeLayer(layerGroups.history);
     if (!map.hasLayer(layerGroups.track)) layerGroups.track.addTo(map);
     if (!map.hasLayer(layerGroups.storm)) layerGroups.storm.addTo(map);
+    if (!map.hasLayer(layerGroups.fugen)) layerGroups.fugen.addTo(map);
+    if (!map.hasLayer(layerGroups.sst)) layerGroups.sst.addTo(map);
+    if (!map.hasLayer(layerGroups.steer)) layerGroups.steer.addTo(map);
     state.histData = null;
     state.histSelectedId = null;
 
@@ -1448,12 +1472,10 @@
     loadHistYear(parseInt(this.value, 10));
   };
   document.getElementById('histStorm').onchange = function () {
-    state.histSelectedId = this.value || null;
-    redrawHistoryTracks();
-    if (state.histSelectedId && state.histData) {
-      const storm = (state.histData.storms || []).find(function (s) { return s.id === state.histSelectedId; });
-      if (storm && H) H.fitStorm(map, storm);
-    }
+    selectHistStorm(this.value || null, { toggle: false, fit: !!this.value });
+  };
+  document.getElementById('btnHistClear').onclick = function () {
+    selectHistStorm(null, { toggle: false, fit: false });
   };
   document.getElementById('btnHistFit').onclick = function () {
     if (!state.histData) return;

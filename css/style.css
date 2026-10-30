@@ -571,3 +571,24 @@ body:not(.mode-history) #panel-history { display: none; }
 body.mode-history .clock-bar {
   background: linear-gradient(90deg, #1a5276, #2471a3);
 }
+
+body.mode-history .legend-sim-only { display: none; }
+.hist-name-icon { background: transparent !important; border: none !important; }
+.hist-name-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 8px;
+  background: linear-gradient(180deg, #1a5276, #154360);
+  color: #fff;
+  border: 1px solid #0e334d;
+  border-radius: 5px;
+  box-shadow: 0 2px 6px rgba(15, 40, 60, 0.35);
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.hist-name-badge strong { font-size: 13px; letter-spacing: 0.02em; }
+.hist-name-badge span { font-size: 11px; opacity: 0.9; font-weight: 500; }

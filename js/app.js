@@ -215,14 +215,12 @@
   // —— 地形绘制 ——
   function redrawTerrain() {
     layerGroups.terrain.clearLayers();
-    G.LAND_POLYS.forEach(ring => {
-      L.polygon(ring, {
-        color: '#7a8a6a', weight: 1, fillColor: '#c5d5b5', fillOpacity: 0.35
-      }).addTo(layerGroups.terrain);
-    });
+    // 陆地填充不再手绘：陆掩码已与 OSM 底图海岸对齐；再叠粗填充会「地图对不齐」。
+    // 仅保留山地示意（物理衰减用），低透明以免盖住海岸。
     G.MOUNTAIN_POLYS.forEach(ring => {
       L.polygon(ring, {
-        color: '#6b5344', weight: 1, fillColor: '#8b7355', fillOpacity: 0.5
+        color: '#6b5344', weight: 1, fillColor: '#8b7355', fillOpacity: 0.35,
+        interactive: false
       }).addTo(layerGroups.terrain);
     });
   }

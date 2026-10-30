@@ -7,7 +7,7 @@
   const YEAR_MIN = 1949;
   const YEAR_MAX = 2026;
   const DATA_BASE = 'data/ibtracs/wp';
-  const DATA_VER = '20261030d';
+  const DATA_VER = '20261030e';
 
   const cache = Object.create(null); // year -> payload
   let indexPromise = null;

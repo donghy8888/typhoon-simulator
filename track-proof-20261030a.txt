@@ -1,0 +1,21 @@
+PROOF ?v=20261030a — clearly north turn-start; kill northern right-angle
+
+User: 「你没有改」— 28z ~1° nudge too subtle; northern small right-angle remains.
+
+Changes:
+  1) WNW_EASE_DEG 7.8 → 5.8 (start ~2° farther north vs 28z / ~3° vs 28y; still south of yellow)
+  2) WNW_EASE_POWER 2.25 → 2.55 (mid-arc still south of yellow in shorter band)
+  3) Harder northern smooth: blend ≤4.5–7°/step post-green; 8× antiKink(5°,0.04);
+     yellow shoulder 6× antiKink; finer steps to +1.1° north of green
+  4) RECURVE=12.5; zones/intensity unchanged
+  5) Cache ?v=20261030a
+
+Geometry @145E:
+  band start ≈ -5.95 (28z -7.95, 28y -8.95)
+  visible start ≈ -5.6…-6; mid-arc ≈ -4.5 (south of yellow -0.15)
+  max |track turn| north ≈8° (continuous arc)
+
+Knobs: WNW_EASE_DEG=5.8  WNW_EASE_POWER=2.55  RECURVE_ARC_DEG=12.5
+       band=0.15  NE_TARGET=33°  CLEAR_NORTH=0
+
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261030a

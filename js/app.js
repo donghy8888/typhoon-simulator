@@ -256,7 +256,7 @@
     }
   }
 
-  /** 西风带强度滑条：0=弱 … 50=中 … 100=强（精细连续） */
+  /** 冷空气强度滑条：0=弱 … 50=中 … 100=强（精细连续） */
   const WESTERLY_MAX_DRIFT_DEG_PER_DAY = 0.45; // 极端 |率|
   const WESTERLY_WOBBLE_AMP = 0.08;            // 近中位微摆 (°/day)
   const WESTERLY_WOBBLE_PERIOD_H = 72;         // ~3 天周期
@@ -1160,7 +1160,7 @@
     const cfg = cfgFromUI();
     const main = state.members[0];
 
-    // 西风带强度 → 副高脊缓慢南北漂移（绿/黄随实体）
+    // 冷空气强度 → 副高脊缓慢南北漂移（绿/黄随实体）
     const driftRate = ridgeDriftRateDegPerDay(state.hours);
     const drifted = applyRidgeLatDrift(driftRate * (dt / 24));
 

@@ -45,7 +45,7 @@
   }
 
   /**
-   * 黄南 WNW→N 收束形函数（30a）：跨度 = WNW_EASE_DEG（起点明显北移仍黄南）；
+   * 黄南 WNW→N 收束形函数（30b）：跨度 = WNW_EASE_DEG（相对 30a 稍南一丁点，仍黄南）；
    * 进度前载 —— 黄南中段已约一半航向，近黄已近 due-N。
    * pow>1：ease 从 1→0 时 u 在南半带掉得更快；端点仍 1/0。
    */
@@ -90,7 +90,7 @@
   /**
    * 引导气流（绿线 = 真副高北缘 ridgeGuidingEdgeLat；黄线 = 绿线南 0.15°≈50km）
    *
-   * 分区（20261030a）：
+   * 分区（20261030b）：
    *   黄线以南 (northOf < −0.15)：明确 WNW；起点明显北移（WNW_EASE→5.8，仍黄南不贴黄）；
    *             带内进度前载：黄南已约一半航向，近黄收束完 due-N → 连续圆滑弧
    *   黄→绿 (−0.15 ≤ northOf < 0)：纯往北 u≡0（锁存腿，leg 止于绿线）
@@ -102,8 +102,8 @@
    *   B) 越绿：sAcc=1，目标立刻 ENE（不启 post-green 半弧）；
    *      步间更紧 blendHeading + 更多轮 antiKink 消 due-N→ENE 折角。
    *
-   * 30a：WNW_EASE 7.8→5.8（起点可见北移）；POWER→2.55 保中弧在黄南；
-   *       黄缘～绿北消尖再加强，连续弧形无北边小直角。
+   * 30b：WNW_EASE 5.8→6.4（起点稍南一丁点）；POWER=2.55 中弧仍在黄南；
+   *       北段 antiKink 保持，连续弧形无北边小直角。
    */
   const NORTH_LEG_DEG = 0.15;
   const RECURVE_ARC_DEG = 12.5;
@@ -119,7 +119,7 @@
   /** 提前锁存往北腿，防西缘圆角 edge 突降跳过黄→绿带 */
   const LEG_TRIGGER_DEG = 0.55;
   /** 黄南 WNW→N 收束跨度（°）：到黄线 u→0；起点 = 黄线南 WNW_EASE_DEG（更南、幅度更大） */
-  const WNW_EASE_DEG = 5.8;
+  const WNW_EASE_DEG = 6.4;
   /** 28t/28u：线北不再做 CLEAR / 半弧；常量保留以免外部引用断裂 */
   const CLEAR_NORTH_DEG = 0.0;
   const CLEAR_LAT_MIN = 0;
@@ -699,7 +699,7 @@
         if (u < -6.8) u = -6.8;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2);
-        // 30a：WNW_EASE≈5.8（起点明显北移仍黄南）；wnwEaseFade 前载中弧在黄南
+        // 30b：WNW_EASE≈6.4（相对 30a 稍南一丁点）；wnwEaseFade 前载中弧在黄南
         // 到黄线 u→0；黄→绿纯北；绿北立刻 ENE（弧不得过绿）
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
         const easeS = wnwEaseFade(ease);

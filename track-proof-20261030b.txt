@@ -1,0 +1,9 @@
+PROOF ?v=20261030b — tiny south nudge of turn start
+
+User: 稍微稍微转向再南一点.
+
+WNW_EASE_DEG 5.8 → 6.4 (NOT back to 7.8/8.8).
+WNW_EASE_POWER=2.55 kept. Northern antiKink kept. Intensity unchanged.
+
+Knobs: WNW_EASE_DEG=6.4  WNW_EASE_POWER=2.55  RECURVE_ARC_DEG=12.5
+URL: https://donghy8888.github.io/typhoon-simulator/?v=20261030b

@@ -23,7 +23,12 @@
     _draggingBlock: false,
     timer: null,
     /** null = 跟随实时末端；数字 = 浏览 track[index]（只读，不改物理） */
-    scrubIndex: null
+    scrubIndex: null,
+    /** 'sim' | 'history' */
+    mode: 'sim',
+    histYear: null,
+    histSelectedId: null,
+    histData: null
   };
 
   // —— 地图（Canvas 渲染，缩放更顺）——
@@ -64,7 +69,8 @@
     // guides 永远在地图上（黄/绿线）
     guides: L.layerGroup({ pane: 'guides' }).addTo(map),
     track: L.layerGroup().addTo(map),
-    storm: L.layerGroup().addTo(map)
+    storm: L.layerGroup().addTo(map),
+    history: L.layerGroup() // 仅历史模式挂到地图
   };
 
   // 域边框
@@ -714,29 +720,76 @@
     });
   }
 
-  /** 所有海→陆穿越点；缓存在 member.landfalls，路径截断后仍保留已发现的登陆点 */
+  /**
+   * 海→陆段上二分逼近海岸线交点（落在陆侧边界），避免旗子挂在海上或深入陆地的轨点。
+   * a 必须为海、b 必须为陆。
+   */
+  function coastCrossingPoint(a, b) {
+    let lo = 0;
+    let hi = 1;
+    let lon = b.lon;
+    let lat = b.lat;
+    for (let k = 0; k < 20; k++) {
+      const m = (lo + hi) * 0.5;
+      const x = a.lon + (b.lon - a.lon) * m;
+      const y = a.lat + (b.lat - a.lat) * m;
+      if (G.isLand(x, y)) {
+        hi = m;
+        lon = x;
+        lat = y;
+      } else {
+        lo = m;
+      }
+    }
+    const m = hi;
+    const tA = +a.t;
+    const tB = +b.t;
+    const t = (isFinite(tA) && isFinite(tB)) ? (tA + (tB - tA) * m) : tB;
+    return { lon: lon, lat: lat, t: t };
+  }
+
+  /** 所有海→陆穿越点（海岸交点）；路径截断后仍保留更早登陆点 */
   function ensureLandfallPoints(member) {
     if (!member) return [];
-    if (!member.landfalls) member.landfalls = [];
     const track = member.track;
-    if (!track || track.length < 2) return member.landfalls;
+    if (!track || track.length < 2) return member.landfalls || [];
 
-    const seenT = {};
-    member.landfalls.forEach(function (lf) {
-      if (lf && isFinite(lf.t)) seenT[lf.t] = true;
+    // 轨长未变则复用（交点已按海岸插值）
+    if (member.landfalls && member._landfallScanLen === track.length) {
+      return member.landfalls;
+    }
+
+    const t0 = track[0] && isFinite(+track[0].t) ? +track[0].t : null;
+    const kept = [];
+    const seenKey = {};
+    function keyOf(lf) {
+      return (Math.round((+lf.t || 0) * 1000) / 1000) + ':' +
+        (Math.round(+lf.lon * 200) / 200) + ':' + (Math.round(+lf.lat * 200) / 200);
+    }
+    (member.landfalls || []).forEach(function (lf) {
+      if (!lf || !isFinite(lf.lon) || !isFinite(lf.lat)) return;
+      // 保留已被 MAX_TRACK 裁掉的早期登陆点
+      if (t0 != null && isFinite(+lf.t) && +lf.t < t0 - 1e-6) {
+        const k = keyOf(lf);
+        if (!seenKey[k]) { kept.push(lf); seenKey[k] = true; }
+      }
     });
 
     for (let i = 1; i < track.length; i++) {
       const a = track[i - 1];
       const b = track[i];
       if (!G.isLand(a.lon, a.lat) && G.isLand(b.lon, b.lat)) {
-        if (!seenT[b.t]) {
-          member.landfalls.push({ lon: b.lon, lat: b.lat, t: b.t });
-          seenT[b.t] = true;
+        const lf = coastCrossingPoint(a, b);
+        const k = keyOf(lf);
+        if (!seenKey[k]) {
+          kept.push(lf);
+          seenKey[k] = true;
         }
       }
     }
-    member.landfalls.sort(function (x, y) { return x.t - y.t; });
+    kept.sort(function (x, y) { return (+x.t || 0) - (+y.t || 0); });
+    member.landfalls = kept;
+    member._landfallScanLen = track.length;
     return member.landfalls;
   }
 
@@ -1150,6 +1203,7 @@
 
   // —— 事件 ——
   map.on('click', function (e) {
+    if (state.mode === 'history') return;
     if (state._draggingBlock || state._draggingVertex) return;
     if (state.running && !state.paused) return;
     const lon = e.latlng.lng;
@@ -1195,6 +1249,7 @@
 
   document.getElementById('intensityScale').onchange = function () {
     recolorIntensityMarks();
+    if (state.mode === 'history') redrawHistoryTracks();
   };
   updateIntensityLegend();
 
@@ -1231,6 +1286,189 @@
 
   document.getElementById('btnResetFugen').onclick = () => {
     applyFugenMonth(false);
+  };
+
+  // —— 台风纪录（历史模式）——
+  const H = window.TyHistory;
+
+  function populateHistYears() {
+    const sel = document.getElementById('histYear');
+    if (!sel || !H) return;
+    sel.innerHTML = '';
+    H.yearsList().forEach(function (y) {
+      const opt = document.createElement('option');
+      opt.value = String(y);
+      opt.textContent = String(y) + ' 年';
+      sel.appendChild(opt);
+    });
+    // 默认近年有完整纪录的年份
+    sel.value = '2019';
+  }
+
+  function populateHistStorms(data) {
+    const sel = document.getElementById('histStorm');
+    if (!sel) return;
+    const keep = '';
+    sel.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = '';
+    all.textContent = '（全部 · ' + ((data && data.count) || 0) + ' 个）';
+    sel.appendChild(all);
+    (data && data.storms ? data.storms : []).forEach(function (s) {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      const peak = s.maxVmax != null ? (' · ' + s.maxVmax.toFixed(0) + 'm/s') : '';
+      opt.textContent = (s.name || 'UNNAMED') + peak;
+      sel.appendChild(opt);
+    });
+    sel.value = keep;
+  }
+
+  function setHistStatus(msg) {
+    const el = document.getElementById('histStatus');
+    if (el) el.textContent = msg;
+  }
+
+  function setHistMeta(data, selectedId) {
+    const el = document.getElementById('histMeta');
+    if (!el) return;
+    if (!data) { el.innerHTML = ''; return; }
+    let html = '<strong>' + data.year + '</strong> 年 · ' + data.count + ' 个热带气旋';
+    if (selectedId) {
+      const s = (data.storms || []).find(function (x) { return x.id === selectedId; });
+      if (s) {
+        html += '<br>当前：<strong>' + (s.name || 'UNNAMED') + '</strong> · 峰值 ' +
+          (s.maxVmax != null ? s.maxVmax.toFixed(1) + ' m/s' : '—') +
+          ' · ' + (s.points ? s.points.length : 0) + ' 点';
+      }
+    } else {
+      html += '<br><span style="color:#5a6a7a">点击路径或下拉可选中单台；色点=强度色阶</span>';
+    }
+    el.innerHTML = html;
+  }
+
+  function redrawHistoryTracks() {
+    if (!H || !state.histData) return;
+    H.drawYear(layerGroups.history, state.histData, {
+      scale: getIntensityScale(),
+      selectedId: state.histSelectedId,
+      onSelect: function (id) {
+        state.histSelectedId = id;
+        const sel = document.getElementById('histStorm');
+        if (sel) sel.value = id;
+        redrawHistoryTracks();
+        const storm = (state.histData.storms || []).find(function (s) { return s.id === id; });
+        if (storm) H.fitStorm(map, storm);
+        setHistMeta(state.histData, id);
+      }
+    });
+    setHistMeta(state.histData, state.histSelectedId);
+  }
+
+  function loadHistYear(year) {
+    if (!H) return;
+    const y = year | 0;
+    state.histYear = y;
+    state.histSelectedId = null;
+    setHistStatus('加载 ' + y + ' 年纪录…');
+    H.loadYear(y).then(function (data) {
+      state.histData = data;
+      populateHistStorms(data);
+      redrawHistoryTracks();
+      setHistStatus('只读 · IBTrACS WP · ' + y + ' 年已加载');
+      // 略缩放到当年路径包络
+      try {
+        const all = [];
+        (data.storms || []).forEach(function (s) {
+          (s.points || []).forEach(function (p) { all.push([p.lat, p.lon]); });
+        });
+        if (all.length >= 2) map.fitBounds(L.latLngBounds(all).pad(0.08), { maxZoom: 5, animate: true });
+      } catch (e) { /* ignore */ }
+    }).catch(function (err) {
+      setHistStatus('加载失败：' + (err && err.message ? err.message : err));
+    });
+  }
+
+  function enterHistoryMode() {
+    if (state.mode === 'history') return;
+    stopSim();
+    state.mode = 'history';
+    document.body.classList.add('mode-history');
+    document.getElementById('btnModeSim').classList.remove('is-active');
+    document.getElementById('btnModeSim').classList.add('secondary');
+    document.getElementById('btnModeSim').classList.remove('primary');
+    document.getElementById('btnModeHistory').classList.add('is-active');
+    document.getElementById('btnModeHistory').classList.remove('secondary');
+    document.getElementById('btnModeHistory').classList.add('primary');
+
+    // 隐藏模拟风暴图层，挂上历史层
+    if (map.hasLayer(layerGroups.track)) map.removeLayer(layerGroups.track);
+    if (map.hasLayer(layerGroups.storm)) map.removeLayer(layerGroups.storm);
+    if (!map.hasLayer(layerGroups.history)) layerGroups.history.addTo(map);
+
+    const clock = document.getElementById('clockBar');
+    if (clock) clock.textContent = '台风纪录模式 · 1949–2026 西北太平洋（IBTrACS）· 只读';
+    const tb = document.getElementById('mapToolbar');
+    if (tb) tb.textContent = '纪录：选年份 → 浏览路径色点 · 点选/下拉单台 ·「返回模拟」';
+
+    populateHistYears();
+    const yEl = document.getElementById('histYear');
+    const y = yEl ? (parseInt(yEl.value, 10) || 2019) : 2019;
+    loadHistYear(y);
+  }
+
+  function exitHistoryMode() {
+    if (state.mode !== 'history') return;
+    state.mode = 'sim';
+    document.body.classList.remove('mode-history');
+    document.getElementById('btnModeHistory').classList.remove('is-active');
+    document.getElementById('btnModeHistory').classList.add('secondary');
+    document.getElementById('btnModeHistory').classList.remove('primary');
+    document.getElementById('btnModeSim').classList.add('is-active');
+    document.getElementById('btnModeSim').classList.add('primary');
+    document.getElementById('btnModeSim').classList.remove('secondary');
+
+    if (H) H.clear(layerGroups.history);
+    if (map.hasLayer(layerGroups.history)) map.removeLayer(layerGroups.history);
+    if (!map.hasLayer(layerGroups.track)) layerGroups.track.addTo(map);
+    if (!map.hasLayer(layerGroups.storm)) layerGroups.storm.addTo(map);
+    state.histData = null;
+    state.histSelectedId = null;
+
+    const tb = document.getElementById('mapToolbar');
+    if (tb) tb.textContent = '操作：点击地图落点 · 选风力/副高 ·「开始」；或开「台风纪录」';
+    updateStormInPlace();
+    updateStatus();
+  }
+
+  document.getElementById('btnModeHistory').onclick = enterHistoryMode;
+  document.getElementById('btnModeSim').onclick = exitHistoryMode;
+  document.getElementById('btnHistBack').onclick = exitHistoryMode;
+  document.getElementById('histYear').onchange = function () {
+    loadHistYear(parseInt(this.value, 10));
+  };
+  document.getElementById('histStorm').onchange = function () {
+    state.histSelectedId = this.value || null;
+    redrawHistoryTracks();
+    if (state.histSelectedId && state.histData) {
+      const storm = (state.histData.storms || []).find(function (s) { return s.id === state.histSelectedId; });
+      if (storm && H) H.fitStorm(map, storm);
+    }
+  };
+  document.getElementById('btnHistFit').onclick = function () {
+    if (!state.histData) return;
+    if (state.histSelectedId) {
+      const storm = (state.histData.storms || []).find(function (s) { return s.id === state.histSelectedId; });
+      if (storm && H) H.fitStorm(map, storm);
+      return;
+    }
+    try {
+      const all = [];
+      (state.histData.storms || []).forEach(function (s) {
+        (s.points || []).forEach(function (p) { all.push([p.lat, p.lon]); });
+      });
+      if (all.length >= 2) map.fitBounds(L.latLngBounds(all).pad(0.08), { maxZoom: 5, animate: true });
+    } catch (e) { /* ignore */ }
   };
 
   // 初始绘制

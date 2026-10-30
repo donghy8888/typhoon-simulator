@@ -540,3 +540,34 @@ footer.site-footer { display: none; }
 .landfall-flag svg {
   display: block;
 }
+
+
+/* —— 模式切换 / 台风纪录 —— */
+.panel-mode { border-left-color: #6c3483; }
+.panel-history { border-left-color: #1a5276; }
+.mode-row .mode-btn { flex: 1; }
+.mode-btn.is-active {
+  background: linear-gradient(180deg, #2f6fa8 0%, #1f567f 100%);
+  color: #fff;
+  border-color: #17466a;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset;
+}
+body.mode-history #panel-init,
+body.mode-history #panel-run,
+body.mode-history #panel-fugen { display: none; }
+body.mode-history #panel-history { display: block; }
+body:not(.mode-history) #panel-history { display: none; }
+.hist-meta {
+  margin-top: 8px;
+  padding: 8px 9px;
+  background: linear-gradient(180deg, #eef5fb, #e4eef7);
+  border: 1px solid #a8c4da;
+  border-radius: 5px;
+  font-size: 12px;
+  color: #1e3a50;
+  line-height: 1.45;
+}
+.hist-meta strong { color: #0f2f4a; }
+body.mode-history .clock-bar {
+  background: linear-gradient(90deg, #1a5276, #2471a3);
+}

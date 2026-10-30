@@ -7,6 +7,7 @@
   const YEAR_MIN = 1949;
   const YEAR_MAX = 2026;
   const DATA_BASE = 'data/ibtracs/wp';
+  const DATA_VER = '20261030d';
 
   const cache = Object.create(null); // year -> payload
   let indexPromise = null;
@@ -31,7 +32,7 @@
   function loadYear(year) {
     const y = year | 0;
     if (cache[y]) return Promise.resolve(cache[y]);
-    return fetchJson(DATA_BASE + '/' + y + '.json').then(function (data) {
+    return fetchJson(DATA_BASE + '/' + y + '.json?v=' + DATA_VER).then(function (data) {
       cache[y] = data;
       return data;
     });
@@ -89,9 +90,8 @@
       }
       line.addTo(layerGroup);
 
-      // Intensity dots
-      const step = pts.length > 80 ? 2 : 1;
-      for (let i = 0; i < pts.length; i += step) {
+      // Intensity dots — every best-track fix (no thinning; full path)
+      for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         const hex = G.intensityTrackColor(p.vmax, scale);
         const r = selected ? 5 : 3.2;

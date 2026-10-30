@@ -1,5 +1,6 @@
 /**
  * Build per-year Northwest Pacific track JSON from NOAA IBTrACS WP CSV.
+ * Full best-track positions (do not drop points for missing wind / soft domain).
  * Usage: node scripts/build-ibtracs-wp.mjs [/path/to/ibtracs.WP.list.v04r01.csv]
  */
 import fs from 'fs';
@@ -43,7 +44,6 @@ function num(v) {
 }
 
 function windMs(cma, tokyo, usa, wmo) {
-  // IBTrACS agency winds are knots
   const kt = cma ?? tokyo ?? usa ?? wmo;
   if (kt == null || kt < 0) return null;
   return +(kt * KT_TO_MS).toFixed(1);
@@ -81,20 +81,21 @@ for await (const line of rl) {
   const sid = cols[idx.SID];
   if (!sid) continue;
 
-  const lat = num(cols[idx.CMA_LAT]) ?? num(cols[idx.TOKYO_LAT]) ?? num(cols[idx.LAT]);
-  const lonRaw = num(cols[idx.CMA_LON]) ?? num(cols[idx.TOKYO_LON]) ?? num(cols[idx.LON]);
+  // Prefer IBTrACS standardized LAT/LON for complete best-track geometry
+  const lat = num(cols[idx.LAT]) ?? num(cols[idx.CMA_LAT]) ?? num(cols[idx.TOKYO_LAT]) ?? num(cols[idx.USA_LAT]);
+  const lonRaw = num(cols[idx.LON]) ?? num(cols[idx.CMA_LON]) ?? num(cols[idx.TOKYO_LON]) ?? num(cols[idx.USA_LON]);
   const lon = normLon(lonRaw);
   if (lat == null || lon == null) continue;
-  // Domain soft filter: WP focus
-  if (lat < -5 || lat > 60 || lon < 95 || lon > 210) continue;
+  // Very wide sanity gate only (WP CSV already basin-scoped); do not clip track ends
+  if (lat < -30 || lat > 80 || lon < 70 || lon > 250) continue;
 
-  const vmax = windMs(
+  let vmax = windMs(
     num(cols[idx.CMA_WIND]),
     num(cols[idx.TOKYO_WIND]),
     num(cols[idx.USA_WIND]),
     num(cols[idx.WMO_WIND])
   );
-  if (vmax == null) continue;
+  // Keep position even if wind missing — carry-forward applied after collect
 
   const iso = cols[idx.ISO_TIME] || '';
   const name = (cols[idx.NAME] || 'UNNAMED').trim();
@@ -106,33 +107,39 @@ for await (const line of rl) {
   }
   if (name && name !== 'NOT_NAMED' && s.name === 'UNNAMED') s.name = name;
   s.points.push({ lon, lat, vmax, t: iso });
-  if (vmax > s.maxVmax) s.maxVmax = vmax;
+  if (vmax != null && vmax > s.maxVmax) s.maxVmax = vmax;
 }
 
 /** @type {Map<number, any[]>} */
 const byYear = new Map();
 for (const s of storms.values()) {
   if (s.points.length < 2) continue;
-  // Deduplicate identical consecutive times
+  // Deduplicate identical consecutive times; carry-forward vmax across gaps
   const pts = [];
   let lastT = null;
+  let lastV = null;
   for (const p of s.points) {
+    let vmax = p.vmax;
+    if (vmax == null) vmax = lastV;
+    if (vmax != null) lastV = vmax;
+    const q = { lon: p.lon, lat: p.lat, vmax: vmax != null ? vmax : 0, t: p.t };
     if (p.t && p.t === lastT) {
-      pts[pts.length - 1] = p;
+      pts[pts.length - 1] = q;
       continue;
     }
-    pts.push(p);
+    pts.push(q);
     lastT = p.t;
   }
   s.points = pts;
   if (s.points.length < 2) continue;
+  s.maxVmax = s.points.reduce((m, p) => Math.max(m, p.vmax || 0), 0);
   const y = s.season;
   if (!byYear.has(y)) byYear.set(y, []);
   byYear.get(y).push({
     id: s.id,
     name: s.name,
     season: s.season,
-    maxVmax: s.maxVmax,
+    maxVmax: +s.maxVmax.toFixed(1),
     points: s.points
   });
 }
@@ -159,7 +166,8 @@ const index = {
   yearMin: YEAR_MIN,
   yearMax: YEAR_MAX,
   source: 'NOAA IBTrACS v04r01',
-  wind: 'prefer CMA_WIND → TOKYO_WIND → USA_WIND → WMO_WIND (kt→m/s)',
+  wind: 'prefer CMA_WIND → TOKYO_WIND → USA_WIND → WMO_WIND (kt→m/s); carry-forward if missing',
+  position: 'IBTrACS LAT/LON (full best-track); agency fallback',
   years: years.map((y) => y.year),
   yearMeta: years,
   built: new Date().toISOString()

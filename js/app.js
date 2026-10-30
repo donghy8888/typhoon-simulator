@@ -53,7 +53,9 @@
     maxNativeZoom: 8
   }).addTo(map);
 
-  map.setMaxBounds([[-5, 95], [70, 185]]);
+  const SIM_MAX_BOUNDS = [[-5, 95], [70, 185]];
+  const HIST_MAX_BOUNDS = [[-20, 80], [75, 240]]; // full WP best-tracks (dateline / ET)
+  map.setMaxBounds(SIM_MAX_BOUNDS);
 
   // 引导黄/绿线专用 pane：z 高于 overlay(400)，避免被副高 SVG 填充盖住
   // （黄线在绿线南 0.15°，落在副高实体内侧，canvas 箭头层会被 SVG 副高盖死）
@@ -1426,6 +1428,8 @@
     if (map.hasLayer(layerGroups.sst)) map.removeLayer(layerGroups.sst);
     if (map.hasLayer(layerGroups.steer)) map.removeLayer(layerGroups.steer);
     if (!map.hasLayer(layerGroups.history)) layerGroups.history.addTo(map);
+    map.setMaxBounds(HIST_MAX_BOUNDS);
+    try { map.setMinZoom(2); } catch (e) { /* ignore */ }
 
     const clock = document.getElementById('clockBar');
     if (clock) clock.textContent = '台风纪录模式 · 1949–2026 西北太平洋（IBTrACS）· 只读 · 无副高/海温';
@@ -1456,6 +1460,8 @@
     if (!map.hasLayer(layerGroups.fugen)) layerGroups.fugen.addTo(map);
     if (!map.hasLayer(layerGroups.sst)) layerGroups.sst.addTo(map);
     if (!map.hasLayer(layerGroups.steer)) layerGroups.steer.addTo(map);
+    map.setMaxBounds(SIM_MAX_BOUNDS);
+    try { map.setMinZoom(3); } catch (e) { /* ignore */ }
     state.histData = null;
     state.histSelectedId = null;
 

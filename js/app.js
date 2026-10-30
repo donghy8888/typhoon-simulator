@@ -24,7 +24,7 @@
     timer: null,
     /** null = 跟随实时末端；数字 = 浏览 track[index]（只读，不改物理） */
     scrubIndex: null,
-    /** 副高脊线累计纬向漂移（°，正北负南）；滑条中位时近 0 */
+    /** 副高脊线累计纬向漂移（°，正北负南）；冷空气近中位时近 0 */
     ridgeLatOffset: 0,
     /** 'sim' | 'history' */
     mode: 'sim',
@@ -256,30 +256,43 @@
     }
   }
 
-  /** 冷空气强度滑条：0=弱 … 50=中 … 100=强（精细连续） */
-  const WESTERLY_MAX_DRIFT_DEG_PER_DAY = 0.45; // 极端 |率|
+  /**
+   * 冷空气强度：三段 5 日控制，每段 0–5（整数）。
+   * 0=弱→脊北漂，5=强→脊南漂；中位≈2.5（默认 3 近中）。
+   * 段内恒定；跨段可跳变。t∈[0,5)/[5,10)/[10,15)；≥15d 沿用 10–15 段。
+   */
+  const WESTERLY_MAX_DRIFT_DEG_PER_DAY = 0.45; // 极端 |率|（°/day）
   const WESTERLY_WOBBLE_AMP = 0.08;            // 近中位微摆 (°/day)
   const WESTERLY_WOBBLE_PERIOD_H = 72;         // ~3 天周期
   const WESTERLY_OFFSET_CLAMP = 8;            // 累计漂移上限 °
+  const COLD_SEG_MID = 2.5;                   // 0–5 标尺近中位
+  const COLD_SEG_IDS = ['coldSeg0', 'coldSeg1', 'coldSeg2'];
 
-  function westerlyNormFromUI() {
-    const el = document.getElementById('westerlyStrength');
-    const v = el ? parseFloat(el.value) : 50;
-    if (!isFinite(v)) return 0;
-    return clamp((v - 50) / 50, -1, 1); // -1 弱 … 0 中 … +1 强
+  /** 按模拟日选取冷空气段滑条 0–5 */
+  function coldAirLevelFromUI(hours) {
+    const days = (hours || 0) / 24;
+    let idx = 2;
+    if (days < 5) idx = 0;
+    else if (days < 10) idx = 1;
+    const el = document.getElementById(COLD_SEG_IDS[idx]);
+    const v = el ? parseFloat(el.value) : 3;
+    if (!isFinite(v)) return COLD_SEG_MID;
+    return clamp(v, 0, 5);
   }
 
-  function updateWesterlyStrengthLabel() {
-    const el = document.getElementById('westerlyStrength');
-    const lab = document.getElementById('westerlyStrengthVal');
-    if (!lab) return;
-    const v = el ? parseFloat(el.value) : 50;
-    if (!isFinite(v)) { lab.textContent = '中'; return; }
-    if (v <= 12) lab.textContent = '弱';
-    else if (v < 40) lab.textContent = '偏弱';
-    else if (v <= 60) lab.textContent = '中';
-    else if (v < 88) lab.textContent = '偏强';
-    else lab.textContent = '强';
+  /** 段等级 → 归一化 s∈[-1,1]：弱(−1)…中(0)…强(+1) */
+  function westerlyNormFromLevel(level) {
+    return clamp((level - COLD_SEG_MID) / COLD_SEG_MID, -1, 1);
+  }
+
+  function updateColdSegLabels() {
+    COLD_SEG_IDS.forEach(function (id) {
+      const el = document.getElementById(id);
+      const lab = document.getElementById(id + 'Val');
+      if (!el || !lab) return;
+      const v = parseFloat(el.value);
+      lab.textContent = isFinite(v) ? String(Math.round(v)) : '3';
+    });
   }
 
   /**
@@ -287,10 +300,10 @@
    * 不改 WNW / due-N / ENE 分区规则，只平移副高实体（绿/黄随脊）。
    */
   function ridgeDriftRateDegPerDay(hours) {
-    const s = westerlyNormFromUI();
+    const s = westerlyNormFromLevel(coldAirLevelFromUI(hours));
     // 弱(s=-1)→北；强(s=+1)→南
     let base = -s * WESTERLY_MAX_DRIFT_DEG_PER_DAY;
-    // 极近中位再压平，避免滑条噪声造成净漂
+    // 极近中位再压平（离散档难命中，保留兼容）
     if (Math.abs(s) < 0.06) base *= Math.abs(s) / 0.06;
     const midW = Math.exp(-(s * s) / (2 * 0.22 * 0.22));
     const wobble = WESTERLY_WOBBLE_AMP * Math.sin(2 * Math.PI * (hours || 0) / WESTERLY_WOBBLE_PERIOD_H) * midW;
@@ -1356,13 +1369,15 @@
     applyFugenMonth(false);
   };
 
-  (function wireWesterlyStrength() {
-    const el = document.getElementById('westerlyStrength');
-    if (!el) return;
-    function onChange() { updateWesterlyStrengthLabel(); }
-    el.addEventListener('input', onChange);
-    el.addEventListener('change', onChange);
-    updateWesterlyStrengthLabel();
+  (function wireColdAirSegments() {
+    function onChange() { updateColdSegLabels(); }
+    COLD_SEG_IDS.forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', onChange);
+      el.addEventListener('change', onChange);
+    });
+    updateColdSegLabels();
   })();
 
   // —— 台风纪录（历史模式）——

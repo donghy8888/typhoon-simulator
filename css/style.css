@@ -235,6 +235,15 @@ header.site-header .subtitle {
   margin: -4px 0 8px;
   padding: 0 52px 0 78px; /* align under slider between label and val */
 }
+.range-ends.cold-seg-ends {
+  padding: 0 40px 0 72px;
+}
+.form-row.cold-seg-row label {
+  width: 72px;
+}
+.form-row.cold-seg-row .val {
+  width: 28px;
+}
 .map-toolbar[hidden],
 #histStatus[hidden] { display: none !important; }
 

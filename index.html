@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261030g" />
+  <link rel="stylesheet" href="css/style.css?v=20261031a" />
 </head>
 <body>
   <header class="site-header">
@@ -84,12 +84,22 @@
             <option value="9">9月</option>
           </select>
         </div>
-        <div class="form-row">
-          <label for="westerlyStrength">冷空气强度</label>
-          <input type="range" id="westerlyStrength" min="0" max="100" value="50" step="1" />
-          <span class="val" id="westerlyStrengthVal">中</span>
+        <div class="form-row cold-seg-row">
+          <label for="coldSeg0">0–5天</label>
+          <input type="range" id="coldSeg0" min="0" max="5" value="3" step="1" />
+          <span class="val" id="coldSeg0Val">3</span>
         </div>
-        <div class="range-ends" aria-hidden="true">
+        <div class="form-row cold-seg-row">
+          <label for="coldSeg1">5–10天</label>
+          <input type="range" id="coldSeg1" min="0" max="5" value="3" step="1" />
+          <span class="val" id="coldSeg1Val">3</span>
+        </div>
+        <div class="form-row cold-seg-row">
+          <label for="coldSeg2">10–15天</label>
+          <input type="range" id="coldSeg2" min="0" max="5" value="3" step="1" />
+          <span class="val" id="coldSeg2Val">3</span>
+        </div>
+        <div class="range-ends cold-seg-ends" aria-hidden="true">
           <span>弱</span>
           <span>强</span>
         </div>
@@ -154,10 +164,10 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/land-mask-data.js?v=20261030g"></script>
-  <script src="js/geo.js?v=20261030g"></script>
-  <script src="js/physics.js?v=20261030g"></script>
-  <script src="js/history.js?v=20261030g"></script>
-  <script src="js/app.js?v=20261030g"></script>
+  <script src="js/land-mask-data.js?v=20261031a"></script>
+  <script src="js/geo.js?v=20261031a"></script>
+  <script src="js/physics.js?v=20261031a"></script>
+  <script src="js/history.js?v=20261031a"></script>
+  <script src="js/app.js?v=20261031a"></script>
 </body>
 </html>

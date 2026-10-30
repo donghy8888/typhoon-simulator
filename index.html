@@ -6,12 +6,11 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261030e" />
+  <link rel="stylesheet" href="css/style.css?v=20261030f" />
 </head>
 <body>
   <header class="site-header">
     <h1>西北太平洋台风模拟器</h1>
-    <p class="subtitle">西北太平洋热带气旋路径与强度 · 副高引导 · 简易业务台站</p>
   </header>
 
   <div class="layout">
@@ -20,17 +19,16 @@
       <section class="panel panel-mode" id="panel-mode">
         <h2 class="panel-title">工作模式 <span class="badge">台站</span></h2>
         <div class="btn-row tight mode-row">
-          <button type="button" class="primary mode-btn is-active" id="btnModeSim" title="台风路径与强度模拟">模拟</button>
-          <button type="button" class="secondary mode-btn" id="btnModeHistory" title="1949–2026 西北太平洋台风纪录">台风纪录</button>
+          <button type="button" class="primary mode-btn is-active" id="btnModeSim">模拟</button>
+          <button type="button" class="secondary mode-btn" id="btnModeHistory">台风纪录</button>
         </div>
       </section>
 
       <section class="panel" id="panel-init">
         <h2 class="panel-title">初始条件 <span class="badge">台风中心</span></h2>
-        <p class="hint" style="margin:0 0 0.6rem;font-size:0.85rem;color:#6a7a8a">点击地图放置台风中心</p>
         <div class="form-row">
           <label for="initWindGrade">风力等级</label>
-          <select id="initWindGrade" title="按中国风力等级设定初始强度">
+          <select id="initWindGrade">
             <option value="17.2">8级 (17.2 m/s)</option>
             <option value="20.8">9级 (20.8 m/s)</option>
             <option value="24.5">10级 (24.5 m/s)</option>
@@ -48,52 +46,55 @@
         </div>
         <div class="form-row">
           <label for="intensityScale">强度色阶</label>
-          <select id="intensityScale" title="路径圆点颜色：中国 CMA / 美国 NHC Saffir–Simpson">
-            <option value="cma" selected>中国 · TD绿→超强红</option>
-            <option value="sshws">美国 · TD/TS/Cat1–5</option>
+          <select id="intensityScale">
+            <option value="cma" selected>中国 · CMA</option>
+            <option value="sshws">美国 · SSHWS</option>
           </select>
         </div>
-        <p class="hint" id="intensityScaleHint" style="margin:0.25rem 0 0;font-size:0.78rem;color:#6a7a8a">路径圆点：CMA 绿蓝黄橙紫红</p>
       </section>
 
       <section class="panel panel-sticky" id="panel-run">
         <h2 class="panel-title">运行控制</h2>
         <div class="btn-row">
-          <button type="button" class="primary" id="btnStart" title="开始或继续模拟">开始</button>
-          <button type="button" class="secondary" id="btnPause" disabled title="暂停 / 继续">暂停</button>
-          <button type="button" class="secondary" id="btnReset" title="清空路径并回到待启动">重置</button>
+          <button type="button" class="primary" id="btnStart">开始</button>
+          <button type="button" class="secondary" id="btnPause" disabled>暂停</button>
+          <button type="button" class="secondary" id="btnReset">重置</button>
         </div>
         <div class="timeline-scrub" id="timelineScrub">
           <div class="timeline-head">
             <label for="scrubRange">时间轴</label>
             <span class="timeline-day" id="scrubDayLabel">Day 0</span>
           </div>
-          <input type="range" id="scrubRange" min="0" max="0" value="0" step="1" disabled
-                 title="拖动查看某一天的台风位置与风圈（浏览已生成路径，不改模拟）" />
+          <input type="range" id="scrubRange" min="0" max="0" value="0" step="1" disabled />
           <div class="timeline-ends">
             <span>Day 0</span>
             <span id="scrubMaxLabel">Day 0</span>
           </div>
-          <p class="hint timeline-hint" id="scrubHint">路径生成后可拖动回看风圈；拖动时暂停，按「开始」恢复实时</p>
         </div>
       </section>
-
-
 
       <section class="panel" id="panel-fugen">
         <h2 class="panel-title">副热带高压</h2>
         <div class="form-row">
           <label for="fugenMonth">气候月份</label>
-          <select id="fugenMonth" title="选择副高气候态；黄线随副高北缘季节北跳/南撤">
-            <option value="6">6月 · 黄线江南</option>
-            <option value="7" selected>7月 · 黄线黄淮</option>
-            <option value="8">8月 · 黄线华北</option>
-            <option value="9">9月 · 黄线南撤江南</option>
+          <select id="fugenMonth">
+            <option value="6">6月</option>
+            <option value="7" selected>7月</option>
+            <option value="8">8月</option>
+            <option value="9">9月</option>
           </select>
         </div>
-        <p class="hint" style="margin:0.35rem 0 0.55rem;font-size:0.8rem;color:#6a7a8a">黄线以南一整块副高；体内靠空圈进路；换月只改场，不自动开跑</p>
+        <div class="form-row">
+          <label for="westerlyStrength">西风带强度</label>
+          <input type="range" id="westerlyStrength" min="0" max="100" value="50" step="1" />
+          <span class="val" id="westerlyStrengthVal">中</span>
+        </div>
+        <div class="range-ends" aria-hidden="true">
+          <span>弱</span>
+          <span>强</span>
+        </div>
         <div class="btn-row tight">
-          <button type="button" class="secondary" id="btnResetFugen" title="恢复当前月份气候态副高">恢复本月默认</button>
+          <button type="button" class="secondary" id="btnResetFugen">恢复本月默认</button>
         </div>
         <div class="fugen-list" id="fugenList"></div>
       </section>
@@ -102,20 +103,20 @@
         <h2 class="panel-title">台风纪录 <span class="badge">IBTrACS</span></h2>
         <div class="form-row">
           <label for="histYear">年份</label>
-          <select id="histYear" title="选择年份（按年加载路径）"></select>
+          <select id="histYear"></select>
         </div>
         <div class="form-row">
           <label for="histStorm">台风</label>
-          <select id="histStorm" title="该年台风列表">
-            <option value="">（全部显示）</option>
+          <select id="histStorm">
+            <option value="">（全部）</option>
           </select>
         </div>
         <div class="btn-row tight">
-          <button type="button" class="secondary" id="btnHistFit" title="缩放到所选台风">定位</button>
-          <button type="button" class="secondary" id="btnHistClear" title="取消选中，显示该年全部台风">全部</button>
-          <button type="button" class="secondary" id="btnHistBack" title="返回模拟模式">返回模拟</button>
+          <button type="button" class="secondary" id="btnHistFit">定位</button>
+          <button type="button" class="secondary" id="btnHistClear">全部</button>
+          <button type="button" class="secondary" id="btnHistBack">返回模拟</button>
         </div>
-        <p class="hint" id="histStatus">只读 · 点选/下拉单台 · 无副高/海温叠层</p>
+        <p class="hint" id="histStatus" hidden></p>
         <div class="hist-meta" id="histMeta"></div>
       </section>
 
@@ -123,12 +124,10 @@
 
     <div class="map-wrap">
       <div id="map"></div>
-      <div class="map-toolbar" id="mapToolbar" title="操作提示">
-        操作：点击地图落点 · 选风力/副高 ·「开始」；或开「台风纪录」
-      </div>
-      <div class="clock-bar" id="clockBar">模拟时钟：未开始 · 点击地图放置台风后按「开始」</div>
+      <div class="map-toolbar" id="mapToolbar" hidden></div>
+      <div class="clock-bar" id="clockBar">模拟时钟：未开始</div>
       <div class="map-legend">
-        <div class="legend-title">图例 · 业务要素</div>
+        <div class="legend-title">图例</div>
         <div class="legend-sec legend-sim-only">环境场</div>
         <div class="legend-sim-only"><span class="swatch" style="background:#d35400;opacity:0.55"></span>副热带高压</div>
         <div class="legend-sim-only"><span class="swatch" style="background:transparent;border:2px solid #d68910"></span>SST 26.5℃</div>
@@ -155,10 +154,10 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/land-mask-data.js?v=20261030e"></script>
-  <script src="js/geo.js?v=20261030e"></script>
-  <script src="js/physics.js?v=20261030e"></script>
-  <script src="js/history.js?v=20261030e"></script>
-  <script src="js/app.js?v=20261030e"></script>
+  <script src="js/land-mask-data.js?v=20261030f"></script>
+  <script src="js/geo.js?v=20261030f"></script>
+  <script src="js/physics.js?v=20261030f"></script>
+  <script src="js/history.js?v=20261030f"></script>
+  <script src="js/app.js?v=20261030f"></script>
 </body>
 </html>

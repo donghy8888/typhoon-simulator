@@ -24,6 +24,8 @@
     timer: null,
     /** null = 跟随实时末端；数字 = 浏览 track[index]（只读，不改物理） */
     scrubIndex: null,
+    /** 副高脊线累计纬向漂移（°，正北负南）；滑条中位时近 0 */
+    ridgeLatOffset: 0,
     /** 'sim' | 'history' */
     mode: 'sim',
     histYear: null,
@@ -129,12 +131,6 @@
         return '<div><span class="swatch" style="background:' + it.hex +
           ';border-radius:50%"></span>' + it.text + '</div>';
       }).join('');
-    }
-    const hint = document.getElementById('intensityScaleHint');
-    if (hint) {
-      hint.textContent = scale === G.INTENSITY_SCALE_SSHWS
-        ? '路径圆点：NHC TD/TS/Cat1–5'
-        : '路径圆点：CMA 绿蓝黄橙紫红';
     }
   }
 
@@ -258,6 +254,73 @@
       ring[i][0] += dLon;
       ring[i][1] += dLat;
     }
+  }
+
+  /** 西风带强度滑条：0=弱 … 50=中 … 100=强（精细连续） */
+  const WESTERLY_MAX_DRIFT_DEG_PER_DAY = 0.45; // 极端 |率|
+  const WESTERLY_WOBBLE_AMP = 0.08;            // 近中位微摆 (°/day)
+  const WESTERLY_WOBBLE_PERIOD_H = 72;         // ~3 天周期
+  const WESTERLY_OFFSET_CLAMP = 8;            // 累计漂移上限 °
+
+  function westerlyNormFromUI() {
+    const el = document.getElementById('westerlyStrength');
+    const v = el ? parseFloat(el.value) : 50;
+    if (!isFinite(v)) return 0;
+    return clamp((v - 50) / 50, -1, 1); // -1 弱 … 0 中 … +1 强
+  }
+
+  function updateWesterlyStrengthLabel() {
+    const el = document.getElementById('westerlyStrength');
+    const lab = document.getElementById('westerlyStrengthVal');
+    if (!lab) return;
+    const v = el ? parseFloat(el.value) : 50;
+    if (!isFinite(v)) { lab.textContent = '中'; return; }
+    if (v <= 12) lab.textContent = '弱';
+    else if (v < 40) lab.textContent = '偏弱';
+    else if (v <= 60) lab.textContent = '中';
+    else if (v < 88) lab.textContent = '偏强';
+    else lab.textContent = '强';
+  }
+
+  /**
+   * 脊线纬向漂移率 (°/sim-day)：弱→北(+)、强→南(−)；近中位净漂移≈0 带微摆。
+   * 不改 WNW / due-N / ENE 分区规则，只平移副高实体（绿/黄随脊）。
+   */
+  function ridgeDriftRateDegPerDay(hours) {
+    const s = westerlyNormFromUI();
+    // 弱(s=-1)→北；强(s=+1)→南
+    let base = -s * WESTERLY_MAX_DRIFT_DEG_PER_DAY;
+    // 极近中位再压平，避免滑条噪声造成净漂
+    if (Math.abs(s) < 0.06) base *= Math.abs(s) / 0.06;
+    const midW = Math.exp(-(s * s) / (2 * 0.22 * 0.22));
+    const wobble = WESTERLY_WOBBLE_AMP * Math.sin(2 * Math.PI * (hours || 0) / WESTERLY_WOBBLE_PERIOD_H) * midW;
+    return base + wobble;
+  }
+
+  /** 对当前副高环施加 dLat，并原地更新多边形/顶点手柄 */
+  function applyRidgeLatDrift(dLat) {
+    if (!isFinite(dLat) || Math.abs(dLat) < 1e-12) return false;
+    const next = clamp((state.ridgeLatOffset || 0) + dLat, -WESTERLY_OFFSET_CLAMP, WESTERLY_OFFSET_CLAMP);
+    const applied = next - (state.ridgeLatOffset || 0);
+    if (Math.abs(applied) < 1e-12) return false;
+    state.ridgeLatOffset = next;
+    state.fugen.forEach(function (f) { translateRing(f.ring, 0, applied); });
+    state.fugen.forEach(function (f, idx) {
+      const poly = fugenPolygons[idx];
+      if (poly) applyPolyLatLngs(poly, f);
+    });
+    if (state.selectedFugen != null) {
+      const f = state.fugen[state.selectedFugen];
+      if (f) {
+        layerGroups.fugen.eachLayer(function (ly) {
+          if (ly instanceof L.Marker && ly._fugenVertexIndex != null) {
+            const pt = f.ring[ly._fugenVertexIndex];
+            if (pt) ly.setLatLng([pt[1], pt[0]]);
+          }
+        });
+      }
+    }
+    return true;
   }
 
   function redrawFugen(opts) {
@@ -460,7 +523,7 @@
     if (!state.fugen.length) {
       const empty = document.createElement('p');
       empty.className = 'hint';
-      empty.textContent = '暂无副高。可点「恢复本月默认」。';
+      empty.textContent = '无';
       el.appendChild(empty);
       return;
     }
@@ -1034,22 +1097,20 @@
     const timeStr = '第 ' + days + ' 天 ' + hrs + ' 小时' + (mins ? (' ' + mins + ' 分') : '');
 
     if (!state.members.length) {
-      clock.textContent = '模拟时钟：未开始 · 点击地图放置台风后按「开始」';
+      clock.textContent = '模拟时钟：未开始';
       return;
     }
 
     const m = state.members[0];
     let clockExtra = '';
     if (state.scrubIndex != null) {
-      clockExtra = '（回看 · 拖时间轴）';
+      clockExtra = '（回看）';
     } else if (!m.alive) {
       clockExtra = ' · 已消亡';
     } else if (state.paused) {
-      clockExtra = '（已暂停）';
+      clockExtra = '（暂停）';
     } else if (state.running) {
       clockExtra = '（运行中）';
-    } else {
-      clockExtra = ' · 已放置，选风力等级更新强度/风圈，按「开始」运行';
     }
     clock.textContent = '模拟时钟：' + timeStr + clockExtra;
   }
@@ -1099,6 +1160,10 @@
     const cfg = cfgFromUI();
     const main = state.members[0];
 
+    // 西风带强度 → 副高脊缓慢南北漂移（绿/黄随实体）
+    const driftRate = ridgeDriftRateDegPerDay(state.hours);
+    const drifted = applyRidgeLatDrift(driftRate * (dt / 24));
+
     const hadHole = !!state.hole;
     if (state.hole) {
       P.updateHole(state.hole, main.lon, main.lat, main.vmax);
@@ -1124,11 +1189,13 @@
     updateHoleVisualInPlace();
     updateStormInPlace();
     maybeRefreshSteerAfterTick(holePresenceChanged);
+    // 脊漂移会改绿/黄线与引导场；即使空圈已消失也要节流刷新
+    if (drifted) redrawSteerThrottled();
     updateStatus();
 
     if (!state.members[0].alive) {
       stopSim();
-      document.getElementById('clockBar').textContent += ' — 风力已低于7级，模拟结束';
+      document.getElementById('clockBar').textContent += ' · 结束';
     }
   }
 
@@ -1267,6 +1334,7 @@
   function applyFugenMonth(keepSelection) {
     const month = currentFugenMonth();
     state.fugen = G.fugenForMonth(month);
+    state.ridgeLatOffset = 0;
     if (!keepSelection) state.selectedFugen = null;
     state.hole = null;
     if (state.members && state.members[0]) {
@@ -1287,6 +1355,15 @@
   document.getElementById('btnResetFugen').onclick = () => {
     applyFugenMonth(false);
   };
+
+  (function wireWesterlyStrength() {
+    const el = document.getElementById('westerlyStrength');
+    if (!el) return;
+    function onChange() { updateWesterlyStrengthLabel(); }
+    el.addEventListener('input', onChange);
+    el.addEventListener('change', onChange);
+    updateWesterlyStrengthLabel();
+  })();
 
   // —— 台风纪录（历史模式）——
   const H = window.TyHistory;
@@ -1326,7 +1403,9 @@
 
   function setHistStatus(msg) {
     const el = document.getElementById('histStatus');
-    if (el) el.textContent = msg;
+    if (!el) return;
+    el.textContent = msg || '';
+    el.hidden = !msg;
   }
 
   function setHistMeta(data, selectedId) {
@@ -1430,9 +1509,9 @@
     try { map.setMinZoom(2); } catch (e) { /* ignore */ }
 
     const clock = document.getElementById('clockBar');
-    if (clock) clock.textContent = '台风纪录模式 · 1949–2026 西北太平洋（IBTrACS）· 只读 · 无副高/海温';
+    if (clock) clock.textContent = '台风纪录';
     const tb = document.getElementById('mapToolbar');
-    if (tb) tb.textContent = '纪录：选年份 → 点选/下拉单台高亮 · 再点或「全部」恢复 ·「返回模拟」';
+    if (tb) { tb.textContent = ''; tb.hidden = true; }
 
     populateHistYears();
     const yEl = document.getElementById('histYear');
@@ -1464,7 +1543,7 @@
     state.histSelectedId = null;
 
     const tb = document.getElementById('mapToolbar');
-    if (tb) tb.textContent = '操作：点击地图落点 · 选风力/副高 ·「开始」；或开「台风纪录」';
+    if (tb) { tb.textContent = ''; tb.hidden = true; }
     updateStormInPlace();
     updateStatus();
   }

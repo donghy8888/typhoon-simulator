@@ -35,7 +35,7 @@ header.site-header .subtitle {
 
 .layout {
   display: flex;
-  height: calc(100% - 58px);
+  height: calc(100% - 52px);
   min-height: 480px;
 }
 
@@ -226,6 +226,17 @@ header.site-header .subtitle {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
+
+.range-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #5a6f82;
+  margin: -4px 0 8px;
+  padding: 0 52px 0 78px; /* align under slider between label and val */
+}
+.map-toolbar[hidden],
+#histStatus[hidden] { display: none !important; }
 
 .btn-row {
   display: flex;

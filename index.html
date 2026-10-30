@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261031a" />
+  <link rel="stylesheet" href="css/style.css?v=20261031b" />
 </head>
 <body>
   <header class="site-header">
@@ -84,6 +84,14 @@
             <option value="9">9月</option>
           </select>
         </div>
+        <div class="btn-row tight">
+          <button type="button" class="secondary" id="btnResetFugen">恢复本月默认</button>
+        </div>
+        <div class="fugen-list" id="fugenList"></div>
+      </section>
+
+      <section class="panel" id="panel-cold">
+        <h2 class="panel-title">冷空气强度</h2>
         <div class="form-row cold-seg-row">
           <label for="coldSeg0">0–5天</label>
           <input type="range" id="coldSeg0" min="0" max="5" value="3" step="1" />
@@ -103,10 +111,6 @@
           <span>弱</span>
           <span>强</span>
         </div>
-        <div class="btn-row tight">
-          <button type="button" class="secondary" id="btnResetFugen">恢复本月默认</button>
-        </div>
-        <div class="fugen-list" id="fugenList"></div>
       </section>
 
       <section class="panel panel-history" id="panel-history">
@@ -164,10 +168,10 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/land-mask-data.js?v=20261031a"></script>
-  <script src="js/geo.js?v=20261031a"></script>
-  <script src="js/physics.js?v=20261031a"></script>
-  <script src="js/history.js?v=20261031a"></script>
-  <script src="js/app.js?v=20261031a"></script>
+  <script src="js/land-mask-data.js?v=20261031b"></script>
+  <script src="js/geo.js?v=20261031b"></script>
+  <script src="js/physics.js?v=20261031b"></script>
+  <script src="js/history.js?v=20261031b"></script>
+  <script src="js/app.js?v=20261031b"></script>
 </body>
 </html>

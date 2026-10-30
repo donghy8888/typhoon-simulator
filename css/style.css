@@ -64,6 +64,7 @@ header.site-header .subtitle {
 }
 .panel#panel-run { border-left-color: #1f7a3a; }
 .panel#panel-fugen { border-left-color: #c0392b; }
+.panel#panel-cold { border-left-color: #5d6d7e; }
 .panel#panel-init { border-left-color: #2a6ebb; }
 
 .panel-title {
@@ -574,7 +575,8 @@ footer.site-footer { display: none; }
 }
 body.mode-history #panel-init,
 body.mode-history #panel-run,
-body.mode-history #panel-fugen { display: none; }
+body.mode-history #panel-fugen,
+body.mode-history #panel-cold { display: none; }
 body.mode-history #panel-history { display: block; }
 body:not(.mode-history) #panel-history { display: none; }
 .hist-meta {

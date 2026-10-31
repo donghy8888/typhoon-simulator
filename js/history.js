@@ -7,7 +7,7 @@
   const YEAR_MIN = 1949;
   const YEAR_MAX = 2026;
   const DATA_BASE = 'data/ibtracs/wp';
-  const DATA_VER = '20261031c';
+  const DATA_VER = '20261031h';
 
   const cache = Object.create(null); // year -> payload
   let indexPromise = null;
@@ -226,6 +226,172 @@
     try { map.fitBounds(bounds.pad(0.2), { maxZoom: 6, animate: true }); } catch (e) { /* ignore */ }
   }
 
+  // —— 相似度（压缩索引 similarity-index.json）——
+  let simIndexPromise = null;
+  function loadSimilarityIndex() {
+    if (!simIndexPromise) {
+      simIndexPromise = fetchJson(DATA_BASE + '/similarity-index.json?v=' + DATA_VER).catch(function (e) {
+        simIndexPromise = null;
+        throw e;
+      });
+    }
+    return simIndexPromise;
+  }
+
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const toR = Math.PI / 180;
+    const dLat = (lat2 - lat1) * toR;
+    const dLon = (lon2 - lon1) * toR;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * toR) * Math.cos(lat2 * toR) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
+  /** Resample track [{lat,lon},...] to N points along cumulative distance. */
+  function resampleTrack(points, n) {
+    n = n || 16;
+    const pts = (points || []).filter(function (p) {
+      return p && isFinite(+p.lat) && isFinite(+p.lon);
+    });
+    if (!pts.length) return null;
+    if (pts.length === 1) {
+      const out = [];
+      for (let i = 0; i < n; i++) out.push([+pts[0].lat, +pts[0].lon]);
+      return out;
+    }
+    const dists = [0];
+    for (let i = 1; i < pts.length; i++) {
+      dists.push(dists[i - 1] + haversineKm(pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon));
+    }
+    const total = dists[dists.length - 1];
+    const out = [];
+    if (total < 1) {
+      for (let i = 0; i < n; i++) out.push([+pts[0].lat, +pts[0].lon]);
+      return out;
+    }
+    for (let k = 0; k < n; k++) {
+      const target = total * k / (n - 1);
+      let j = 0;
+      while (j < dists.length - 1 && dists[j + 1] < target) j++;
+      if (j >= pts.length - 1) {
+        out.push([+pts[pts.length - 1].lat, +pts[pts.length - 1].lon]);
+      } else {
+        const seg = dists[j + 1] - dists[j];
+        const f = seg < 1e-9 ? 0 : (target - dists[j]) / seg;
+        out.push([
+          pts[j].lat * (1 - f) + pts[j + 1].lat * f,
+          pts[j].lon * (1 - f) + pts[j + 1].lon * f
+        ]);
+      }
+    }
+    return out;
+  }
+
+  function peakVmaxFromTrack(points) {
+    let m = 0;
+    (points || []).forEach(function (p) {
+      const v = +p.vmax;
+      if (isFinite(v) && v > m) m = v;
+    });
+    return m;
+  }
+
+  /**
+   * Score: lower = more similar.
+   * mean track distance (km)/500 + |Δvmax|/40 + month-window penalty.
+   */
+  function scorePair(simPts, simVmax, hist, preferMonth) {
+    const hp = hist.p;
+    if (!simPts || !hp || simPts.length !== hp.length) return 1e9;
+    let sum = 0;
+    for (let i = 0; i < simPts.length; i++) {
+      sum += haversineKm(simPts[i][0], simPts[i][1], hp[i][0], hp[i][1]);
+    }
+    const meanKm = sum / simPts.length;
+    const trackTerm = meanKm / 500;
+    const vmaxTerm = Math.abs((simVmax || 0) - (hist.v || 0)) / 40;
+    let monthPen = 0;
+    if (preferMonth != null && hist.m != null) {
+      let dm = Math.abs(preferMonth - hist.m);
+      if (dm > 6) dm = 12 - dm;
+      if (dm >= 2) monthPen = 0.15 * (dm - 1);
+    }
+    const unnamed = (!hist.n || hist.n === 'UNNAMED' || hist.n === 'NOT_NAMED') ? 0.08 : 0;
+    return trackTerm + vmaxTerm + monthPen + unnamed;
+  }
+
+  /**
+   * Find best historical match for a simulated track.
+   * @returns Promise<match|null>
+   */
+  function findBestMatch(trackPoints, opts) {
+    opts = opts || {};
+    const preferMonth = opts.month != null ? (opts.month | 0) : null;
+    const simVmax = opts.maxVmax != null ? +opts.maxVmax : peakVmaxFromTrack(trackPoints);
+    return loadSimilarityIndex().then(function (idx) {
+      const nPts = (idx && idx.pts) || 16;
+      const simPts = resampleTrack(trackPoints, nPts);
+      if (!simPts) return null;
+      let best = null;
+      let bestScore = 1e9;
+      const storms = (idx && idx.storms) || [];
+      for (let i = 0; i < storms.length; i++) {
+        const h = storms[i];
+        if (!h.p || h.p.length !== nPts) continue;
+        if ((h.v || 0) < 17) continue;
+        const sc = scorePair(simPts, simVmax, h, preferMonth);
+        if (sc < bestScore) {
+          bestScore = sc;
+          best = h;
+        }
+      }
+      if (!best) return null;
+      const zh = chineseName({ name: best.n });
+      const labelCore = zh ? (best.y + ' ' + zh) : (best.y + ' ' + (best.n || 'UNNAMED'));
+      return {
+        id: best.id,
+        name: best.n,
+        year: best.y,
+        month: best.m,
+        maxVmax: best.v,
+        durationH: best.d,
+        fingerprint: best.p,
+        score: bestScore,
+        zh: zh,
+        label: labelCore,
+        labelText: '最像：' + labelCore
+      };
+    });
+  }
+
+  /** Draw a faint overlay of fingerprint / storm track onto layerGroup. */
+  function drawMatchOverlay(layerGroup, fingerprintOrStorm, opts) {
+    opts = opts || {};
+    if (!layerGroup) return;
+    layerGroup.clearLayers();
+    let latlngs = null;
+    if (fingerprintOrStorm && Array.isArray(fingerprintOrStorm) && fingerprintOrStorm.length &&
+        Array.isArray(fingerprintOrStorm[0])) {
+      latlngs = fingerprintOrStorm.map(function (p) { return [p[0], p[1]]; });
+    } else if (fingerprintOrStorm && fingerprintOrStorm.points) {
+      latlngs = fingerprintOrStorm.points.map(function (p) { return [p.lat, p.lon]; });
+    } else if (fingerprintOrStorm && fingerprintOrStorm.p) {
+      latlngs = fingerprintOrStorm.p.map(function (p) { return [p[0], p[1]]; });
+    } else if (fingerprintOrStorm && fingerprintOrStorm.fingerprint) {
+      latlngs = fingerprintOrStorm.fingerprint.map(function (p) { return [p[0], p[1]]; });
+    }
+    if (!latlngs || latlngs.length < 2) return;
+    L.polyline(latlngs, {
+      color: opts.color || '#5d6d7e',
+      weight: opts.weight || 2.5,
+      opacity: opts.opacity != null ? opts.opacity : 0.45,
+      dashArray: opts.dashArray || '6 8',
+      interactive: false
+    }).addTo(layerGroup);
+  }
+
   global.TyHistory = {
     YEAR_MIN: YEAR_MIN,
     YEAR_MAX: YEAR_MAX,
@@ -240,6 +406,11 @@
     stormLabel: stormLabel,
     chineseName: chineseName,
     stormMatchesQuery: stormMatchesQuery,
-    filterStorms: filterStorms
+    filterStorms: filterStorms,
+    loadSimilarityIndex: loadSimilarityIndex,
+    resampleTrack: resampleTrack,
+    findBestMatch: findBestMatch,
+    drawMatchOverlay: drawMatchOverlay,
+    peakVmaxFromTrack: peakVmaxFromTrack
   };
 })(typeof window !== 'undefined' ? window : globalThis);

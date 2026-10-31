@@ -31,7 +31,10 @@
     histYear: null,
     histSelectedId: null,
     histData: null,
-    histNameQuery: ''
+    histNameQuery: '',
+    /** 模拟结束后的历史相似匹配 */
+    simMatch: null,
+    _matchToken: 0
   };
 
   // —— 地图（Canvas 渲染，缩放更顺）——
@@ -75,7 +78,8 @@
     guides: L.layerGroup({ pane: 'guides' }).addTo(map),
     track: L.layerGroup().addTo(map),
     storm: L.layerGroup().addTo(map),
-    history: L.layerGroup() // 仅历史模式挂到地图
+    history: L.layerGroup(), // 仅历史模式挂到地图
+    matchHist: L.layerGroup() // 模拟结束后淡显相似历史路径
   };
 
   // 域边框
@@ -1141,6 +1145,7 @@
     state.lastPlace = { lon, lat };
     if (vmax == null) vmax = initVmaxFromGrade();
 
+    clearSimMatch();
     state.hole = P.ensureBirthHole(lon, lat, vmax, state.fugen);
     state.hours = 0;
     state.scrubIndex = null;
@@ -1210,6 +1215,7 @@
     if (!state.members[0].alive) {
       stopSim();
       document.getElementById('clockBar').textContent += ' · 结束';
+      runSimilarityMatch();
     }
   }
 
@@ -1227,6 +1233,8 @@
 
     // 回看只读：开始后回到实时末端继续积分
     state.scrubIndex = null;
+    clearSimMatch();
+    closeIntroPanel();
     state.running = true;
     state.paused = false;
     document.getElementById('btnStart').disabled = true;
@@ -1269,6 +1277,8 @@
     stopSim();
     if (_steerTimer) { clearTimeout(_steerTimer); _steerTimer = null; }
     if (_steerThrottleTimer) { clearTimeout(_steerThrottleTimer); _steerThrottleTimer = null; }
+    clearSimMatch();
+    closeIntroPanel();
     state.hours = 0;
     state.members = [];
     state.hole = null;
@@ -1383,6 +1393,117 @@
 
   // —— 台风纪录（历史模式）——
   const H = window.TyHistory;
+  const INTRO = window.TyIntros;
+
+  function clearMatchOverlay() {
+    if (layerGroups.matchHist) layerGroups.matchHist.clearLayers();
+    if (map.hasLayer(layerGroups.matchHist)) map.removeLayer(layerGroups.matchHist);
+  }
+
+  function hideMatchChip() {
+    const chip = document.getElementById('matchChip');
+    if (chip) chip.hidden = true;
+  }
+
+  function showMatchChip(labelText) {
+    const chip = document.getElementById('matchChip');
+    const btn = document.getElementById('matchChipBtn');
+    if (!chip || !btn) return;
+    btn.textContent = labelText || '最像：—';
+    chip.hidden = false;
+  }
+
+  function closeIntroPanel() {
+    const panel = document.getElementById('introPanel');
+    if (panel) panel.hidden = true;
+  }
+
+  function openIntroPanel(model) {
+    if (!model) return;
+    const panel = document.getElementById('introPanel');
+    const title = document.getElementById('introTitle');
+    const meta = document.getElementById('introMeta');
+    const text = document.getElementById('introText');
+    const dmg = document.getElementById('introDamage');
+    if (!panel) return;
+    if (title) title.textContent = model.title || '台风简介';
+    let metaHtml = '';
+    if (model.zh || model.name) {
+      metaHtml += '<strong>' + (model.zh || model.name) + '</strong>';
+      if (model.zh && model.name) metaHtml += '（' + model.name + '）';
+    }
+    if (model.year) metaHtml += (metaHtml ? ' · ' : '') + model.year + ' 年';
+    if (model.maxVmax != null) metaHtml += ' · 峰值 ' + Number(model.maxVmax).toFixed(0) + ' m/s';
+    if (meta) meta.innerHTML = metaHtml || '—';
+    if (text) text.textContent = model.intro || '';
+    if (dmg) dmg.textContent = model.damage || '破坏损失：暂无公开摘要';
+    panel.hidden = false;
+  }
+
+  function openIntroForStorm(storm, extras) {
+    if (!INTRO || !storm) return;
+    openIntroPanel(INTRO.buildPanelModel(storm, extras || {}));
+  }
+
+  function openIntroForMatch(match) {
+    if (!match) return;
+    // Prefer curated by IBTrACS id; fall back to auto from match metadata
+    if (INTRO) {
+      const fakeStorm = {
+        id: match.id,
+        name: match.name,
+        season: match.year,
+        maxVmax: match.maxVmax,
+        points: []
+      };
+      openIntroPanel(INTRO.buildPanelModel(fakeStorm, {
+        id: match.id,
+        name: match.name,
+        year: match.year,
+        maxVmax: match.maxVmax,
+        durationH: match.durationH
+      }));
+      return;
+    }
+    openIntroPanel({
+      title: match.label,
+      zh: match.zh,
+      name: match.name,
+      year: match.year,
+      maxVmax: match.maxVmax,
+      intro: (match.label || '') + '。峰值风速约 ' + (match.maxVmax != null ? Number(match.maxVmax).toFixed(0) + ' m/s' : '—') + '。',
+      damage: '破坏损失：暂无公开摘要'
+    });
+  }
+
+  function clearSimMatch() {
+    state.simMatch = null;
+    state._matchToken = (state._matchToken || 0) + 1;
+    hideMatchChip();
+    clearMatchOverlay();
+    if (state.mode !== 'history') closeIntroPanel();
+  }
+
+  function runSimilarityMatch() {
+    if (!H || typeof H.findBestMatch !== 'function') return;
+    if (state.mode !== 'sim') return;
+    const track = getMainTrack();
+    if (!track || track.length < 4) return;
+    const monthEl = document.getElementById('fugenMonth');
+    const month = monthEl ? (parseInt(monthEl.value, 10) || null) : null;
+    const maxV = H.peakVmaxFromTrack ? H.peakVmaxFromTrack(track) : null;
+    const token = (state._matchToken || 0) + 1;
+    state._matchToken = token;
+    H.findBestMatch(track, { month: month, maxVmax: maxV }).then(function (match) {
+      if (token !== state._matchToken) return; // stale
+      if (state.mode !== 'sim') return;
+      if (!match) return;
+      state.simMatch = match;
+      showMatchChip(match.labelText);
+      if (!map.hasLayer(layerGroups.matchHist)) layerGroups.matchHist.addTo(map);
+      H.drawMatchOverlay(layerGroups.matchHist, match, { opacity: 0.42, weight: 2.4 });
+    }).catch(function () { /* ignore */ });
+  }
 
   function populateHistYears() {
     const sel = document.getElementById('histYear');
@@ -1480,8 +1601,10 @@
     if (state.histSelectedId) {
       const s = (state.histData.storms || []).find(function (x) { return x.id === state.histSelectedId; });
       setHistStatus('已选中：' + (s && H ? H.stormLabel(s) : ((s && s.name) || 'UNNAMED')) + ' · 再点路径或「全部」可取消');
+      if (s) openIntroForStorm(s);
     } else {
       setHistStatus('只读 · IBTrACS WP · ' + (state.histYear || '') + ' 年 · 点选路径或下拉单台');
+      closeIntroPanel();
     }
   }
 
@@ -1620,6 +1743,8 @@
   function enterHistoryMode() {
     if (state.mode === 'history') return;
     stopSim();
+    clearSimMatch();
+    closeIntroPanel();
     state.mode = 'history';
     document.body.classList.add('mode-history');
     document.getElementById('btnModeSim').classList.remove('is-active');
@@ -1677,6 +1802,7 @@
     state._histJumping = false;
     const nq = document.getElementById('histNameQ');
     if (nq) nq.value = '';
+    closeIntroPanel();
 
     const tb = document.getElementById('mapToolbar');
     if (tb) { tb.textContent = ''; tb.hidden = true; }
@@ -1731,6 +1857,27 @@
       if (all.length >= 2) map.fitBounds(L.latLngBounds(all).pad(0.08), { maxZoom: 5, animate: true });
     } catch (e) { /* ignore */ }
   };
+
+  // 最像芯片 / 简介面板
+  (function wireIntroUi() {
+    const btn = document.getElementById('matchChipBtn');
+    if (btn) {
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        if (state.simMatch) openIntroForMatch(state.simMatch);
+      });
+    }
+    const closeBtn = document.getElementById('introClose');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        closeIntroPanel();
+      });
+    }
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') closeIntroPanel();
+    });
+  })();
 
   // 初始绘制
   redrawTerrain();

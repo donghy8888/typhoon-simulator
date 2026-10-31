@@ -1,7 +1,7 @@
 /**
  * 西北太平洋知名台风简介与破坏损失摘要（公开信息整理）
  * 键优先 IBTrACS sid；亦支持 "YEAR|NAME" 回退。
- * 无条目时由 UI 用路径元数据自动摘要，破坏损失显示「暂无公开摘要」——禁止臆造伤亡数字。
+ * 无条目时由 UI 用路径元数据自动摘要，破坏损失显示「本库暂未收录该台风的公开损失摘要」——禁止臆造伤亡数字。
  */
 (function (global) {
   'use strict';
@@ -420,15 +420,142 @@
     return String(year | 0) + '|' + String(name || '').toUpperCase().replace(/-/g, '');
   }
 
+  function keyYearZh(year, zh) {
+    return String(year | 0) + '|' + String(zh || '').trim();
+  }
+
+  /** IBTrACS English name for each curated SID (from similarity-index). */
+  const EN_BY_ID = {
+    '2024244N09137': 'YAGI',
+    '2024253N11148': 'BEBINCA',
+    '2024201N12133': 'GAEMI',
+    '2023201N13134': 'DOKSURI',
+    '2023207N09141': 'KHANUN',
+    '2023138N05151': 'MAWAR',
+    '2023234N18128': 'SAOLA',
+    '2023239N18144': 'HAIKUI',
+    '2023194N16123': 'TALIM',
+    '2023279N08157': 'BOLAVEN',
+    '2022239N22150': 'HINNAMNOR',
+    '2022247N26147': 'MUIFA',
+    '2022180N15117': 'CHABA',
+    '2022264N17132': 'NORU',
+    '2022254N24143': 'NANMADOL',
+    '2021197N17135': 'IN-FA',
+    '2021248N12141': 'CHANTHU',
+    '2021280N14137': 'KOMPASU',
+    '2020299N11144': 'GONI',
+    '2020234N19123': 'BAVI',
+    '2020239N13134': 'MAYSAK',
+    '2020244N25146': 'HAISHEN',
+    '2019214N15134': 'LEKIMA',
+    '2019278N16165': 'HAGIBIS',
+    '2018250N12170': 'MANGKHUT',
+    '2018226N23128': 'RUMBIA',
+    '2018239N11161': 'JEBI',
+    '2018294N08161': 'YUTU',
+    '2017232N19130': 'HATO',
+    '2016253N13144': 'MERANTI',
+    '2016288N06146': 'HAIMA',
+    '2016185N08145': 'NEPARTAK',
+    '2016211N11128': 'NIDA',
+    '2014190N08154': 'RAMMASUN',
+    '2014197N10137': 'MATMO',
+    '2013306N07162': 'HAIYAN',
+    '2013272N10135': 'FITOW',
+    '2013259N17132': 'USAGI',
+    '2013220N12137': 'UTOR',
+    '2013187N20156': 'SOULIK',
+    '2012215N23146': 'HAIKUI',
+    '2012201N15129': 'VICENTE',
+    '2012232N13141': 'BOLAVEN',
+    '2010285N13145': 'MEGI',
+    '2010256N17137': 'FANAPI',
+    '2006216N07151': 'SAOMAI',
+    '2006188N10143': 'BILIS',
+    '2004219N15137': 'RANANIM',
+    '2005268N19146': 'LONGWANG',
+    '2005211N09141': 'MATSA',
+    '2005192N22155': 'HAITANG',
+    '2015273N12130': 'MUJIGAE',
+    '2015211N13162': 'SOUDELOR',
+    '2015180N09160': 'CHAN-HOM',
+    '2015263N14148': 'DUJUAN',
+    '2011346N03156': 'WASHI',
+    '2001206N14134': 'TORAJI',
+    '2016230N25160': 'LIONROCK',
+    '2016269N15165': 'CHABA',
+    '2017236N15129': 'PAKHAR',
+    '2017304N11127': 'DAMREY',
+    '2014275N06166': 'VONGFONG',
+    '2014209N12152': 'HALONG',
+    '2014254N10142': 'KALMAEGI',
+    '2020129N07134': 'VONGFONG',
+    '2022285N17140': 'NESAT',
+    '2011266N13139': 'NESAT',
+    '2012225N16133': 'KAI-TAK',
+    '2012263N15141': 'JELAWAT',
+    '2019268N10155': 'MITAG',
+    '2019242N14180': 'FAXAI',
+    '2018271N06154': 'KONG-REY',
+    '2018263N12146': 'TRAMI',
+    '2015285N14151': 'KOPPU',
+    '2016355N07146': 'NOCK-TEN',
+    '2016287N12131': 'SARIKA',
+    '2005248N08142': 'KHANUN',
+    '2005237N14148': 'TALIM',
+    '2017252N14147': 'TALIM',
+    '2017284N15134': 'KHANUN'
+  };
+
   const BY_YEAR_NAME = Object.create(null);
-  // secondary index filled lazily from BY_ID when year/name known via lookup helpers
+  const BY_NAME_ONLY = Object.create(null); // upper EN or zh → entry, only if unique
+
+  (function buildYearNameIndex() {
+    const nameHits = Object.create(null); // key → count
+    const nameFirst = Object.create(null); // key → entry
+    Object.keys(BY_ID).forEach(function (id) {
+      const e = BY_ID[id];
+      const y = parseInt(id.slice(0, 4), 10);
+      if (!isFinite(y)) return;
+      const en = EN_BY_ID[id] || e.en || null;
+      if (en) {
+        BY_YEAR_NAME[keyYearName(y, en)] = e;
+        const uk = String(en).toUpperCase().replace(/-/g, '');
+        nameHits[uk] = (nameHits[uk] || 0) + 1;
+        if (!nameFirst[uk]) nameFirst[uk] = e;
+      }
+      if (e.zh) {
+        BY_YEAR_NAME[keyYearZh(y, e.zh)] = e;
+        const zk = e.zh.trim();
+        nameHits[zk] = (nameHits[zk] || 0) + 1;
+        if (!nameFirst[zk]) nameFirst[zk] = e;
+      }
+    });
+    Object.keys(nameHits).forEach(function (k) {
+      if (nameHits[k] === 1) BY_NAME_ONLY[k] = nameFirst[k];
+    });
+  })();
 
   function getCurated(id, year, name) {
     if (id && BY_ID[id]) return BY_ID[id];
     if (year != null && name) {
-      const k = keyYearName(year, name);
-      if (BY_YEAR_NAME[k]) return BY_YEAR_NAME[k];
-      // scan BY_ID values is useless without year; try match via global name table only for zh
+      const raw = String(name).trim();
+      if (!raw) return null;
+      // year|ENGLISH
+      const kEn = keyYearName(year, raw);
+      if (BY_YEAR_NAME[kEn]) return BY_YEAR_NAME[kEn];
+      // year|中文名
+      const kZh = keyYearZh(year, raw);
+      if (BY_YEAR_NAME[kZh]) return BY_YEAR_NAME[kZh];
+    }
+    // optional fuzzy: name only (no year), unique curated EN/zh match
+    if (name && (year == null || year === '')) {
+      const raw = String(name).trim();
+      if (!raw) return null;
+      const uk = raw.toUpperCase().replace(/-/g, '');
+      if (BY_NAME_ONLY[uk]) return BY_NAME_ONLY[uk];
+      if (BY_NAME_ONLY[raw]) return BY_NAME_ONLY[raw];
     }
     return null;
   }
@@ -470,7 +597,7 @@
       title: title,
       zh: zh,
       intro: intro,
-      damage: '破坏损失：暂无公开摘要',
+      damage: '破坏损失：本库暂未收录该台风的公开损失摘要',
       curated: false
     };
   }
@@ -516,6 +643,7 @@
 
   global.TyIntros = {
     BY_ID: BY_ID,
+    BY_YEAR_NAME: BY_YEAR_NAME,
     getCurated: getCurated,
     autoSummary: autoSummary,
     buildPanelModel: buildPanelModel,

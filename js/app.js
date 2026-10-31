@@ -1436,7 +1436,7 @@
     if (model.maxVmax != null) metaHtml += ' · 峰值 ' + Number(model.maxVmax).toFixed(0) + ' m/s';
     if (meta) meta.innerHTML = metaHtml || '—';
     if (text) text.textContent = model.intro || '';
-    if (dmg) dmg.textContent = model.damage || '破坏损失：暂无公开摘要';
+    if (dmg) dmg.textContent = model.damage || '破坏损失：本库暂未收录该台风的公开损失摘要';
     panel.hidden = false;
   }
 
@@ -1472,7 +1472,7 @@
       year: match.year,
       maxVmax: match.maxVmax,
       intro: (match.label || '') + '。峰值风速约 ' + (match.maxVmax != null ? Number(match.maxVmax).toFixed(0) + ' m/s' : '—') + '。',
-      damage: '破坏损失：暂无公开摘要'
+      damage: '破坏损失：本库暂未收录该台风的公开损失摘要'
     });
   }
 

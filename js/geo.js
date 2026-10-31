@@ -27,8 +27,9 @@
 
   /**
    * 山地多边形 [lat, lon] — 与 OSM / 陆掩码同为 WGS84。
-   * mountain-data.js：terrarium z8 台湾≥800m（脊线）+ 华南≥550m；
-   * z7 日/菲/韩/海南；仅北方 NE Range/mtn。inset 去域边假墙。
+   * mountain-data.js：terrarium mosaic dual-thresh+closing
+   * （台湾 core≥750/corr≥580；华南 core≥550/corr≥400）+ z7 岛屿；
+   * 仅北方 NE Range/mtn。inset 去域边假墙。
    */
   const _mtn = (typeof global !== 'undefined' && global.TY_MOUNTAIN_MASK) ||
     (typeof globalThis !== 'undefined' && globalThis.TY_MOUNTAIN_MASK) ||

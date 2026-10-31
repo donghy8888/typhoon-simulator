@@ -2,17 +2,20 @@
 """
 Regenerate js/mountain-data.js aligned to OSM (WGS84).
 
-Fixes vs elev≥550 z6 full-basin and vs NE southern Range blobs:
+Problem history:
   - Full-basin low-threshold elev painted Loess/plateaus + clip walls.
   - NE 10m Nan Ling / Wuyi polys are coarse blobs that sit on plains.
-  - Taiwan needs ridge-only (中央山脉), not the whole island.
+  - Taiwan ≥800m ridge-only left isolated summit islands (peaks, not belts).
+  - South China ≥550m without closing also fragmented into peak fields.
 
 Approach:
-  1. Terrarium elev, contour-polygonized (skimage), mercator-correct:
-       • Taiwan z8 ≥800m  (ridge / east-central only)
-       • South China z8 ≥550m (武夷/南岭/闽西 actual terrain)
-       • Japan / PH / KR / Hainan / Changbai z7 ≥550m
-  2. NE 10m Range/mtn only NORTH of ~31.5N (Taihang/Qinling/Dabie/…)
+  1. Terrarium elev mosaicked per window (not per-tile contours) so ridges
+     can connect across tile seams, then dual-threshold + morphological
+     closing before polygonize:
+       • Taiwan z8: corridor ≥580m closed (r=4) ∪ core ≥750m
+       • South China z8: corridor ≥400m closed (r=6) ∪ core ≥550m
+       • Japan / PH / KR / Hainan / Changbai z7 with light closing
+  2. NE 10m Range/mtn only NORTH of ~30.5N (Taihang/Qinling/Dabie/…)
      — never Nan Ling / Wuyi (too blocky for OSM).
   3. ∩ NE land ∩ inset basin clip (no domain-edge walls).
 """
@@ -32,6 +35,7 @@ try:
     from shapely.geometry import Polygon, box, shape
     from shapely.ops import unary_union
     from skimage import measure
+    from skimage.morphology import closing, disk
 except ImportError as e:
     sys.exit(f"Need pyshp+shapely+numpy+Pillow+skimage: {e}")
 
@@ -43,33 +47,33 @@ TILE_DIR = Path("/tmp/ne/terrarium")
 
 LON0, LON1, LAT0, LAT1 = 108.0, 148.0, 10.0, 42.0
 INSET = 0.08
-SIMPLIFY_ELEV = 0.006
+SIMPLIFY_ELEV = 0.005
 SIMPLIFY_NE = 0.015
 MIN_AREA = 0.010
-MIN_AREA_ISLAND = 0.003
+MIN_AREA_ISLAND = 0.0025
 
-# (lon0, lon1, lat0, lat1, z, thresh_m, label)
-# shapely box = box(lon0, lat0, lon1, lat1)
+# (lon0, lon1, lat0, lat1, z, core_m, corridor_m, close_r, label)
+# corridor ≤ core; closing merges nearby corridor pixels into ridge belts;
+# final mask = close(elev≥corridor) ∪ (elev≥core). Plains stay below corridor.
 ELEV_WINDOWS = [
-    # Taiwan 中央山脉 — high thresh so western plain stays clear
-    (119.2, 122.3, 21.6, 25.6, 8, 800.0, "taiwan"),
-    # 华南 / 武夷 / 南岭 / 闽西 — z8 follows OSM terrain, not NE blobs
-    (108.0, 120.2, 21.5, 30.2, 8, 550.0, "southchina"),
+    # Taiwan 中央山脉 — reconnect ridge without western plain
+    (119.2, 122.3, 21.6, 25.6, 8, 750.0, 580.0, 4, "taiwan"),
+    # 华南 / 武夷 / 南岭 / 戴云 / 闽西 — connected belts, not peak field
+    (108.0, 120.2, 21.5, 30.2, 8, 550.0, 400.0, 6, "southchina"),
     # Japan main
-    (128.0, 146.5, 30.0, 41.95, 7, 550.0, "japan"),
+    (128.0, 146.5, 30.0, 41.95, 7, 550.0, 500.0, 2, "japan"),
     # Ryukyu fringe
-    (123.5, 131.2, 24.0, 31.2, 7, 550.0, "ryukyu"),
+    (123.5, 131.2, 24.0, 31.2, 7, 550.0, 500.0, 1, "ryukyu"),
     # Philippines
-    (118.0, 126.8, 10.0, 20.6, 7, 550.0, "philippines"),
+    (118.0, 126.8, 10.0, 20.6, 7, 550.0, 500.0, 2, "philippines"),
     # S Korea / Jeju / Taebaek
-    (125.5, 130.0, 33.0, 38.9, 7, 550.0, "korea"),
+    (125.5, 130.0, 33.0, 38.9, 7, 550.0, 500.0, 2, "korea"),
     # Hainan
-    (108.55, 111.15, 18.05, 20.15, 7, 550.0, "hainan"),
+    (108.55, 111.15, 18.05, 20.15, 7, 550.0, 480.0, 2, "hainan"),
     # Changbai / Baekdu
-    (127.3, 129.5, 40.6, 41.95, 7, 700.0, "changbai"),
+    (127.3, 129.5, 40.6, 41.95, 7, 700.0, 600.0, 2, "changbai"),
 ]
 
-# NE Range/mtn names allowed (northern / inland). Exclude southern blocky ones.
 NE_KEEP = {
     "Taihang Mts.",
     "Lüliang Mts.",
@@ -78,9 +82,10 @@ NE_KEEP = {
     "Hamgyong Mts.",
     "Yin Mts.",
 }
-NE_MIN_LAT = 30.5  # drop any NE fragment south of this even if named
+NE_MIN_LAT = 30.5
 
 TILE_BASE = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium"
+TILE_PX = 256
 
 
 def lonlat_to_tile(lon: float, lat: float, z: int) -> tuple[float, float]:
@@ -135,39 +140,51 @@ def download_tiles(z: int, tx0: int, tx1: int, ty0: int, ty1: int) -> None:
                 print(f"  WARN fetch failed: {e}", flush=True)
 
 
-def contour_polys_for_tile(z: int, tx: int, ty: int, thresh: float, clip_geom) -> list:
+def load_elev_tile(z: int, tx: int, ty: int) -> np.ndarray | None:
     dest = TILE_DIR / f"{z}_{tx}_{ty}.png"
     if not dest.exists():
-        return []
-    lon0, lat_s, lon1, lat_n = tile_bounds(tx, ty, z)
-    tile_box = box(lon0, lat_s, lon1, lat_n)
-    if not tile_box.intersects(clip_geom):
-        return []
-
+        return None
     img = np.asarray(Image.open(dest).convert("RGB"), dtype=np.float64)
-    elev = img[:, :, 0] * 256.0 + img[:, :, 1] + img[:, :, 2] / 256.0 - 32768.0
-    h, w = elev.shape
-    mask = (elev >= thresh).astype(np.float64)
+    return img[:, :, 0] * 256.0 + img[:, :, 1] + img[:, :, 2] / 256.0 - 32768.0
 
-    # Zero pixels outside clip window (mercator-correct lat)
-    n = 2**z
-    rows = np.arange(h)
-    ty_pix = ty + (rows + 0.5) / h
-    lats = np.degrees(np.arctan(np.sinh(np.pi * (1 - 2 * ty_pix / n))))
-    lons = lon0 + (np.arange(w) + 0.5) / w * (lon1 - lon0)
-    # coarse bbox reject then shapely for edge tiles is expensive; use window bbox
-    minx, miny, maxx, maxy = clip_geom.bounds
-    inside = (
-        (lons[None, :] >= minx)
-        & (lons[None, :] <= maxx)
-        & (lats[:, None] >= miny)
-        & (lats[:, None] <= maxy)
-    )
-    mask = np.where(inside, mask, 0.0)
+
+def mosaic_elev(z: int, tx0: int, tx1: int, ty0: int, ty1: int) -> np.ndarray:
+    """Stitch terrarium tiles into one elev grid (row=ty, col=tx). Missing → -32768."""
+    nrows = (ty1 - ty0 + 1) * TILE_PX
+    ncols = (tx1 - tx0 + 1) * TILE_PX
+    elev = np.full((nrows, ncols), -32768.0, dtype=np.float64)
+    for ty in range(ty0, ty1 + 1):
+        for tx in range(tx0, tx1 + 1):
+            tile = load_elev_tile(z, tx, ty)
+            if tile is None:
+                continue
+            r0 = (ty - ty0) * TILE_PX
+            c0 = (tx - tx0) * TILE_PX
+            elev[r0 : r0 + TILE_PX, c0 : c0 + TILE_PX] = tile
+    return elev
+
+
+def contour_mask(
+    mask: np.ndarray,
+    z: int,
+    tx0: int,
+    ty0: int,
+    ntiles_x: int,
+    ntiles_y: int,
+) -> list:
+    """Polygonize boolean mask; pixel → lon/lat via mosaic tile origin."""
     if not mask.any():
         return []
+    h, w = mask.shape
+    # Mosaic spans [tx0 .. tx0+ntiles_x) × [ty0 .. ty0+ntiles_y)
+    n = 2**z
+    lon_w0 = tx0 / n * 360.0 - 180.0
+    lon_w1 = (tx0 + ntiles_x) / n * 360.0 - 180.0
 
-    padded = np.pad(mask, 1, mode="constant")
+    def ty_to_lat(ty_f: float) -> float:
+        return math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * ty_f / n))))
+
+    padded = np.pad(mask.astype(np.float64), 1, mode="constant")
     contours = measure.find_contours(padded, 0.5)
     polys = []
     for contour in contours:
@@ -177,9 +194,9 @@ def contour_polys_for_tile(z: int, tx: int, ty: int, thresh: float, clip_geom) -
         for r_pad, c_pad in contour:
             r = r_pad - 1
             c = c_pad - 1
-            lon = lon0 + (c / w) * (lon1 - lon0)
-            ty_f = ty + (r / h)
-            lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * ty_f / n))))
+            lon = lon_w0 + (c / w) * (lon_w1 - lon_w0)
+            ty_f = ty0 + (r / h) * ntiles_y
+            lat = ty_to_lat(ty_f)
             coords.append((lon, lat))
         if coords[0] != coords[-1]:
             coords.append(coords[0])
@@ -196,30 +213,65 @@ def contour_polys_for_tile(z: int, tx: int, ty: int, thresh: float, clip_geom) -
 
 
 def elev_for_window(w) -> object:
-    lon0, lon1, lat0, lat1, z, thresh, label = w
+    lon0, lon1, lat0, lat1, z, core_m, corr_m, close_r, label = w
     clip = win_box(w)
     x0, y1 = lonlat_to_tile(lon0, lat0, z)
     x1, y0 = lonlat_to_tile(lon1, lat1, z)
     tx0, tx1 = int(math.floor(min(x0, x1))), int(math.floor(max(x0, x1)))
     ty0, ty1 = int(math.floor(min(y0, y1))), int(math.floor(max(y0, y1)))
+    ntiles_x = tx1 - tx0 + 1
+    ntiles_y = ty1 - ty0 + 1
     print(
-        f"  window {label}: z{z} thr>={thresh:.0f}m tiles "
-        f"x[{tx0}..{tx1}] y[{ty0}..{ty1}]",
+        f"  window {label}: z{z} core>={core_m:.0f}m corridor>={corr_m:.0f}m "
+        f"close_r={close_r} tiles x[{tx0}..{tx1}] y[{ty0}..{ty1}]",
         flush=True,
     )
     download_tiles(z, tx0, tx1, ty0, ty1)
-    parts = []
-    for ty in range(ty0, ty1 + 1):
-        for tx in range(tx0, tx1 + 1):
-            parts.extend(contour_polys_for_tile(z, tx, ty, thresh, clip))
-    if not parts:
+    elev = mosaic_elev(z, tx0, tx1, ty0, ty1)
+    h, ww = elev.shape
+    n = 2**z
+
+    # Zero outside window bbox (mercator-correct lat)
+    rows = np.arange(h)
+    cols = np.arange(ww)
+    ty_pix = ty0 + (rows + 0.5) / h * ntiles_y
+    lats = np.degrees(np.arctan(np.sinh(np.pi * (1 - 2 * ty_pix / n))))
+    lon_w0 = tx0 / n * 360.0 - 180.0
+    lon_w1 = (tx0 + ntiles_x) / n * 360.0 - 180.0
+    lons = lon_w0 + (cols + 0.5) / ww * (lon_w1 - lon_w0)
+    minx, miny, maxx, maxy = clip.bounds
+    inside = (
+        (lons[None, :] >= minx)
+        & (lons[None, :] <= maxx)
+        & (lats[:, None] >= miny)
+        & (lats[:, None] <= maxy)
+    )
+
+    core = (elev >= core_m) & inside
+    corridor = (elev >= corr_m) & inside
+    if close_r > 0:
+        closed = closing(corridor, disk(close_r))
+    else:
+        closed = corridor
+    # Bridge nearby corridor peaks into ridge belts; always keep true cores
+    mask = closed | core
+    if not mask.any():
         print(f"  window {label}: EMPTY", flush=True)
+        return Polygon()
+
+    parts = contour_mask(mask, z, tx0, ty0, ntiles_x, ntiles_y)
+    if not parts:
+        print(f"  window {label}: EMPTY contours", flush=True)
         return Polygon()
     u = make_valid(unary_union(parts))
     u = make_valid(u.intersection(clip))
     u = make_valid(u.simplify(SIMPLIFY_ELEV, preserve_topology=True))
     npoly = sum(1 for _ in iter_polys(u))
-    print(f"  window {label}: area={u.area:.3f} polys≈{npoly}", flush=True)
+    print(
+        f"  window {label}: area={u.area:.3f} polys≈{npoly} "
+        f"mask_px={int(mask.sum())} closed_px={int(closed.sum())} core_px={int(core.sum())}",
+        flush=True,
+    )
     return u
 
 
@@ -235,7 +287,6 @@ def ne_northern_ranges(clip) -> object:
         if name not in NE_KEEP:
             continue
         inter = make_valid(shape(sr.shape.__geo_interface__)).intersection(clip)
-        # Keep only the part north of NE_MIN_LAT
         inter = make_valid(inter.intersection(box(LON0, NE_MIN_LAT, LON1, LAT1)))
         if not inter.is_empty:
             parts.append(inter)
@@ -269,6 +320,37 @@ def taiwan_centroid(elev_geom) -> tuple[float, float] | None:
     return round(c.x, 2), round(c.y, 2)
 
 
+def sample_checks(combined) -> None:
+    """Sanity samples before writing (lon, lat, expect_mtn, label)."""
+    pts = [
+        (120.65, 24.15, False, "Taichung plain"),
+        (120.20, 22.99, False, "Tainan plain"),
+        (121.00, 23.50, True, "Central ridge"),
+        (120.95, 23.47, True, "Yushan area"),
+        (121.39, 24.39, True, "Xueshan area"),
+        (118.08, 24.48, False, "Xiamen"),
+        (118.60, 24.90, False, "Quanzhou"),
+        (113.26, 23.13, False, "Pearl / Guangzhou"),
+        (119.30, 26.08, False, "Fuzhou plain"),
+        (117.95, 27.75, True, "Wuyi"),
+        (118.60, 25.65, True, "Daiyun"),
+        (113.00, 25.00, True, "Nanling"),
+        (121.55, 25.03, False, "Taipei basin-ish"),
+    ]
+    print("sample checks:", flush=True)
+    for lon, lat, expect, label in pts:
+        hit = combined.contains(shape({"type": "Point", "coordinates": [lon, lat]}))
+        # shapely Point
+        from shapely.geometry import Point
+
+        hit = combined.contains(Point(lon, lat))
+        ok = "OK" if hit == expect else "FAIL"
+        print(
+            f"  [{ok}] {label}: ({lon},{lat}) mountain={hit} expect={expect}",
+            flush=True,
+        )
+
+
 def main() -> None:
     if not LAND_SHP.exists() or not RANGE_SHP.exists():
         sys.exit(f"Missing {LAND_SHP} or {RANGE_SHP}")
@@ -276,14 +358,14 @@ def main() -> None:
     clip = box(LON0, LAT0, LON1, LAT1)
     inset = box(LON0 + INSET, LAT0 + INSET, LON1 - INSET, LAT1 - INSET)
 
-    print("building elev windows…", flush=True)
+    print("building elev windows (mosaic + dual-thresh + closing)…", flush=True)
     elev_parts = []
     tw_geom = Polygon()
     for w in ELEV_WINDOWS:
         g = elev_for_window(w)
         if not g.is_empty:
             elev_parts.append(g)
-            if w[6] == "taiwan":
+            if w[8] == "taiwan":
                 tw_geom = g
 
     print("building NE northern ranges…", flush=True)
@@ -299,6 +381,23 @@ def main() -> None:
     if tw_c:
         print(f"Taiwan mountain centroid ≈ {tw_c[0]}E, {tw_c[1]}N", flush=True)
 
+    sample_checks(combined)
+
+    # Connectivity: Taiwan should be few large polys, not dozens of peaks
+    tw_box = box(119.5, 21.8, 122.2, 25.5)
+    tw_parts = list(iter_polys(combined.intersection(tw_box)))
+    tw_parts = [p for p in tw_parts if p.area >= 0.001]
+    sc_box = box(108.0, 21.5, 120.2, 30.2)
+    sc_parts = list(iter_polys(combined.intersection(sc_box)))
+    sc_parts = [p for p in sc_parts if p.area >= 0.001]
+    print(
+        f"connectivity: Taiwan polys≥0.001={len(tw_parts)} "
+        f"largest={max((p.area for p in tw_parts), default=0):.3f}; "
+        f"SouthChina polys≥0.001={len(sc_parts)} "
+        f"largest={max((p.area for p in sc_parts), default=0):.3f}",
+        flush=True,
+    )
+
     final = []
     for p in iter_polys(combined):
         c = p.centroid
@@ -307,7 +406,7 @@ def main() -> None:
             or (108.5 < c.x < 111.5 and c.y < 20.5)
             or (119 < c.x < 122.5 and 21 < c.y < 26)
             or (125 < c.x < 131 and 33 < c.y < 39)
-            or (108 < c.x < 120.5 and 21.5 < c.y < 30.5)  # south china detail
+            or (108 < c.x < 120.5 and 21.5 < c.y < 30.5)
         )
         amin = MIN_AREA_ISLAND if islandish else MIN_AREA
         if p.area >= amin:
@@ -339,8 +438,9 @@ def main() -> None:
         bboxes.append([min(lons), min(lats), max(lons), max(lats)])
 
     src = (
-        "terrarium elev z8 TW≥800m+SC≥550m / z7 islands≥550m "
-        "∪ NE northern Range/mtn / WGS84 inset=0.08"
+        "terrarium elev mosaic dual-thresh+closing "
+        "TW core≥750/corr≥580r4 SC core≥550/corr≥400r6 "
+        "/ z7 islands ∪ NE northern Range/mtn / WGS84 inset=0.08"
     )
     js = (
         "/** Auto-generated mountain polygons (WGS84), same CRS as OSM basemap.\n"

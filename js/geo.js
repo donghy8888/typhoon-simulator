@@ -467,7 +467,7 @@
   const WIND_CIRCLE_SCALE = 1.2; // ~20% larger display rings (was 1.0)
   function windRadiiForGrades(vmaxMs) {
     // 只有达到该风力等级才显示对应风圈（蒲福：7≥13.9，10≥24.5，12≥32.7 m/s）
-    // radiusDeg = 方位平均半径；实际包络由 windEnvelopeLatLngs / windRadiusAtRay 做 NH 非对称
+    // radiusDeg = 方位平均半径；实际包络由四地理象限常半径（CMA 阶梯风圈）
     const r7 = windRadiusDeg(vmaxMs) * WIND_CIRCLE_SCALE;
     const out = [];
     if (vmaxMs >= 13.9) {
@@ -504,37 +504,86 @@
   }
 
   /**
-   * 方位半径：α = ray − heading（同 atan2 自北向东）。
-   * 峰在运动右侧：α = +π/2（heading+90° 顺时针）；谷在左侧 α = −π/2。
-   * 例：往 NW → 鼓向 NE；往 N → 鼓向 E；往 NE → 鼓向 SE（CMA 风圈）。
-   * r(α) = r0 · (1 + A · cos(α − π/2))  ≡  r0 · (1 + A · sin(α))
-   * （旧版 cos(α−π/4) 右前峰已废弃）
+   * CMA 风圈：地理四象限（NE/SE/SW/NW）分段常半径，非光滑椭圆。
+   * 射线约定：自正北向东 atan2(east, north)；象限边界在 N/E/S/W。
+   * 0=NE [0,π/2)，1=SE [π/2,π)，2=SW [π,3π/2)，3=NW [3π/2,2π)。
    */
-  function windRadiusAtRay(meanRadiusDeg, headingRad, rayRad, amp) {
-    const alpha = rayRad - headingRad;
-    return meanRadiusDeg * (1 + amp * Math.cos(alpha - Math.PI / 2));
+  const WIND_QUAD_MIDS = [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4];
+  const WIND_QUAD_STARTS = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+
+  function windGeoQuadrant(rayRad) {
+    let a = rayRad % (Math.PI * 2);
+    if (a < 0) a += Math.PI * 2;
+    if (a < Math.PI / 2) return 0;
+    if (a < Math.PI) return 1;
+    if (a < 3 * Math.PI / 2) return 2;
+    return 3;
   }
 
-  /** 非对称风圈包络折线 [lat,lon]…（闭合）；nPts 默认 48 */
+  /**
+   * 四象限半径 [rNE,rSE,rSW,rNW]。
+   * 各象限取中线角，用右舷峰公式：r = r0·(1+A·cos(mid−heading−π/2))。
+   * 峰在 heading+90°（运动右侧）；停滞 A≈0 → 四象限相等≈圆。
+   * 例：往 NW → NE 最大、SW 最小；往 N → NE+SE 东侧鼓。
+   */
+  function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
+    const r0 = +meanRadiusDeg || 0;
+    const A = +amp || 0;
+    const h = +headingRad || 0;
+    const out = [];
+    for (let q = 0; q < 4; q++) {
+      const mid = WIND_QUAD_MIDS[q];
+      out.push(r0 * (1 + A * Math.cos(mid - h - Math.PI / 2)));
+    }
+    return out;
+  }
+
+  /** 方位半径：落在哪个地理象限就用该象限常半径（与绘制/判定一致） */
+  function windRadiusAtRay(meanRadiusDeg, headingRad, rayRad, amp) {
+    const rs = windQuadrantRadii(meanRadiusDeg, headingRad, amp);
+    return rs[windGeoQuadrant(rayRad)];
+  }
+
+  /**
+   * CMA 阶梯风圈包络：[lat,lon]…（闭合）。
+   * 每象限画等半径圆弧；在 N/E/S/W 边界对相邻象限半径做径向阶跃，
+   * 轮廓呈预报图那种块状/台阶外缘，而非光滑柠檬形椭圆。
+   */
   function windEnvelopeLatLngs(lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs, nPts) {
-    nPts = nPts || 48;
+    nPts = nPts || 64;
     const speed = Math.hypot(+uMs || 0, +vMs || 0);
     const amp = windAsymAmp(speed, vmaxMs);
     const hdg = motionHeadingRad(uMs, vMs);
+    const rs = windQuadrantRadii(meanRadiusDeg, hdg, amp);
     const cosLat = Math.cos(lat0 * Math.PI / 180);
+    const invCos = 1 / Math.max(0.2, cosLat);
+    const nPer = Math.max(8, Math.floor(nPts / 4));
     const pts = [];
-    for (let i = 0; i < nPts; i++) {
-      const ray = (i / nPts) * Math.PI * 2; // 自北向东
-      const r = windRadiusAtRay(meanRadiusDeg, hdg, ray, amp);
+
+    function pushRay(ray, r) {
       const dlat = r * Math.cos(ray);
-      const dlon = (r * Math.sin(ray)) / Math.max(0.2, cosLat);
+      const dlon = (r * Math.sin(ray)) * invCos;
       pts.push([lat0 + dlat, lon0 + dlon]);
+    }
+
+    for (let q = 0; q < 4; q++) {
+      const r = rs[q];
+      const a0 = WIND_QUAD_STARTS[q];
+      const a1 = a0 + Math.PI / 2;
+      // 象限起点：与上一象限终点同角不同半径 → 径向台阶（首象限无前驱）
+      pushRay(a0, r);
+      for (let i = 1; i < nPer; i++) {
+        const ray = a0 + (i / nPer) * (Math.PI / 2);
+        pushRay(ray, r);
+      }
+      // 象限终点（下一象限会在同角再 push 新半径，形成台阶）
+      pushRay(a1, r);
     }
     pts.push(pts[0]);
     return pts;
   }
 
-  /** 点是否落在某级非对称风圈内（与绘制同一套角度半径查找） */
+  /** 点是否落在某级非对称风圈内（与绘制同一套四象限常半径） */
   function pointInWindEnvelope(lat, lon, lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs) {
     const cosLat = Math.cos(lat0 * Math.PI / 180);
     const dlat = lat - lat0;
@@ -696,6 +745,8 @@
     windRadiiForGrades,
     windAsymAmp,
     motionHeadingRad,
+    windGeoQuadrant,
+    windQuadrantRadii,
     windRadiusAtRay,
     windEnvelopeLatLngs,
     pointInWindEnvelope,

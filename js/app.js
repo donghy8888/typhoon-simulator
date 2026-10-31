@@ -1064,7 +1064,7 @@
       const seen = {};
       rings.forEach(function (ring) {
         seen[ring.grade] = true;
-        const latlngs = G.windEnvelopeLatLngs(dLat, dLon, ring.radiusDeg, dU, dV, dVmax, 48);
+        const latlngs = G.windEnvelopeLatLngs(dLat, dLon, ring.radiusDeg, dU, dV, dVmax, 64);
         const existing = stormRefs.windCircles[ring.grade];
         const tip = ring.label + ' · 当时 ' + G.gradeLabel(dVmax);
         const style = {

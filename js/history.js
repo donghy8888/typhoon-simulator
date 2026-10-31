@@ -7,7 +7,7 @@
   const YEAR_MIN = 1949;
   const YEAR_MAX = 2026;
   const DATA_BASE = 'data/ibtracs/wp';
-  const DATA_VER = '20261031h';
+  const DATA_VER = '20261031j';
 
   const cache = Object.create(null); // year -> payload
   let indexPromise = null;
@@ -73,13 +73,6 @@
     return false;
   }
 
-  function filterStorms(storms, query) {
-    const list = storms || [];
-    const q = (query || '').trim();
-    if (!q) return list.slice();
-    return list.filter(function (s) { return stormMatchesQuery(s, q); });
-  }
-
   let nameIndexPromise = null;
   function loadNameIndex() {
     if (!nameIndexPromise) {
@@ -111,6 +104,83 @@
     });
   }
 
+  // —— 登陆地索引（离线预计算：海→陆穿越 + 国家/省份表）——
+  let landfallIndexPromise = null;
+  let landfallIndexCache = null;
+
+  /** Curated chip order for weather-office UI (others still filterable if present). */
+  const PLACE_COUNTRY_ORDER = ['中国', '菲律宾', '日本', '越南', '韩国', '朝鲜', '泰国', '马来西亚', '俄罗斯'];
+  const PLACE_PROVINCE_ORDER = ['广东', '福建', '浙江', '台湾', '海南', '广西', '江苏', '上海', '山东', '辽宁', '河北'];
+
+  function loadLandfallIndex() {
+    if (landfallIndexCache) return Promise.resolve(landfallIndexCache);
+    if (!landfallIndexPromise) {
+      landfallIndexPromise = fetchJson(DATA_BASE + '/landfall-index.json?v=' + DATA_VER).then(function (idx) {
+        landfallIndexCache = idx || { places: [], storms: {} };
+        return landfallIndexCache;
+      }).catch(function (e) {
+        landfallIndexPromise = null;
+        throw e;
+      });
+    }
+    return landfallIndexPromise;
+  }
+
+  function placesForStorm(stormOrId, idx) {
+    if (!idx || !idx.storms) return [];
+    const id = typeof stormOrId === 'string' ? stormOrId : (stormOrId && stormOrId.id);
+    if (!id) return [];
+    return idx.storms[id] || [];
+  }
+
+  function stormMatchesPlaces(storm, placeIds, idx) {
+    const want = placeIds || [];
+    if (!want.length) return true;
+    const have = placesForStorm(storm, idx);
+    if (!have.length) return false;
+    for (let i = 0; i < want.length; i++) {
+      if (have.indexOf(want[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Filter by Chinese/English name query and/or landfall place ids (OR within places).
+   * Empty query + empty places → all.
+   */
+  function filterStorms(storms, query, placeIds, landfallIdx) {
+    const list = storms || [];
+    const q = (query || '').trim();
+    const places = placeIds || [];
+    if (!q && !places.length) return list.slice();
+    return list.filter(function (s) {
+      if (q && !stormMatchesQuery(s, q)) return false;
+      if (places.length && !stormMatchesPlaces(s, places, landfallIdx)) return false;
+      return true;
+    });
+  }
+
+  function placeCatalog(idx) {
+    const all = (idx && idx.places) || [];
+    function ordered(kind, order) {
+      const byId = Object.create(null);
+      all.forEach(function (p) {
+        if (p && p.kind === kind) byId[p.id] = p;
+      });
+      const out = [];
+      order.forEach(function (id) {
+        if (byId[id]) { out.push(byId[id]); delete byId[id]; }
+      });
+      Object.keys(byId).sort(function (a, b) { return a.localeCompare(b, 'zh'); })
+        .forEach(function (id) { out.push(byId[id]); });
+      return out;
+    }
+    return {
+      countries: ordered('country', PLACE_COUNTRY_ORDER),
+      provinces: ordered('province', PLACE_PROVINCE_ORDER)
+    };
+  }
+
   /**
    * Draw storms for a year onto layerGroup.
    * @param {object} opts { scale, selectedId, onSelect, hideOthers }
@@ -127,8 +197,10 @@
     if (!data || !data.storms) return;
 
     const filterQuery = opts.filterQuery || '';
-    const storms = filterQuery
-      ? filterStorms(data.storms, filterQuery)
+    const filterPlaces = opts.filterPlaces || [];
+    const landfallIdx = opts.landfallIndex || landfallIndexCache;
+    const storms = (filterQuery || (filterPlaces && filterPlaces.length))
+      ? filterStorms(data.storms, filterQuery, filterPlaces, landfallIdx)
       : data.storms;
 
     storms.forEach(function (storm) {
@@ -407,6 +479,10 @@
     chineseName: chineseName,
     stormMatchesQuery: stormMatchesQuery,
     filterStorms: filterStorms,
+    loadLandfallIndex: loadLandfallIndex,
+    placesForStorm: placesForStorm,
+    stormMatchesPlaces: stormMatchesPlaces,
+    placeCatalog: placeCatalog,
     loadSimilarityIndex: loadSimilarityIndex,
     resampleTrack: resampleTrack,
     findBestMatch: findBestMatch,

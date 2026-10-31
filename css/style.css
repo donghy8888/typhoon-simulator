@@ -728,3 +728,66 @@ body.mode-history .legend-sim-only { display: none; }
   font-weight: 600;
 }
 body.mode-history .match-chip { display: none !important; }
+
+
+/* —— 纪录模式 · 登陆地筛选 —— */
+.hist-place-row {
+  align-items: flex-start;
+}
+.hist-place-row > label {
+  padding-top: 6px;
+}
+.hist-place-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hist-place-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hist-place-k {
+  font-size: 11px;
+  color: #5a6a7a;
+  letter-spacing: 0.04em;
+}
+.hist-place-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.hist-place-chip {
+  appearance: none;
+  margin: 0;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  font-family: inherit;
+  color: #1e3a50;
+  background: linear-gradient(180deg, #f4f8fb, #e8f0f6);
+  border: 1px solid #9bb6cc;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+}
+.hist-place-chip:hover {
+  border-color: #5d8aab;
+  background: linear-gradient(180deg, #eef5fb, #dce8f2);
+}
+.hist-place-chip.is-on {
+  color: #fff;
+  background: linear-gradient(180deg, #2f6fa8 0%, #1f567f 100%);
+  border-color: #17466a;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset;
+}
+.hist-place-actions {
+  margin-top: 2px;
+}
+.hist-place-actions .secondary {
+  padding: 2px 10px;
+  font-size: 12px;
+  min-height: 24px;
+}

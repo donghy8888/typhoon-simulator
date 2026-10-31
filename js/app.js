@@ -32,6 +32,9 @@
     histSelectedId: null,
     histData: null,
     histNameQuery: '',
+    /** 登陆地多选（国家/省份 id）；空 = 不限 */
+    histPlaces: [],
+    histLandfallIndex: null,
     /** 模拟结束后的历史相似匹配 */
     simMatch: null,
     _matchToken: 0
@@ -1505,7 +1508,85 @@
     }).catch(function () { /* ignore */ });
   }
 
-  function populateHistYears() {
+  function histPlacesSelected() {
+    return (state.histPlaces && state.histPlaces.length) ? state.histPlaces.slice() : [];
+  }
+
+  function ensureHistPlaceChips() {
+    if (!H || typeof H.loadLandfallIndex !== 'function') return Promise.resolve(null);
+    if (state.histLandfallIndex && document.getElementById('histPlaceCountries') &&
+        document.getElementById('histPlaceCountries').childElementCount) {
+      return Promise.resolve(state.histLandfallIndex);
+    }
+    return H.loadLandfallIndex().then(function (idx) {
+      state.histLandfallIndex = idx;
+      renderHistPlaceChips(idx);
+      return idx;
+    }).catch(function () {
+      return null;
+    });
+  }
+
+  function renderHistPlaceChips(idx) {
+    const cat = H.placeCatalog ? H.placeCatalog(idx) : { countries: [], provinces: [] };
+    function fill(elId, list) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.innerHTML = '';
+      (list || []).forEach(function (p) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'hist-place-chip';
+        btn.dataset.place = p.id;
+        btn.textContent = p.id;
+        btn.setAttribute('aria-pressed', 'false');
+        if (state.histPlaces && state.histPlaces.indexOf(p.id) !== -1) {
+          btn.classList.add('is-on');
+          btn.setAttribute('aria-pressed', 'true');
+        }
+        btn.addEventListener('click', function () {
+          toggleHistPlace(p.id);
+        });
+        el.appendChild(btn);
+      });
+    }
+    fill('histPlaceCountries', cat.countries);
+    fill('histPlaceProvinces', cat.provinces);
+  }
+
+  function syncHistPlaceChipState() {
+    const selected = histPlacesSelected();
+    document.querySelectorAll('.hist-place-chip').forEach(function (btn) {
+      const on = selected.indexOf(btn.dataset.place) !== -1;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function toggleHistPlace(id) {
+    if (!id) return;
+    const cur = histPlacesSelected();
+    const i = cur.indexOf(id);
+    if (i === -1) cur.push(id);
+    else cur.splice(i, 1);
+    state.histPlaces = cur;
+    syncHistPlaceChipState();
+    applyHistFilters({ allowJump: false });
+  }
+
+  function clearHistPlaces() {
+    state.histPlaces = [];
+    syncHistPlaceChipState();
+    applyHistFilters({ allowJump: false });
+  }
+
+  function applyHistFilters(opts) {
+    opts = opts || {};
+    // name filter may cross-year jump; place filter stays in-year
+    applyHistNameFilter(opts);
+  }
+
+    function populateHistYears() {
     const sel = document.getElementById('histYear');
     if (!sel || !H) return;
     sel.innerHTML = '';
@@ -1528,15 +1609,16 @@
     const sel = document.getElementById('histStorm');
     if (!sel) return;
     const q = histQuery();
+    const places = histPlacesSelected();
     const storms = (H && data && data.storms)
-      ? H.filterStorms(data.storms, q)
+      ? H.filterStorms(data.storms, q, places, state.histLandfallIndex)
       : ((data && data.storms) || []);
     const prev = keepId != null ? keepId : (sel.value || '');
     sel.innerHTML = '';
     const all = document.createElement('option');
     all.value = '';
     const total = (data && data.storms) ? data.storms.length : 0;
-    if (q) {
+    if (q || places.length) {
       all.textContent = '（匹配 ' + storms.length + ' / ' + total + '）';
     } else {
       all.textContent = '（全部 · ' + total + ' 个）';
@@ -1568,7 +1650,17 @@
     const el = document.getElementById('histMeta');
     if (!el) return;
     if (!data) { el.innerHTML = ''; return; }
-    let html = '<strong>' + data.year + '</strong> 年 · ' + data.count + ' 个热带气旋';
+    const places = histPlacesSelected();
+    const q = histQuery();
+    let shown = data.count;
+    if (H && (q || places.length)) {
+      shown = H.filterStorms(data.storms || [], q, places, state.histLandfallIndex).length;
+    }
+    let html = '<strong>' + data.year + '</strong> 年 · ' +
+      ((q || places.length) ? (shown + ' / ' + data.count) : data.count) + ' 个热带气旋';
+    if (places.length) {
+      html += '<br>登陆筛选：<strong>' + places.join('、') + '</strong>';
+    }
     if (selectedId) {
       const s = (data.storms || []).find(function (x) { return x.id === selectedId; });
       if (s) {
@@ -1611,11 +1703,14 @@
   function redrawHistoryTracks() {
     if (!H || !state.histData) return;
     const q = histQuery();
+    const places = histPlacesSelected();
     H.drawYear(layerGroups.history, state.histData, {
       scale: getIntensityScale(),
       selectedId: state.histSelectedId,
       hideOthers: true,
       filterQuery: q,
+      filterPlaces: places,
+      landfallIndex: state.histLandfallIndex,
       onSelect: function (id) {
         selectHistStorm(id, { toggle: true, fit: true });
       }
@@ -1635,28 +1730,35 @@
     H.loadYear(y).then(function (data) {
       state.histData = data;
       const q = histQuery();
-      const matches = H.filterStorms(data.storms || [], q);
+      const places = histPlacesSelected();
+      const matches = H.filterStorms(data.storms || [], q, places, state.histLandfallIndex);
       let pickId = null;
       if (pending && (data.storms || []).some(function (s) { return s.id === pending; })) {
         pickId = pending;
-      } else if (q && matches.length === 1) {
+      } else if (q && !places.length && matches.length === 1) {
+        pickId = matches[0].id;
+      } else if (matches.length === 1 && (q || places.length)) {
         pickId = matches[0].id;
       }
       populateHistStorms(data, pickId || '');
       if (pickId) {
         selectHistStorm(pickId, { toggle: false, fit: true });
         if (opts.crossYearNote) setHistStatus(opts.crossYearNote);
-      } else if (q && matches.length > 1) {
+      } else if (matches.length > 1 && (q || places.length)) {
         redrawHistoryTracks();
-        setHistStatus('「' + q + '」本年度匹配 ' + matches.length + ' 个 · 下拉或点选');
+        const placeNote = places.length ? ('登陆:' + places.join('/') + ' · ') : '';
+        const nameNote = q ? ('「' + q + '」') : '';
+        setHistStatus(placeNote + nameNote + '本年度匹配 ' + matches.length + ' 个 · 下拉或点选');
         fitHistYearEnvelope(data, matches);
-      } else if (q && matches.length === 0) {
+      } else if (matches.length === 0 && (q || places.length)) {
         redrawHistoryTracks();
-        if (opts.skipJump) {
-          setHistStatus('本年度无匹配「' + q + '」');
-        } else {
+        if (q && !places.length && !opts.skipJump) {
           setHistStatus('本年度无「' + q + '」· 正在跨年检索…');
           jumpToNameMatch(q, y);
+        } else if (places.length) {
+          setHistStatus('本年度无匹配登陆地（' + places.join('、') + '）' + (q ? ' +「' + q + '」' : ''));
+        } else {
+          setHistStatus('本年度无匹配「' + q + '」');
         }
       } else {
         redrawHistoryTracks();
@@ -1706,11 +1808,12 @@
   function applyHistNameFilter(opts) {
     opts = opts || {};
     const q = histQuery();
+    const places = histPlacesSelected();
     state.histNameQuery = q;
     if (!state.histData) return;
     populateHistStorms(state.histData, state.histSelectedId);
-    const matches = H.filterStorms(state.histData.storms || [], q);
-    if (!q) {
+    const matches = H.filterStorms(state.histData.storms || [], q, places, state.histLandfallIndex);
+    if (!q && !places.length) {
       redrawHistoryTracks();
       setHistStatus('只读 · IBTrACS WP · ' + (state.histYear || '') + ' 年 · 点选路径或下拉单台');
       return;
@@ -1720,21 +1823,24 @@
       return;
     }
     if (matches.length > 1) {
-      // keep selection if still matched; else show filtered tracks only
       if (state.histSelectedId && !matches.some(function (s) { return s.id === state.histSelectedId; })) {
         state.histSelectedId = null;
         const sel = document.getElementById('histStorm');
         if (sel) sel.value = '';
       }
       redrawHistoryTracks();
-      setHistStatus('「' + q + '」本年度匹配 ' + matches.length + ' 个');
+      const bits = [];
+      if (places.length) bits.push('登陆:' + places.join('/'));
+      if (q) bits.push('「' + q + '」');
+      setHistStatus(bits.join(' · ') + ' 本年度匹配 ' + matches.length + ' 个');
       return;
     }
-    // no match this year — cross-year jump
     redrawHistoryTracks();
-    if (opts.allowJump !== false) {
+    if (q && !places.length && opts.allowJump !== false) {
       setHistStatus('本年度无「' + q + '」· 正在跨年检索…');
       jumpToNameMatch(q, state.histYear);
+    } else if (places.length) {
+      setHistStatus('本年度无匹配登陆地（' + places.join('、') + '）' + (q ? ' +「' + q + '」' : ''));
     } else {
       setHistStatus('本年度无匹配「' + q + '」');
     }
@@ -1772,7 +1878,9 @@
     populateHistYears();
     const yEl = document.getElementById('histYear');
     const y = yEl ? (parseInt(yEl.value, 10) || 2019) : 2019;
-    loadHistYear(y);
+    ensureHistPlaceChips().then(function () {
+      loadHistYear(y);
+    });
   }
 
   function exitHistoryMode() {
@@ -1798,10 +1906,12 @@
     state.histData = null;
     state.histSelectedId = null;
     state.histNameQuery = '';
+    state.histPlaces = [];
     state._histPendingSelect = null;
     state._histJumping = false;
     const nq = document.getElementById('histNameQ');
     if (nq) nq.value = '';
+    syncHistPlaceChipState();
     closeIntroPanel();
 
     const tb = document.getElementById('mapToolbar');
@@ -1822,6 +1932,11 @@
   document.getElementById('btnHistClear').onclick = function () {
     selectHistStorm(null, { toggle: false, fit: false });
   };
+  const btnHistPlaceClear = document.getElementById('btnHistPlaceClear');
+  if (btnHistPlaceClear) {
+    btnHistPlaceClear.onclick = function () { clearHistPlaces(); };
+  }
+
   (function wireHistNameSearch() {
     const el = document.getElementById('histNameQ');
     if (!el) return;
@@ -1849,13 +1964,12 @@
       if (storm && H) H.fitStorm(map, storm);
       return;
     }
-    try {
-      const all = [];
-      (state.histData.storms || []).forEach(function (s) {
-        (s.points || []).forEach(function (p) { all.push([p.lat, p.lon]); });
-      });
-      if (all.length >= 2) map.fitBounds(L.latLngBounds(all).pad(0.08), { maxZoom: 5, animate: true });
-    } catch (e) { /* ignore */ }
+    const q = histQuery();
+    const places = histPlacesSelected();
+    const list = H
+      ? H.filterStorms(state.histData.storms || [], q, places, state.histLandfallIndex)
+      : (state.histData.storms || []);
+    fitHistYearEnvelope(state.histData, list);
   };
 
   // 最像芯片 / 简介面板

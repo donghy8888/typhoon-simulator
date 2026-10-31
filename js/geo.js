@@ -471,7 +471,7 @@
     const r7 = windRadiusDeg(vmaxMs) * WIND_CIRCLE_SCALE;
     const out = [];
     if (vmaxMs >= 13.9) {
-      out.push({ grade: 7, radiusDeg: r7, color: '#2980b9', fill: '#3498db', fillOpacity: 0.05, weight: 2, label: '7级风圈' });
+      out.push({ grade: 7, radiusDeg: r7, color: '#2980b9', fill: '#3498db', fillOpacity: 0.05, weight: 2.8, label: '7级风圈' });
     }
     if (vmaxMs >= 24.5) {
       out.push({ grade: 10, radiusDeg: Math.max(0.35 * WIND_CIRCLE_SCALE, r7 * 0.58), color: '#e67e22', fill: '#f39c12', fillOpacity: 0.07, weight: 2, label: '10级风圈' });
@@ -484,16 +484,29 @@
 
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
-   * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈5 m/s 半饱和。
-   * A_MAX≈0.55 → 典型移速下右/左半径比约 1.6–2.1（CMA 预报图可见右鼓）。
+   * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3 m/s 半饱和（中等移速即可见台阶）。
+   * A_MAX≈0.78 → 典型移速下右/左半径比约 2.2–3.2（CMA 预报图块状右鼓）。
    */
-  const WIND_ASYM_V_HALF = 5;   // m/s translation → half asymmetry
-  const WIND_ASYM_A_MAX = 0.55; // fractional amp (was 0.34; nearly round on map)
+  const WIND_ASYM_V_HALF = 3;   // m/s translation → half asymmetry (was 5)
+  const WIND_ASYM_A_MAX = 0.78; // fractional amp (was 0.55; steps still too mild)
   function windAsymAmp(speedMs, vmaxMs) {
     const s = Math.max(0, +speedMs || 0);
     const speedFactor = s / (s + WIND_ASYM_V_HALF);
     const inten = 1 + 0.12 * Math.max(0, ((+vmaxMs || 0) - 17) / 55);
     return WIND_ASYM_A_MAX * speedFactor * Math.min(1.4, inten);
+  }
+
+  /**
+   * 将 cos 象限因子量化/推高对比：弱中间值推向 ±1，
+   * 使相邻象限在 N/E/S/W 的径向台阶一目了然（非光滑卵形）。
+   */
+  function windQuadCosBoost(c) {
+    const x = +c || 0;
+    const a = Math.abs(x);
+    if (a < 1e-12) return 0;
+    // 0.707 → ~0.95；0.5 → ~0.87；近 0 仍小 → 正交象限贴近均值
+    const boosted = Math.min(1, Math.pow(a, 0.32));
+    return (x < 0 ? -1 : 1) * boosted;
   }
 
   /** 运动方位角（弧度）：自正北向东，atan2(u_east, v_north)；停滞返回 0（振幅≈0 时无影响） */
@@ -533,7 +546,9 @@
     const out = [];
     for (let q = 0; q < 4; q++) {
       const mid = WIND_QUAD_MIDS[q];
-      out.push(r0 * (1 + A * Math.cos(mid - h - Math.PI / 2)));
+      const c = windQuadCosBoost(Math.cos(mid - h - Math.PI / 2));
+      // 左舷不低于 ~0.38·r0，避免塌成尖角；右舷可到 ~1.78·r0
+      out.push(Math.max(r0 * 0.38, r0 * (1 + A * c)));
     }
     return out;
   }
@@ -546,8 +561,9 @@
 
   /**
    * CMA 阶梯风圈包络：[lat,lon]…（闭合）。
-   * 每象限画等半径圆弧；在 N/E/S/W 边界对相邻象限半径做径向阶跃，
-   * 轮廓呈预报图那种块状/台阶外缘，而非光滑柠檬形椭圆。
+   * 每象限 = 常半径 90° 圆弧；在每个正 N/E/S/W 角写入「双顶点」
+   * （上一象限半径 + 本象限半径同角），强迫 Leaflet 画短径向台阶（可见 kink），
+   * 而非相邻象限弦切线抹掉阶跃。非光滑卵形 / 柠檬椭圆。
    */
   function windEnvelopeLatLngs(lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs, nPts) {
     nPts = nPts || 64;
@@ -568,15 +584,16 @@
 
     for (let q = 0; q < 4; q++) {
       const r = rs[q];
+      const rPrev = rs[(q + 3) % 4];
       const a0 = WIND_QUAD_STARTS[q];
       const a1 = a0 + Math.PI / 2;
-      // 象限起点：与上一象限终点同角不同半径 → 径向台阶（首象限无前驱）
+      // 正北/东/南/西双顶点：同角两半径 → 径向 kink（半径相等时只写一次）
+      if (Math.abs(r - rPrev) > 1e-12) pushRay(a0, rPrev);
       pushRay(a0, r);
       for (let i = 1; i < nPer; i++) {
         const ray = a0 + (i / nPer) * (Math.PI / 2);
         pushRay(ray, r);
       }
-      // 象限终点（下一象限会在同角再 push 新半径，形成台阶）
       pushRay(a1, r);
     }
     pts.push(pts[0]);

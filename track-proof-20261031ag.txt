@@ -1,0 +1,16 @@
+PROOF mountain layer visible — ?v=20261031ag
+
+Root cause: mountain-data.js (286 elev≥700m polys, 378863 B) loaded and
+isMountain(TW/JP/Luzon)=true, but preferCanvas:true painted complex rings
+into the shared overlay canvas where they often produced no visible pixels
+(layers present, fills empty). User hard-refresh ?v=20261031af →「山脉没有」.
+
+Fix (no data rebuild; keep ≥700m; history 2h marks + attract physics untouched):
+- dedicated Leaflet SVG pane `mountains` z=425 + L.svg renderer
+- redrawTerrain after map.whenReady + rAF (avoid 0-size first paint)
+- fillOpacity 0.48 for z4 visibility
+
+Proof:
+- local SVG paths fill=#8b7355 count=286
+- curl live after push: index + mountain-data.js HTTP 200
+- asset: js/mountain-data.js 378863 bytes, 286 polys (TW/JP/Luzon coverage)

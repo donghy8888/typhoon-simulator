@@ -66,14 +66,22 @@
   const HIST_MAX_BOUNDS = [[-20, 80], [75, 240]]; // full WP best-tracks (dateline / ET)
   map.setMaxBounds(SIM_MAX_BOUNDS);
 
+  // 山地专用 SVG pane：高于 tile(200)/overlay 半透明副高·SST(400)，
+  // 低于 guides(450)。preferCanvas 下复杂 elev 多边形常画在空 canvas 上「有层无像素」。
+  map.createPane('mountains');
+  map.getPane('mountains').style.zIndex = 425;
+  map.getPane('mountains').style.pointerEvents = 'none';
+
   // 引导黄/绿线专用 pane：z 高于 overlay(400)，避免被副高 SVG 填充盖住
   // （黄线在绿线南 0.15°，落在副高实体内侧，canvas 箭头层会被 SVG 副高盖死）
   map.createPane('guides');
   map.getPane('guides').style.zIndex = 450;
   map.getPane('guides').style.pointerEvents = 'none';
 
+  const mountainRenderer = L.svg({ pane: 'mountains' });
+
   const layerGroups = {
-    terrain: L.layerGroup().addTo(map),
+    terrain: L.layerGroup({ pane: 'mountains' }).addTo(map),
     fugen: L.layerGroup().addTo(map),
     sst: L.layerGroup().addTo(map),
     steer: L.layerGroup().addTo(map),
@@ -220,13 +228,20 @@
   function redrawTerrain() {
     layerGroups.terrain.clearLayers();
     // 陆地填充不再手绘：陆掩码已与 OSM 底图海岸对齐；再叠粗填充会「地图对不齐」。
-    // 山地：WGS84 elev/NE 数据（物理衰减同源），低透明以免盖住 OSM 海岸。
-    G.MOUNTAIN_POLYS.forEach(ring => {
-      L.polygon(ring, {
-        color: '#6b5344', weight: 0.6, fillColor: '#8b7355', fillOpacity: 0.28,
-        interactive: false
+    // 山地：WGS84 elev≥700m（与 isMountain 同源）；SVG mountains pane，避免 preferCanvas 空绘。
+    const rings = G.MOUNTAIN_POLYS || [];
+    for (let i = 0; i < rings.length; i++) {
+      L.polygon(rings[i], {
+        color: '#6b5344',
+        weight: 0.9,
+        fillColor: '#8b7355',
+        fillOpacity: 0.48,
+        opacity: 0.85,
+        interactive: false,
+        pane: 'mountains',
+        renderer: mountainRenderer
       }).addTo(layerGroups.terrain);
-    });
+    }
   }
 
   // —— 副高绘制 ——
@@ -2070,14 +2085,23 @@
     });
   })();
 
-  // 初始绘制
-  redrawTerrain();
-  redrawFugen();
-  redrawSst();
-  redrawSteer();
-  renderFugenList();
-  updateStatus();
-
-  // 默认放置一个示范台风
-  placeStorm(140, 15);
+  // 初始绘制（山地等 map ready + 一帧 layout，避免 canvas/SVG 在 0-size 时空绘）
+  function initialDraw() {
+    map.invalidateSize(false);
+    redrawTerrain();
+    redrawFugen();
+    redrawSst();
+    redrawSteer();
+    renderFugenList();
+    updateStatus();
+    // 默认放置一个示范台风
+    placeStorm(140, 15);
+  }
+  map.whenReady(function () {
+    requestAnimationFrame(function () {
+      initialDraw();
+      // 再补一次山地：部分浏览器首帧 pane 尺寸仍不稳
+      requestAnimationFrame(redrawTerrain);
+    });
+  });
 })();

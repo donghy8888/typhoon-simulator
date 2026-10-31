@@ -27,8 +27,8 @@
 
   /**
    * 山地多边形 [lat, lon] — 与 OSM / 陆掩码同为 WGS84。
-   * 数据来自 js/mountain-data.js（terrarium 高程阈值 + Natural Earth 10m Range/mtn），
-   * 替代旧手绘粗块（与底图错位，且缺中央山脉/日本阿尔卑斯等细节）。
+   * 数据来自 js/mountain-data.js：NE 10m 全部 Range/mtn（大陆具名山脉）
+   * ∪ terrarium elev≥550m z7 岛屿窗（台湾/日本/菲/韩/海南…），inset 裁切去域边假墙。
    */
   const _mtn = (typeof global !== 'undefined' && global.TY_MOUNTAIN_MASK) ||
     (typeof globalThis !== 'undefined' && globalThis.TY_MOUNTAIN_MASK) ||

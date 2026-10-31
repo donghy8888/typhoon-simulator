@@ -328,20 +328,24 @@
   }
 
   /**
-   * 台湾中央山脉弱吸引（?v=20261031y）
-   * 东岸（脊东）才触发：往岛内/中央山脉拽一下；峰值 ~2.0 m/s（可见弯折，仍弱于引导）。
-   * 东北引导占优时表现为「先往山脉轻轻折一下再东北」。
-   * 只改运动叠加，不改副高/黄绿线/陆地衰减/风圈缩放；单台风。
+   * 台湾中央山脉弱吸引（?v=20261031aa）
+   * 东岸（脊东）才触发：往岛内/中央山脉拽；峰值 ~2.8 m/s。
+   * 离开吸引区后短时残留西偏（~9 模拟时衰减），避免「折一下又贴回原弧」。
+   * 东北引导占优且远离台湾时仍可完整 recurve；单台风。
    */
   const TW_MTN_LON = 121.11;   // 中央山脉中心经度（elev 脊质心，WGS84）
   const TW_MTN_LAT = 23.75;    // 中央山脉中心纬度（elev 脊质心，WGS84）
   const TW_MTN_R_DEG = 4.3;    // 影响半径（°）— 近岸感延续至 ~123–124E
-  const TW_MTN_PEAK_MS = 2.0;  // 峰值吸引 (m/s)；+1 档可见弯折，仍不压过引导
+  const TW_MTN_PEAK_MS = 2.8;  // 峰值吸引 (m/s)；持久可见西偏，仍不压过远场 NE
   const TW_MTN_POWER = 1.2;    // (1−r/R)^p 略软落，近岸感更长
   const TW_MTN_LAT0 = 21.2;    // 纬度门控：台湾岛段
   const TW_MTN_LAT1 = 26.2;
   /** 东岸硬门控：必须脊东（lon>脊），海峡/脊西不触发；与旧 120.85 软门区分 */
   const TW_MTN_EAST_GATE_LON = TW_MTN_LON;
+  /** 强吸引后残留西偏时长（模拟小时）；线性衰减到 0 */
+  const TW_MTN_LINGER_HOURS = 9;
+  /** 仅当瞬时吸引 mag≥此值时刷新残留（避免边缘弱值冲掉峰值记忆） */
+  const TW_MTN_LINGER_MIN_MAG = 0.55;
 
   function taiwanMtnAttract(lon, lat) {
     if (lat < TW_MTN_LAT0 || lat > TW_MTN_LAT1) {
@@ -723,18 +727,40 @@
     }
 
     // 台湾中央山脉弱吸引：必须叠在全部引导锁存/WNW·NE 改写之后，否则会被盖掉（表现为「不触发」）
-    // 东北占优时 u>0，叠上西向吸引 → 路径先往山脉轻轻折一下再继续东北
+    // 东北占优时 u>0，叠上西向吸引 → 路径先往山脉折；离开后残留西偏保持轨偏置
     {
       const twA = taiwanMtnAttract(lon, lat);
-      if (twA.applied) {
-        const inNorthLeg = arcState && arcState.legTargetLat != null && lat < arcState.legTargetLat;
+      const inNorthLeg = arcState && arcState.legTargetLat != null && lat < arcState.legTargetLat;
+      const applyMtnUV = (mu, mv) => {
         if (inNorthLeg) {
           // 纯北腿：允许西向（朝山）极弱先折；禁止东向破坏 u≡0
-          if (twA.u < 0) u += twA.u;
-          v += twA.v;
+          if (mu < 0) u += mu;
+          v += mv;
         } else {
-          u += twA.u;
-          v += twA.v;
+          u += mu;
+          v += mv;
+        }
+      };
+      if (twA.applied) {
+        applyMtnUV(twA.u, twA.v);
+        if (arcState && twA.mag >= TW_MTN_LINGER_MIN_MAG) {
+          // 记住较强吸引 UV；持续刷新时长，供离开后衰减残留
+          const prevMag = Math.hypot(arcState.twMtnBiasU || 0, arcState.twMtnBiasV || 0);
+          if (twA.mag >= prevMag * 0.85 || prevMag < 1e-6) {
+            arcState.twMtnBiasU = twA.u;
+            arcState.twMtnBiasV = twA.v;
+          }
+          arcState.twMtnBiasLeft = TW_MTN_LINGER_HOURS;
+        }
+      } else if (arcState && (arcState.twMtnBiasLeft || 0) > 0) {
+        const left = arcState.twMtnBiasLeft;
+        const scale = Math.max(0, left / TW_MTN_LINGER_HOURS);
+        applyMtnUV((arcState.twMtnBiasU || 0) * scale, (arcState.twMtnBiasV || 0) * scale);
+        arcState.twMtnBiasLeft = left - dtHours;
+        if (arcState.twMtnBiasLeft <= 0) {
+          arcState.twMtnBiasLeft = 0;
+          arcState.twMtnBiasU = 0;
+          arcState.twMtnBiasV = 0;
         }
       }
     }
@@ -912,7 +938,21 @@
     // 黄缘～绿北：易出小直角的北段（30a 加宽）
     const northShoulder = northOfNow != null && northOfNow >= -2.8 && northOfNow < 1.25;
     let ou = moved.u, ov = moved.v;
-    if (arcTurning) {
+    // 山脉吸引/残留生效时：勿用步间 blend 把西向分量洗回未扰动引导航向（否则只剩一帧折角再贴原弧）
+    const twNow = taiwanMtnAttract(moved.lon, moved.lat);
+    const mtnBiasActive = !!(twNow.applied || (m.twMtnBiasLeft || 0) > 0.5);
+    if (mtnBiasActive) {
+      // 保留 moveStep 已叠好的山偏 UV；若仍需极轻缘带限幅，放宽到几乎不挡西偏
+      if (nearEdge && !arcTurning) {
+        ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(28, 48 * Math.min(1, dtHours))));
+        // 若 blend 抹掉了西向山偏，拉回山偏 UV
+        if (moved.u < -0.2 && ou > moved.u + 0.15) {
+          ou = 0.25 * ou + 0.75 * moved.u;
+          ov = 0.25 * ov + 0.75 * moved.v;
+        }
+      }
+      // else: 直接用 moved.u/v（已含吸引/残留）
+    } else if (arcTurning) {
       // 半弧：温和限幅即可（勿过紧拖死 ENE 目标角）；尖角已由真脊 edge 消除
       ({ u: ou, v: ov } = blendHeading(m.u, m.v, moved.u, moved.v, Math.max(16, 26 * Math.min(1, dtHours))));
     } else if (arcDone && nearEdge) {
@@ -1008,6 +1048,8 @@
     TW_MTN_LAT0,
     TW_MTN_LAT1,
     TW_MTN_EAST_GATE_LON,
+    TW_MTN_LINGER_HOURS,
+    TW_MTN_LINGER_MIN_MAG,
     mpi,
     steeringAt,
     betaDrift,

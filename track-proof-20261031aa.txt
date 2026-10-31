@@ -1,0 +1,24 @@
+PROOF Taiwan mountain attract persists path offset — ?v=20261031aa
+
+PROBLEM: 台风被吸引了之后为什么会回来原本轨道
+  Instant ~2.0 m/s attract + stepMember blendHeading → one-frame kink then snap to unperturbed arc.
+
+FIX (js/physics.js only + index.html ?v=):
+  1) TW_MTN_PEAK_MS 2.0 → 2.8
+  2) Linger bias: after last strong attract (mag≥0.55) keep twMtnBiasU/V for TW_MTN_LINGER_HOURS=9,
+     linear decay while outside envelope (east-of-ridge gate unchanged).
+  3) stepMember: while attract.applied OR linger>0.5h, skip tight blendHeading (or loosen +
+     restore westward u if blend erased mountain component).
+  Display-field stack in steeringAt unchanged (instant attract only); post-lock motion stack
+  shares same taiwanMtnAttract + adds linger on member/arcState.
+
+CHECKS (node, empty fugen, start 124.2E 22.2N, NE steer — A/B peak 2.8+linger vs peak 0):
+  lat~23  dLon(on-off)= -0.27°
+  lat~24  dLon= -0.51°
+  lat~25  dLon= -0.63°
+  lat~26  dLon= -0.70°  (after exit, linger still on)
+  lat~27  dLon= -0.72°  (linger done — offset REMAINS, no snap-back)
+  6h after exit dLon≈ -0.61°; 12h after ≈ -0.62°
+  west-of-ridge 120.5E,24N → applied false
+  east 122.8E,23.8N → mag≈1.64 u≈-1.64 applied true
+

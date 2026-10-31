@@ -1,0 +1,18 @@
+PROOF wind envelope ?v=20261031x
+FIX (user angry: WNW still due east after 5 tries):
+  Root: peak=h+π/2 then fold (π/2−peak) when north>east.
+        Pure-W h=-90 → peak=0(N) → fold → π/2 due E. WNW nudge+fold still ~67.5°/east.
+  Rewrite windPeakRayFromHeading: DELETE fold entirely.
+  Explicit sector map:
+    WNW (−67.5°) / pure-W (−90°) → hard ~53° (0.925 rad) 东北偏东一点
+    NW (−45°) → 45° NE
+    N (0°) → 90° E
+    NE (45°) → 135° SE
+  windMotionUVFromTrack north-floor for west collapse kept; peak no longer depends on fold.
+
+CHECKS (node isolated fn):
+  WNW h=-67.5° → peak=0.9250 rad = 53.00°  (NOT π/2, NOT 67.5°)
+  W   h=-90°   → peak=0.9250 rad = 53.00°
+  NW  h=-45°   → peak=0.7854 rad = 45.00°
+  N   h=0°     → peak=1.5708 rad = 90.00°
+  NE  h=45°    → peak=2.3562 rad = 135.00°

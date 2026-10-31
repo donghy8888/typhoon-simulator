@@ -543,36 +543,41 @@
   }
 
   /**
-   * 峰向角（atan2 east,north）：由路径移向映射到鼓侧。
-   * 用户映射：正西北→正东北；西北偏西→东北偏东（略东于东北，≈67°）；
-   * 北→正东；东北→东南。勿硬锁 π/2。
-   * 右舷法线为底；鼓偏北于东北时折到路径东侧。
-   * 纯西误读守卫：h≈−90° 时旧折 π/2−peak 会落到正东——拉回 WNW→ENE。
+   * 峰向角（atan2 east,north）：由路径移向显式扇区映射到鼓侧。
+   * 用户映射（硬表，禁止 π/2−peak 折到正东）：
+   *   正西北 (−45°) → 正东北 (45°)
+   *   西北偏西 (−67.5°) → 东北偏东一点 (~53°, ≈0.93 rad) — 绝非 67.5°/正东
+   *   正西误读 (−90°) → 同 WNW ~53°
+   *   北 (0°) → 正东 (90°)
+   *   东北 (45°) → 东南 (135°)
+   * 其它航向：右舷法线 h+π/2（无 fold）。
    */
   function windPeakRayFromHeading(headingRad) {
     let h = +headingRad || 0;
-    const dueW = -Math.PI / 2;
-    const wnw = -67.5 * Math.PI / 180;
-    // track UV 常丢掉 Δlat 把西北偏西读成正西；峰向前先拉回 WNW
-    const nearW = Math.abs(h - dueW);
-    if (nearW < 18 * Math.PI / 180) {
-      const t = 1 - nearW / (18 * Math.PI / 180);
-      h = h + t * (wnw - h);
+    // normalize to (−π, π]
+    h = Math.atan2(Math.sin(h), Math.cos(h));
+    const D = Math.PI / 180;
+    // 东北偏东一点：略东于东北(45°)，远小于正东(90°) / 旧折 67.5°
+    const WNW_PEAK = 53 * D; // ≈0.925 rad
+
+    // 西扇区：纯西 / WNW → 硬返回 ~53°（删除 fold；绝不落到 π/2）
+    // (−105°, −55°] 覆盖 −90° 与 −67.5°
+    if (h > -105 * D && h <= -55 * D) {
+      return WNW_PEAK;
     }
-    let peak = h + Math.PI / 2;
-    const north = Math.cos(peak);
-    const east = Math.sin(peak);
-    // 鼓偏北（北分量大于东分量）→ 折到路径东侧：NNE→ENE；正东北不动
-    if (north > east && north > 0) {
-      peak = Math.PI / 2 - peak;
+    // −55° → −45°：53° 平滑接到正东北 45°
+    if (h > -55 * D && h < -45 * D) {
+      const t = (h - (-55 * D)) / (10 * D);
+      return WNW_PEAK + t * (45 * D - WNW_PEAK);
     }
-    return peak;
+    // 默认右舷：NW→NE、N→E、NE→SE；无 π/2−peak 折
+    return h + Math.PI / 2;
   }
 
   /**
    * 四象限半径 [rNE,rSE,rSW,rNW]。
-   * 峰向：正西北→正东北；西北偏西→东北偏东≈67°；北→正东；东北→东南。
-   * 勿硬锁正东、勿用 eastwardTrackNormalRad；纯西误读不得折到正东。
+   * 峰向：正西北→正东北；西北偏西/正西→东北偏东~53°；北→正东；东北→东南。
+   * 勿硬锁正东、勿用 eastwardTrackNormalRad；禁止 π/2−peak fold。
    * r = r0·(1+A·cos(mid−peak))；包络仍以风暴为圆心（无质心偏移）。
    * 振幅由 |V| 决定；停滞 A≈0 → 四象限相等≈圆；十二级 amp=0 正圆。
    */

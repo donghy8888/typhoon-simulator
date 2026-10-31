@@ -464,9 +464,10 @@
    * 外圈=7级，中圈=10级，内圈=12级；若当前最大风速未达该等级则不返回该项。
    * WIND_CIRCLE_SCALE 只放大显示风圈，不影响 holeRadiusDeg / 空圈与路径。
    */
-  const WIND_CIRCLE_SCALE = 1.2; // ~20% larger concentric rings (was 1.0)
+  const WIND_CIRCLE_SCALE = 1.2; // ~20% larger display rings (was 1.0)
   function windRadiiForGrades(vmaxMs) {
     // 只有达到该风力等级才显示对应风圈（蒲福：7≥13.9，10≥24.5，12≥32.7 m/s）
+    // radiusDeg = 方位平均半径；实际包络由 windEnvelopeLatLngs / windRadiusAtRay 做 NH 非对称
     const r7 = windRadiusDeg(vmaxMs) * WIND_CIRCLE_SCALE;
     const out = [];
     if (vmaxMs >= 13.9) {
@@ -479,6 +480,68 @@
       out.push({ grade: 12, radiusDeg: Math.max(0.2 * WIND_CIRCLE_SCALE, r7 * 0.34), color: '#c0392b', fill: '#e74c3c', fillOpacity: 0.1, weight: 2.5, label: '12级风圈' });
     }
     return out;
+  }
+
+  /**
+   * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
+   * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈6 m/s（约 22 km/h）半饱和。
+   */
+  const WIND_ASYM_V_HALF = 6;   // m/s translation → half asymmetry
+  const WIND_ASYM_A_MAX = 0.34; // fractional amp at high speed / ref intensity
+  function windAsymAmp(speedMs, vmaxMs) {
+    const s = Math.max(0, +speedMs || 0);
+    const speedFactor = s / (s + WIND_ASYM_V_HALF);
+    const inten = 1 + 0.12 * Math.max(0, ((+vmaxMs || 0) - 17) / 55);
+    return WIND_ASYM_A_MAX * speedFactor * Math.min(1.4, inten);
+  }
+
+  /** 运动方位角（弧度）：自正北向东，atan2(u_east, v_north)；停滞返回 0（振幅≈0 时无影响） */
+  function motionHeadingRad(uMs, vMs) {
+    const sp = Math.hypot(+uMs || 0, +vMs || 0);
+    if (sp < 0.15) return 0;
+    return Math.atan2(+uMs || 0, +vMs || 0);
+  }
+
+  /**
+   * 方位半径：α = ray − heading；前=0、右=+π/2；右前峰 α=+π/4，左后谷 α=−3π/4。
+   * r(α) = r0 · (1 + A · cos(α − π/4))
+   */
+  function windRadiusAtRay(meanRadiusDeg, headingRad, rayRad, amp) {
+    const alpha = rayRad - headingRad;
+    return meanRadiusDeg * (1 + amp * Math.cos(alpha - Math.PI / 4));
+  }
+
+  /** 非对称风圈包络折线 [lat,lon]…（闭合）；nPts 默认 48 */
+  function windEnvelopeLatLngs(lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs, nPts) {
+    nPts = nPts || 48;
+    const speed = Math.hypot(+uMs || 0, +vMs || 0);
+    const amp = windAsymAmp(speed, vmaxMs);
+    const hdg = motionHeadingRad(uMs, vMs);
+    const cosLat = Math.cos(lat0 * Math.PI / 180);
+    const pts = [];
+    for (let i = 0; i < nPts; i++) {
+      const ray = (i / nPts) * Math.PI * 2; // 自北向东
+      const r = windRadiusAtRay(meanRadiusDeg, hdg, ray, amp);
+      const dlat = r * Math.cos(ray);
+      const dlon = (r * Math.sin(ray)) / Math.max(0.2, cosLat);
+      pts.push([lat0 + dlat, lon0 + dlon]);
+    }
+    pts.push(pts[0]);
+    return pts;
+  }
+
+  /** 点是否落在某级非对称风圈内（与绘制同一套角度半径查找） */
+  function pointInWindEnvelope(lat, lon, lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs) {
+    const cosLat = Math.cos(lat0 * Math.PI / 180);
+    const dlat = lat - lat0;
+    const dlon = (lon - lon0) * Math.max(0.2, cosLat);
+    const dist = Math.hypot(dlat, dlon);
+    if (dist < 1e-9) return true;
+    const ray = Math.atan2(dlon, dlat);
+    const speed = Math.hypot(+uMs || 0, +vMs || 0);
+    const amp = windAsymAmp(speed, vmaxMs);
+    const hdg = motionHeadingRad(uMs, vMs);
+    return dist <= windRadiusAtRay(meanRadiusDeg, hdg, ray, amp);
   }
 
   /** 空圈：整块副高内台风进路；略放大便于沿引导移动 */
@@ -627,6 +690,11 @@
     inWesterlyBelt,
     windRadiusDeg,
     windRadiiForGrades,
+    windAsymAmp,
+    motionHeadingRad,
+    windRadiusAtRay,
+    windEnvelopeLatLngs,
+    pointInWindEnvelope,
     holeRadiusDeg,
     degPerHourFromMs,
     beaufortGrade,

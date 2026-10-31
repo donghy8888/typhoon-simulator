@@ -1057,31 +1057,33 @@
       const showRings = scrubbing
         ? (dVmax >= P.DISSIPATE_MS)
         : (main.alive || main.vmax >= P.DISSIPATE_MS);
+      // 平移速度：回放用 track 点 u/v；实时用成员当前 u/v（停滞≈圆）
+      const dU = (view && view.u != null) ? view.u : (main.u || 0);
+      const dV = (view && view.v != null) ? view.v : (main.v || 0);
       const rings = showRings ? G.windRadiiForGrades(dVmax) : [];
       const seen = {};
       rings.forEach(function (ring) {
         seen[ring.grade] = true;
+        const latlngs = G.windEnvelopeLatLngs(dLat, dLon, ring.radiusDeg, dU, dV, dVmax, 48);
         const existing = stormRefs.windCircles[ring.grade];
         const tip = ring.label + ' · 当时 ' + G.gradeLabel(dVmax);
-        if (existing) {
-          existing.setLatLng([dLat, dLon]);
-          existing.setRadius(ring.radiusDeg * 111320);
-          existing.setStyle({
-            color: ring.color,
-            weight: ring.weight,
-            fillColor: ring.fill,
-            fillOpacity: ring.fillOpacity
-          });
+        const style = {
+          color: ring.color,
+          weight: ring.weight,
+          fillColor: ring.fill,
+          fillOpacity: ring.fillOpacity
+        };
+        // 非对称包络用 polygon（非同心圆）；旧 circle 层则替换
+        if (existing && existing.setLatLngs) {
+          existing.setLatLngs(latlngs);
+          existing.setStyle(style);
           if (existing.setTooltipContent) existing.setTooltipContent(tip);
           else if (existing.getTooltip()) existing.getTooltip().setContent(tip);
         } else {
-          stormRefs.windCircles[ring.grade] = L.circle([dLat, dLon], {
-            radius: ring.radiusDeg * 111320,
-            color: ring.color,
-            weight: ring.weight,
-            fillColor: ring.fill,
-            fillOpacity: ring.fillOpacity
-          }).bindTooltip(tip, { sticky: true }).addTo(layerGroups.track);
+          if (existing) layerGroups.track.removeLayer(existing);
+          stormRefs.windCircles[ring.grade] = L.polygon(latlngs, style)
+            .bindTooltip(tip, { sticky: true })
+            .addTo(layerGroups.track);
         }
       });
       Object.keys(stormRefs.windCircles).forEach(function (g) {

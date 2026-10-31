@@ -952,7 +952,7 @@
     m.phase = tend.phase;
 
     const t0 = m.track.length ? m.track[m.track.length - 1].t : 0;
-    m.track.push({ lon: m.lon, lat: m.lat, vmax: m.vmax, t: t0 + dtHours });
+    m.track.push({ lon: m.lon, lat: m.lat, vmax: m.vmax, t: t0 + dtHours, u: ou, v: ov });
     // 限制路径点数量，避免长时间运行数组无限增长导致 OOM
     const MAX_TRACK_POINTS = 1000;
     if (m.track.length > MAX_TRACK_POINTS) {

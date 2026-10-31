@@ -28,7 +28,8 @@
   /**
    * 山地多边形 [lat, lon] — 与 OSM / 陆掩码同为 WGS84。
    * mountain-data.js：terrarium mosaic dual-thresh+closing
-   * （台湾 core≥750/corr≥580；华南 core≥550/corr≥400）+ z7 岛屿；
+   * （台湾 core≥750/corr≥580；华南 core≥550/corr≥400；
+   *  日本阿尔卑斯/本州、吕宋、朝鲜太白、中南半岛东缘等分区阈值）；
    * 仅北方 NE Range/mtn。inset 去域边假墙。
    */
   const _mtn = (typeof global !== 'undefined' && global.TY_MOUNTAIN_MASK) ||

@@ -14,7 +14,8 @@ Approach:
      closing before polygonize:
        • Taiwan z8: corridor ≥580m closed (r=4) ∪ core ≥750m
        • South China z8: corridor ≥400m closed (r=6) ∪ core ≥550m
-       • Japan / PH / KR / Hainan / Changbai z7 with light closing
+       • Japan Alps z8 + Honshu/PH Luzon/KR/Indochina dual-thresh belts
+      • Ryukyu high-cut only (no flat-island walls); Hainan/Changbai z7
   2. NE 10m Range/mtn only NORTH of ~30.5N (Taihang/Qinling/Dabie/…)
      — never Nan Ling / Wuyi (too blocky for OSM).
   3. ∩ NE land ∩ inset basin clip (no domain-edge walls).
@@ -55,23 +56,33 @@ MIN_AREA_ISLAND = 0.0025
 # (lon0, lon1, lat0, lat1, z, core_m, corridor_m, close_r, label)
 # corridor ≤ core; closing merges nearby corridor pixels into ridge belts;
 # final mask = close(elev≥corridor) ∪ (elev≥core). Plains stay below corridor.
+# TW/SC thresholds proven; other NW-Pacific ranges use the same dual-thresh
+# idea with region-appropriate cuts (not one ultra-low global threshold).
 ELEV_WINDOWS = [
     # Taiwan 中央山脉 — reconnect ridge without western plain
     (119.2, 122.3, 21.6, 25.6, 8, 750.0, 580.0, 4, "taiwan"),
     # 华南 / 武夷 / 南岭 / 戴云 / 闽西 — connected belts, not peak field
     (108.0, 120.2, 21.5, 30.2, 8, 550.0, 400.0, 6, "southchina"),
-    # Japan main
-    (128.0, 146.5, 30.0, 41.95, 7, 550.0, 500.0, 2, "japan"),
-    # Ryukyu fringe
-    (123.5, 131.2, 24.0, 31.2, 7, 550.0, 500.0, 1, "ryukyu"),
-    # Philippines
-    (118.0, 126.8, 10.0, 20.6, 7, 550.0, 500.0, 2, "philippines"),
-    # S Korea / Jeju / Taebaek
-    (125.5, 130.0, 33.0, 38.9, 7, 550.0, 500.0, 2, "korea"),
-    # Hainan
+    # Japan Alps / Chubu backbone (z8 belts, not summit islands)
+    (136.2, 139.8, 34.8, 37.5, 8, 700.0, 450.0, 5, "japan_alps"),
+    # Honshu / Kyushu / Shikoku ranges (Ou, Chugoku, Kyushu mtns)
+    (129.2, 142.8, 30.2, 41.95, 7, 600.0, 400.0, 4, "japan"),
+    # Hokkaido southern tip inside domain (<42N) — real high terrain only
+    (139.5, 146.2, 41.0, 41.95, 7, 500.0, 350.0, 3, "hokkaido_tip"),
+    # Ryukyu: keep HIGH cuts — only Yakushima-class peaks, no flat-island walls
+    (123.5, 131.2, 24.0, 31.2, 7, 650.0, 550.0, 1, "ryukyu"),
+    # Luzon Cordillera / Sierra Madre / Zambales
+    (119.5, 124.6, 13.2, 19.2, 8, 650.0, 420.0, 5, "luzon"),
+    # Visayas + N Mindanao fringe (domain south edge ≈10N)
+    (120.5, 126.8, 10.05, 13.8, 7, 550.0, 400.0, 3, "visayas"),
+    # S Korea Taebaek / Sobaek / Jeju Hallasan
+    (126.0, 129.9, 33.1, 38.8, 7, 500.0, 350.0, 4, "korea"),
+    # Hainan Wuzhi
     (108.55, 111.15, 18.05, 20.15, 7, 550.0, 480.0, 2, "hainan"),
-    # Changbai / Baekdu
-    (127.3, 129.5, 40.6, 41.95, 7, 700.0, 600.0, 2, "changbai"),
+    # Changbai / Baekdu massif
+    (126.8, 131.0, 40.2, 41.95, 7, 650.0, 500.0, 3, "changbai"),
+    # E Indochina / Annamite fringe inside domain (≥108E)
+    (108.05, 110.2, 11.0, 23.0, 7, 500.0, 350.0, 3, "indochina_e"),
 ]
 
 NE_KEEP = {
@@ -336,6 +347,19 @@ def sample_checks(combined) -> None:
         (118.60, 25.65, True, "Daiyun"),
         (113.00, 25.00, True, "Nanling"),
         (121.55, 25.03, False, "Taipei basin-ish"),
+        (138.50, 36.00, True, "Japanese Alps"),
+        (137.50, 35.60, True, "Chubu ridge"),
+        (136.90, 35.15, False, "Nagoya plain"),
+        (140.90, 39.60, True, "Ou / Tohoku"),
+        (121.00, 17.50, True, "Luzon Cordillera"),
+        (121.20, 15.50, True, "Sierra Madre"),
+        (120.98, 14.60, False, "Manila plain"),
+        (128.50, 37.50, True, "Taebaek"),
+        (127.00, 37.50, False, "Seoul basin-ish"),
+        (127.70, 26.20, False, "Okinawa flat"),
+        (130.53, 30.34, True, "Yakushima"),
+        (108.66, 12.06, True, "C Highlands VN"),
+        (109.20, 12.25, False, "S Vietnam coast"),
     ]
     print("sample checks:", flush=True)
     for lon, lat, expect, label in pts:
@@ -407,6 +431,9 @@ def main() -> None:
             or (119 < c.x < 122.5 and 21 < c.y < 26)
             or (125 < c.x < 131 and 33 < c.y < 39)
             or (108 < c.x < 120.5 and 21.5 < c.y < 30.5)
+            or (129 < c.x < 146.5 and 30 < c.y < 42)  # Japan arcs
+            or (118 < c.x < 127 and 10 < c.y < 20.5)  # Philippines
+            or (108 < c.x < 110.5 and 11 < c.y < 23)  # E Indochina fringe
         )
         amin = MIN_AREA_ISLAND if islandish else MIN_AREA
         if p.area >= amin:
@@ -440,7 +467,8 @@ def main() -> None:
     src = (
         "terrarium elev mosaic dual-thresh+closing "
         "TW core≥750/corr≥580r4 SC core≥550/corr≥400r6 "
-        "/ z7 islands ∪ NE northern Range/mtn / WGS84 inset=0.08"
+        "JP Alps z8 + Honshu/PH/KR/Indochina region cuts "
+        "∪ NE northern Range/mtn / WGS84 inset=0.08"
     )
     js = (
         "/** Auto-generated mountain polygons (WGS84), same CRS as OSM basemap.\n"

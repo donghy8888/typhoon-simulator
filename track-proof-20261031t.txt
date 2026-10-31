@@ -1,0 +1,12 @@
+PROOF wind envelope ?v=20261031t
+FIX (user: 鼓还是不在路径线东边 — fixed due-east peak fails on NW slant):
+  Peak = eastward normal of blue track polyline (not geographic due east).
+  h = atan2(u,v); peakRay = eastwardTrackNormalRad(h)
+    = argmax_{h±π/2} sin(ray)  (east component); E/W tie → π/2.
+  r = r0·(1+A·cos(mid−peakRay)); A_MAX stays 0.44.
+  Grade 12 still amp=0 perfect circle; 7/10 CMA quadrant-step kept.
+
+CHECKS (node TyGeo):
+  NW h=-45.0° → normal=45.0° (NE); pathSide=0.5580 (>0 = east of slant)
+  all moving cases pathSide>0: true
+  grade12 ampOv=0 → ratio=1.000000

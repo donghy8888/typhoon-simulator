@@ -485,7 +485,7 @@
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
    * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3.5 m/s 半饱和。
-   * A_MAX≈0.44 → 典型移速东/西约 1.5–2.0（鼓在路径线地理东侧；非卡通巨鼓）。
+   * A_MAX≈0.44 → 典型移速峰/对侧约 1.5–2.0（鼓在路径东向法线侧；非卡通巨鼓）。
    */
   const WIND_ASYM_V_HALF = 3.5; // m/s translation → half asymmetry
   const WIND_ASYM_A_MAX = 0.44; // fractional amp (was 0.78; eastward cartoon)
@@ -512,6 +512,20 @@
   }
 
   /**
+   * 路径折线东向法线角（atan2(east,north)）。
+   * 两法线 h±π/2 中取东分量 sin(ray) 更大/为正者 → 鼓在蓝线地图东侧。
+   * E/W 路径两法线为 N/S（sin≈0）时回退地理正东 π/2。
+   */
+  function eastwardTrackNormalRad(headingRad) {
+    const h = +headingRad || 0;
+    const nPlus = h + Math.PI / 2;
+    const sPlus = Math.sin(nPlus);
+    if (sPlus > 1e-12) return nPlus;
+    if (sPlus < -1e-12) return h - Math.PI / 2;
+    return Math.PI / 2;
+  }
+
+  /**
    * CMA 风圈：地理四象限（NE/SE/SW/NW）分段常半径，非光滑椭圆。
    * 射线约定：自正北向东 atan2(east, north)；象限边界在 N/E/S/W。
    * 0=NE [0,π/2)，1=SE [π/2,π)，2=SW [π,3π/2)，3=NW [3π/2,2π)。
@@ -530,22 +544,21 @@
 
   /**
    * 四象限半径 [rNE,rSE,rSW,rNW]。
-   * 峰锁地理正东（ray=π/2）：r = r0·(1+A·cos(mid−π/2))。
-   * 大半径落在路径折线地理东侧（+lon / 地图东），不随移向右舷（heading+90°）旋转。
-   * headingRad 保留兼容，振幅仍由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。
-   * 例：NW/N/WNW 路径 → NE≈SE 大、NW≈SW 小，包络主体在蓝线以东。
+   * 峰 = 路径切向的东向法线：peakRay = eastwardTrackNormalRad(heading)。
+   * r = r0·(1+A·cos(mid−peakRay)) → 鼓在蓝线折线地图东侧（斜线以东半平面），
+   * 非固定地理正东 blob（NW 路径固定正东会看起来偏在线北侧）。
+   * 振幅仍由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。
+   * 例：NW(h≈−π/4) → 东向法线≈NE(π/4)，NE 大、SW 小，鼓在斜线以东。
    */
   function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
     const r0 = +meanRadiusDeg || 0;
     const A = +amp || 0;
-    // peak locked due east — ignore motion heading for peak angle
-    void headingRad;
-    const peakRay = Math.PI / 2; // 地理正东 atan2(east,north)
+    const peakRay = eastwardTrackNormalRad(headingRad);
     const out = [];
     for (let q = 0; q < 4; q++) {
       const mid = WIND_QUAD_MIDS[q];
       const c = windQuadCosBoost(Math.cos(mid - peakRay));
-      // 西侧不低于 ~0.52·r0；东侧约 (1+A)·r0（A_MAX≈0.44 → ~1.44）
+      // 对侧不低于 ~0.52·r0；峰侧约 (1+A)·r0（A_MAX≈0.44 → ~1.44）
       out.push(Math.max(r0 * 0.52, r0 * (1 + A * c)));
     }
     return out;
@@ -558,9 +571,9 @@
   }
 
   /**
-   * 由路径折线最近若干点估平移 UV（m/s），供风圈振幅（|V|）。
-   * 峰方向已锁地理正东（路径线东侧）；UV 不再决定鼓向。
-   * 优先于瞬时物理 u/v，使振幅跟蓝线移速一致。
+   * 由路径折线最近若干点估平移 UV（m/s），供风圈振幅（|V|）与东向法线峰向。
+   * 峰 = eastwardTrackNormalRad(atan2(u,v))（蓝线东侧法线，非固定正东）。
+   * 优先于瞬时物理 u/v，使包络跟蓝线切向一致。
    * @param {Array<{lat,lon,t?}>} track
    * @param {number} endIdx 末端下标（含）
    * @returns {{u:number,v:number}|null}
@@ -807,6 +820,7 @@
     windRadiiForGrades,
     windAsymAmp,
     motionHeadingRad,
+    eastwardTrackNormalRad,
     windMotionUVFromTrack,
     windGeoQuadrant,
     windQuadrantRadii,

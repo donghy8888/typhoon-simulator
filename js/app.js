@@ -1099,7 +1099,7 @@
       const showRings = scrubbing
         ? (dVmax >= P.DISSIPATE_MS)
         : (main.alive || main.vmax >= P.DISSIPATE_MS);
-      // 风圈 UV：只供振幅；峰锁路径线地理东侧；初生回退引导气流
+      // 风圈 UV：振幅 + 东向法线峰向；十二级 amp=0 正圆；初生回退引导气流
       const physU = (view && view.u != null) ? view.u : (main.u || 0);
       const physV = (view && view.v != null) ? view.v : (main.v || 0);
       const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);

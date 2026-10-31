@@ -1109,7 +1109,9 @@
       const seen = {};
       rings.forEach(function (ring) {
         seen[ring.grade] = true;
-        const latlngs = G.windEnvelopeLatLngs(dLat, dLon, ring.radiusDeg, dU, dV, dVmax, 64);
+        // 十二级：正圆（amp=0）；七/十级：保留东侧鼓起的 CMA 阶梯包络
+        const ampOv = (ring.grade === 12) ? 0 : null;
+        const latlngs = G.windEnvelopeLatLngs(dLat, dLon, ring.radiusDeg, dU, dV, dVmax, 64, ampOv);
         const existing = stormRefs.windCircles[ring.grade];
         const tip = ring.label + ' · 当时 ' + G.gradeLabel(dVmax);
         const style = {

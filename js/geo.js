@@ -604,11 +604,14 @@
    * 每象限 = 常半径 90° 圆弧；在每个正 N/E/S/W 角写入「双顶点」
    * （上一象限半径 + 本象限半径同角），强迫 Leaflet 画短径向台阶（可见 kink），
    * 而非相邻象限弦切线抹掉阶跃。非光滑卵形 / 柠檬椭圆。
+   * ampOverride：可选；传 0 → 四象限等半径正圆（十二级风圈用）；省略则按移速算振幅。
    */
-  function windEnvelopeLatLngs(lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs, nPts) {
+  function windEnvelopeLatLngs(lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs, nPts, ampOverride) {
     nPts = nPts || 64;
     const speed = Math.hypot(+uMs || 0, +vMs || 0);
-    const amp = windAsymAmp(speed, vmaxMs);
+    const amp = (ampOverride != null && isFinite(+ampOverride))
+      ? Math.max(0, +ampOverride)
+      : windAsymAmp(speed, vmaxMs);
     const hdg = motionHeadingRad(uMs, vMs);
     const rs = windQuadrantRadii(meanRadiusDeg, hdg, amp);
     const cosLat = Math.cos(lat0 * Math.PI / 180);
@@ -640,8 +643,8 @@
     return pts;
   }
 
-  /** 点是否落在某级非对称风圈内（与绘制同一套四象限常半径） */
-  function pointInWindEnvelope(lat, lon, lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs) {
+  /** 点是否落在某级非对称风圈内（与绘制同一套四象限常半径）；ampOverride 同 windEnvelopeLatLngs */
+  function pointInWindEnvelope(lat, lon, lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs, ampOverride) {
     const cosLat = Math.cos(lat0 * Math.PI / 180);
     const dlat = lat - lat0;
     const dlon = (lon - lon0) * Math.max(0.2, cosLat);
@@ -649,7 +652,9 @@
     if (dist < 1e-9) return true;
     const ray = Math.atan2(dlon, dlat);
     const speed = Math.hypot(+uMs || 0, +vMs || 0);
-    const amp = windAsymAmp(speed, vmaxMs);
+    const amp = (ampOverride != null && isFinite(+ampOverride))
+      ? Math.max(0, +ampOverride)
+      : windAsymAmp(speed, vmaxMs);
     const hdg = motionHeadingRad(uMs, vMs);
     return dist <= windRadiusAtRay(meanRadiusDeg, hdg, ray, amp);
   }

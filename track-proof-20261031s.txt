@@ -1,0 +1,14 @@
+PROOF wind envelope ?v=20261031s
+FIX (user: 「十二级风圈肯定是圆的」):
+  Grade 12 (十二级) forced amp=0 → equal quadrant radii → perfect circle centered on storm.
+  Grades 7 and 10 keep asymmetric CMA quadrant-step envelope with locked due-east peak (from ?v=20261031r).
+
+IMPL:
+  geo.js windEnvelopeLatLngs / pointInWindEnvelope: optional ampOverride (0 = circle).
+  app.js updateStormInPlace ring loop: ampOv = (ring.grade === 12) ? 0 : null.
+
+CHECKS (node TyGeo, NW motion u=-8 v=4 vmax=45):
+  grade7 lonBias=0.5491 ratio=1.622 (asymmetric east)
+  grade10 lonBias=0.3185 ratio=1.622 (asymmetric east)
+  grade12 lonBias=0.000000 ratio=1.000000 (circle)
+  amp0 quads equal: true

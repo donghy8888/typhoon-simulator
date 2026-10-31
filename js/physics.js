@@ -333,7 +333,7 @@
    * 东北引导占优时表现为「先往山脉轻轻折一下再东北」。
    * 只改运动叠加，不改副高/黄绿线/陆地衰减/风圈缩放；单台风。
    */
-  const TW_MTN_LON = 121.11;   // 中央山脉中心经度（elev 脊质心，WGS84）
+  const TW_MTN_LON = 121.12;   // 中央山脉中心经度（elev 脊质心，WGS84）
   const TW_MTN_LAT = 23.76;    // 中央山脉中心纬度（elev 脊质心，WGS84）
   const TW_MTN_R_DEG = 3.8;    // 影响半径（°）— 覆盖东岸外海至 ~125E
   const TW_MTN_PEAK_MS = 0.85; // 峰值吸引 (m/s)；勿加档

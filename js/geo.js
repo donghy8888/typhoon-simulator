@@ -27,8 +27,8 @@
 
   /**
    * 山地多边形 [lat, lon] — 与 OSM / 陆掩码同为 WGS84。
-   * 数据来自 js/mountain-data.js：NE 10m 全部 Range/mtn（大陆具名山脉）
-   * ∪ terrarium elev≥550m z7 岛屿窗（台湾/日本/菲/韩/海南…），inset 裁切去域边假墙。
+   * mountain-data.js：terrarium z8 台湾≥800m（脊线）+ 华南≥550m；
+   * z7 日/菲/韩/海南；仅北方 NE Range/mtn。inset 去域边假墙。
    */
   const _mtn = (typeof global !== 'undefined' && global.TY_MOUNTAIN_MASK) ||
     (typeof globalThis !== 'undefined' && globalThis.TY_MOUNTAIN_MASK) ||

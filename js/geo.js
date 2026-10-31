@@ -484,11 +484,11 @@
 
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
-   * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3 m/s 半饱和（中等移速即可见台阶）。
-   * A_MAX≈0.78 → 典型移速下右/左半径比约 2.2–3.2（CMA 预报图块状右鼓）。
+   * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3.5 m/s 半饱和。
+   * A_MAX≈0.44 → 典型移速右/左约 1.5–2.0（CMA 台阶可见，非卡通巨鼓）。
    */
-  const WIND_ASYM_V_HALF = 3;   // m/s translation → half asymmetry (was 5)
-  const WIND_ASYM_A_MAX = 0.78; // fractional amp (was 0.55; steps still too mild)
+  const WIND_ASYM_V_HALF = 3.5; // m/s translation → half asymmetry
+  const WIND_ASYM_A_MAX = 0.44; // fractional amp (was 0.78; eastward cartoon)
   function windAsymAmp(speedMs, vmaxMs) {
     const s = Math.max(0, +speedMs || 0);
     const speedFactor = s / (s + WIND_ASYM_V_HALF);
@@ -497,16 +497,11 @@
   }
 
   /**
-   * 将 cos 象限因子量化/推高对比：弱中间值推向 ±1，
-   * 使相邻象限在 N/E/S/W 的径向台阶一目了然（非光滑卵形）。
+   * 象限 cos 轻度对比（不再 pow 推高到近 ±1）。
+   * 台阶主要靠四象限常半径 + N/E/S/W 双顶点 kink；勿卡通放大。
    */
   function windQuadCosBoost(c) {
-    const x = +c || 0;
-    const a = Math.abs(x);
-    if (a < 1e-12) return 0;
-    // 0.707 → ~0.95；0.5 → ~0.87；近 0 仍小 → 正交象限贴近均值
-    const boosted = Math.min(1, Math.pow(a, 0.32));
-    return (x < 0 ? -1 : 1) * boosted;
+    return +c || 0; // identity — aggressive boost removed (?v=20261031q)
   }
 
   /** 运动方位角（弧度）：自正北向东，atan2(u_east, v_north)；停滞返回 0（振幅≈0 时无影响） */
@@ -537,7 +532,7 @@
    * 四象限半径 [rNE,rSE,rSW,rNW]。
    * 各象限取中线角，用右舷峰公式：r = r0·(1+A·cos(mid−heading−π/2))。
    * 峰在 heading+90°（运动右侧）；停滞 A≈0 → 四象限相等≈圆。
-   * 例：往 NW → NE 最大、SW 最小；往 N → NE+SE 东侧鼓。
+   * 例：往 NW → NE 最大、SW 最小；往 N → NE+SE 东侧鼓；往 NE → SE 最大。
    */
   function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
     const r0 = +meanRadiusDeg || 0;
@@ -547,8 +542,8 @@
     for (let q = 0; q < 4; q++) {
       const mid = WIND_QUAD_MIDS[q];
       const c = windQuadCosBoost(Math.cos(mid - h - Math.PI / 2));
-      // 左舷不低于 ~0.38·r0，避免塌成尖角；右舷可到 ~1.78·r0
-      out.push(Math.max(r0 * 0.38, r0 * (1 + A * c)));
+      // 左舷不低于 ~0.52·r0；右舷约 (1+A)·r0（A_MAX≈0.44 → ~1.44）
+      out.push(Math.max(r0 * 0.52, r0 * (1 + A * c)));
     }
     return out;
   }
@@ -557,6 +552,47 @@
   function windRadiusAtRay(meanRadiusDeg, headingRad, rayRad, amp) {
     const rs = windQuadrantRadii(meanRadiusDeg, headingRad, amp);
     return rs[windGeoQuadrant(rayRad)];
+  }
+
+  /**
+   * 由路径折线最近若干点估平移 UV（m/s），供风圈朝向与振幅。
+   * 优先于瞬时物理 u/v：路径看起来 NW 时鼓向 NE，避免物理 WNW→鼓向 N。
+   * @param {Array<{lat,lon,t?}>} track
+   * @param {number} endIdx 末端下标（含）
+   * @returns {{u:number,v:number}|null}
+   */
+  function windMotionUVFromTrack(track, endIdx) {
+    if (!track || track.length < 2) return null;
+    const i1 = Math.max(1, Math.min(track.length - 1, endIdx | 0));
+    const cosLat = Math.cos((track[i1].lat || 0) * Math.PI / 180);
+    const cos = Math.max(0.2, cosLat);
+    const maxBack = 4;
+    let i0 = i1;
+    let accum = 0;
+    while (i0 > 0 && (i1 - i0) < maxBack) {
+      const a = track[i0 - 1];
+      const b = track[i0];
+      const dlat = (+b.lat || 0) - (+a.lat || 0);
+      const dlon = ((+b.lon || 0) - (+a.lon || 0)) * cos;
+      accum += Math.hypot(dlat, dlon);
+      i0--;
+      if (accum >= 0.06) break; // ~6–7 km
+    }
+    if (i0 >= i1) return null;
+    const a = track[i0];
+    const b = track[i1];
+    const dlat = (+b.lat || 0) - (+a.lat || 0);
+    const dlon = (+b.lon || 0) - (+a.lon || 0);
+    const move = Math.hypot(dlat, dlon * cos);
+    if (move < 0.012) return null;
+    let dt = (b.t != null && a.t != null) ? (+b.t - +a.t) : (i1 - i0);
+    if (!(dt > 0)) dt = Math.max(1, i1 - i0);
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * cos;
+    return {
+      u: (dlon * mPerDegLon) / (dt * 3600),
+      v: (dlat * mPerDegLat) / (dt * 3600)
+    };
   }
 
   /**
@@ -762,6 +798,7 @@
     windRadiiForGrades,
     windAsymAmp,
     motionHeadingRad,
+    windMotionUVFromTrack,
     windGeoQuadrant,
     windQuadrantRadii,
     windRadiusAtRay,

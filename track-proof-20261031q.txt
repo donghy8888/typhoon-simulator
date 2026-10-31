@@ -1,0 +1,17 @@
+PROOF wind envelope ?v=20261031q
+FIX:
+  1) A_MAX 0.78→0.44; remove windQuadCosBoost cartoon quantize (identity)
+  2) Envelope heading from track polyline Δlon/Δlat (last ≤4 pts), not instantaneous physics u/v
+     → blue-line NW ⇒ peak NE (heading+90°); N⇒E (NE=SE); NE⇒SE
+  3) Spawn/stall: seed placeStorm u,v from steeringAt; windEnvelopeMotionUV falls back
+     to last non-zero track u/v then guiding steer so rings not round at birth
+
+KEEP: 4 geo quadrants + N/E/S/W dual-vertex kinks; 7/10/12 colors; right-of-motion=heading+90°
+
+CHECKS (node TyGeo):
+  amp(20m/s)≈0.393  amp(steer≈3.35)≈0.224  amp(0)=0
+  NW u=-1,v=1 → largest NE
+  N  u=0,v=1  → NE=SE > SW=NW (east bulge)
+  NE u=1,v=1  → largest SE
+  track polyline NW-ish → largest NE
+  WNW phys still NE-largest but peak~18°NNE (why track heading preferred)

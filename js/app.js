@@ -1015,7 +1015,48 @@
     updateStatus();
   }
 
-  /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
+  /**
+   * 风圈朝向/振幅用的平移 UV：优先路径折线（眼所见蓝线），
+   * 其次轨迹上最近非零 u/v，再次引导气流，最后瞬时物理。
+   * 初生/停滞时用引导向量，避免风圈仍是正圆误导。
+   */
+  function windEnvelopeMotionUV(main, track, idx, physU, physV) {
+    const i = Math.max(0, idx | 0);
+    const lat = (track[i] && track[i].lat != null) ? track[i].lat : (main && main.lat);
+    const lon = (track[i] && track[i].lon != null) ? track[i].lon : (main && main.lon);
+    const fromTrack = G.windMotionUVFromTrack(track, i);
+    if (fromTrack && Math.hypot(fromTrack.u, fromTrack.v) >= 0.25) {
+      // 路径方向清晰但极慢时，用引导/物理速度抬振幅，朝向仍跟蓝线
+      const sp = Math.hypot(fromTrack.u, fromTrack.v);
+      if (sp >= 1.2) return fromTrack;
+      let floorSp = Math.hypot(+physU || 0, +physV || 0);
+      try {
+        const st = P.steeringAt(lon, lat, cfgFromUI(), state.fugen, state.hole);
+        floorSp = Math.max(floorSp, Math.hypot(st.u || 0, st.v || 0));
+      } catch (e) { /* ignore */ }
+      if (floorSp > sp + 0.15) {
+        const k = floorSp / sp;
+        return { u: fromTrack.u * k, v: fromTrack.v * k };
+      }
+      return fromTrack;
+    }
+    for (let k = i; k >= 0; k--) {
+      const p = track[k];
+      if (!p) continue;
+      const u = p.u, v = p.v;
+      if (u != null && v != null && Math.hypot(u, v) >= 0.4) return { u: u, v: v };
+    }
+    try {
+      const st = P.steeringAt(lon, lat, cfgFromUI(), state.fugen, state.hole);
+      if (Math.hypot(st.u || 0, st.v || 0) >= 0.25) return { u: st.u, v: st.v };
+    } catch (e) { /* ignore */ }
+    if (main && Math.hypot(main.u || 0, main.v || 0) >= 0.25) {
+      return { u: main.u, v: main.v };
+    }
+    return { u: +physU || 0, v: +physV || 0 };
+  }
+
+    /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
   function updateStormInPlace() {
     if (!state.members.length) {
       clearStormRefs();
@@ -1057,9 +1098,12 @@
       const showRings = scrubbing
         ? (dVmax >= P.DISSIPATE_MS)
         : (main.alive || main.vmax >= P.DISSIPATE_MS);
-      // 平移速度：回放用 track 点 u/v；实时用成员当前 u/v（停滞≈圆）
-      const dU = (view && view.u != null) ? view.u : (main.u || 0);
-      const dV = (view && view.v != null) ? view.v : (main.v || 0);
+      // 风圈 UV：路径折线朝向优先（蓝线 NW→鼓 NE）；初生回退引导气流
+      const physU = (view && view.u != null) ? view.u : (main.u || 0);
+      const physV = (view && view.v != null) ? view.v : (main.v || 0);
+      const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);
+      const dU = envUV.u;
+      const dV = envUV.v;
       const rings = showRings ? G.windRadiiForGrades(dVmax) : [];
       const seen = {};
       rings.forEach(function (ring) {
@@ -1156,9 +1200,19 @@
     state.scrubIndex = null;
     state.members = [];
 
+    // 初生即用引导气流朝向/速度画非对称风圈（勿等开跑后才鼓起）
+    let birthU = 0, birthV = 0;
+    try {
+      const st0 = P.steeringAt(lon, lat, cfgFromUI(), state.fugen, state.hole);
+      birthU = st0.u || 0;
+      birthV = st0.v || 0;
+    } catch (e) {
+      birthU = -3;
+      birthV = 1.5;
+    }
     const main = {
-      lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0 }],
-      phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: 0, v: 0,
+      lon, lat, vmax, alive: true, track: [{ lon, lat, vmax, t: 0, u: birthU, v: birthV }],
+      phase: '待启动', sst: G.getSst(lon, lat, state.sstRegions), u: birthU, v: birthV,
       arcLat0: null,
       sAcc: 0,
       cfgPerturb: null

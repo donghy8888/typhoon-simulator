@@ -1355,6 +1355,13 @@
   }
 
   // —— 事件 ——
+  map.on('zoomend', function () {
+    if (state.mode !== 'history' || !state.histData) return;
+    const next = histMarkDtHours();
+    if (state._histMarkDtH === next) return; // only redraw when cadence flips
+    redrawHistoryTracks();
+  });
+
   map.on('click', function (e) {
     if (state.mode === 'history') return;
     if (state._draggingBlock || state._draggingVertex) return;
@@ -1759,10 +1766,19 @@
     }
   }
 
+  function histMarkDtHours() {
+    if (H && typeof H.markDtHoursForZoom === 'function') {
+      return H.markDtHoursForZoom(map.getZoom());
+    }
+    return map.getZoom() >= 6 ? 2 : 6;
+  }
+
   function redrawHistoryTracks() {
     if (!H || !state.histData) return;
     const q = histQuery();
     const places = histPlacesSelected();
+    const markDt = histMarkDtHours();
+    state._histMarkDtH = markDt;
     H.drawYear(layerGroups.history, state.histData, {
       scale: getIntensityScale(),
       selectedId: state.histSelectedId,
@@ -1770,6 +1786,8 @@
       filterQuery: q,
       filterPlaces: places,
       landfallIndex: state.histLandfallIndex,
+      zoom: map.getZoom(),
+      markDtHours: markDt,
       onSelect: function (id) {
         selectHistStorm(id, { toggle: true, fit: true });
       }

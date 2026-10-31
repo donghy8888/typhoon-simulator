@@ -182,8 +182,17 @@
   }
 
 
-  /** Match sim path marks: ~6h between visible intensity circles. */
-  const HIST_MARK_DT_H = 6;
+  /** Zoomed-out: sparse ~6h marks; zoomed-in: dense ~2h marks. */
+  const HIST_MARK_DT_H_SPARSE = 6;
+  const HIST_MARK_DT_H_DENSE = 2;
+  /** Leaflet zoom at/above which dense (2h) marks are used. */
+  const HIST_MARK_ZOOM_DENSE = 6;
+
+  function markDtHoursForZoom(zoom) {
+    const z = zoom == null ? NaN : +zoom;
+    if (isFinite(z) && z >= HIST_MARK_ZOOM_DENSE) return HIST_MARK_DT_H_DENSE;
+    return HIST_MARK_DT_H_SPARSE;
+  }
 
   function parsePointTimeMs(t) {
     if (t == null) return null;
@@ -203,20 +212,21 @@
 
   /**
    * Keep first fix, then next fixes only when ≥ dtHours since last kept mark.
-   * Fallback if times missing: keep every other point (IBTrACS ~3h → ~6h).
+   * Fallback if times missing: dense (≤3h) keeps every point; sparse keeps every other (~6h from ~3h).
    */
   function selectIntensityMarkPoints(pts, dtHours) {
-    dtHours = dtHours == null ? HIST_MARK_DT_H : dtHours;
+    dtHours = dtHours == null ? HIST_MARK_DT_H_SPARSE : dtHours;
     const out = [];
     if (!pts || !pts.length) return out;
     let lastMs = null;
     let lastIdx = -1;
     const minMs = dtHours * 3600 * 1000 - 1;
+    const idxStep = dtHours <= 3 ? 1 : 2;
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       const ms = parsePointTimeMs(p && p.t);
       if (ms == null) {
-        if (lastIdx < 0 || i - lastIdx >= 2) {
+        if (lastIdx < 0 || i - lastIdx >= idxStep) {
           out.push(p);
           lastIdx = i;
         }
@@ -280,9 +290,11 @@
       }
       line.addTo(layerGroup);
 
-      // Intensity dots — thin to ~6h (same cadence as sim TRACK_MARK_DT_H);
-      // polyline still uses every fix. Avoids dense 3h/2h circles when zoomed in.
-      const markPts = selectIntensityMarkPoints(pts, HIST_MARK_DT_H);
+      // Intensity dots — zoom-aware cadence (sparse ~6h / dense ~2h); polyline uses every fix.
+      const markDt = opts.markDtHours != null
+        ? opts.markDtHours
+        : markDtHoursForZoom(opts.zoom);
+      const markPts = selectIntensityMarkPoints(pts, markDt);
       for (let i = 0; i < markPts.length; i++) {
         const p = markPts[i];
         const hex = G.intensityTrackColor(p.vmax, scale);
@@ -519,6 +531,10 @@
   global.TyHistory = {
     YEAR_MIN: YEAR_MIN,
     YEAR_MAX: YEAR_MAX,
+    HIST_MARK_DT_H_SPARSE: HIST_MARK_DT_H_SPARSE,
+    HIST_MARK_DT_H_DENSE: HIST_MARK_DT_H_DENSE,
+    HIST_MARK_ZOOM_DENSE: HIST_MARK_ZOOM_DENSE,
+    markDtHoursForZoom: markDtHoursForZoom,
     yearsList: yearsList,
     loadIndex: loadIndex,
     loadYear: loadYear,

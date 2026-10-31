@@ -25,19 +25,23 @@
     return ring.map(function (p) { return [p[1], p[0]]; });
   });
 
-  /** 山地示意多边形（加速衰减） */
-  const MOUNTAIN_POLYS = [
-    // 台湾中央山脉
-    [[22.5, 120.8], [23.5, 121.0], [24.5, 121.2], [24.2, 121.5], [23.2, 121.3], [22.5, 121.0]],
-    // 中国东南丘陵/武夷一带示意
-    [[24.0, 116.0], [25.5, 117.5], [27.0, 118.5], [28.0, 119.0], [27.5, 120.0], [26.0, 119.0], [24.5, 117.5]],
-    // 日本中部山地
-    [[35.0, 137.0], [36.0, 137.5], [36.5, 138.5], [35.8, 139.0], [35.0, 138.0]],
-    // 菲律宾科迪勒拉示意
-    [[16.0, 120.8], [17.5, 121.0], [17.2, 121.5], [16.0, 121.2]],
-    // 海南中部
-    [[18.8, 109.3], [19.2, 109.7], [19.0, 110.0], [18.6, 109.6]]
-  ];
+  /**
+   * 山地多边形 [lat, lon] — 与 OSM / 陆掩码同为 WGS84。
+   * 数据来自 js/mountain-data.js（terrarium 高程阈值 + Natural Earth 10m Range/mtn），
+   * 替代旧手绘粗块（与底图错位，且缺中央山脉/日本阿尔卑斯等细节）。
+   */
+  const _mtn = (typeof global !== 'undefined' && global.TY_MOUNTAIN_MASK) ||
+    (typeof globalThis !== 'undefined' && globalThis.TY_MOUNTAIN_MASK) ||
+    (typeof window !== 'undefined' && window.TY_MOUNTAIN_MASK) || null;
+  const MOUNTAIN_POLYS = (_mtn && _mtn.MOUNTAIN_POLYS) ? _mtn.MOUNTAIN_POLYS : [];
+  const MOUNTAIN_BBOXES = (_mtn && _mtn.MOUNTAIN_BBOXES) ? _mtn.MOUNTAIN_BBOXES : null;
+  if (!MOUNTAIN_POLYS.length) {
+    console.warn('[TyGeo] mountain mask missing — load js/mountain-data.js before geo.js');
+  }
+  /** 预转换 [lon,lat] 环，避免 isMountain 热路径反复 map */
+  const MOUNTAIN_RINGS_LONLAT = MOUNTAIN_POLYS.map(function (ring) {
+    return ring.map(function (p) { return [p[1], p[0]]; });
+  });
 
   /** 默认 SST 区域框：{id, name, lon0, lon1, lat0, lat1, sst} */
   function defaultSstRegions() {
@@ -264,7 +268,17 @@
   }
 
   function isMountain(lon, lat) {
-    return pointInPolysLatLon(lat, lon, MOUNTAIN_POLYS);
+    const n = MOUNTAIN_RINGS_LONLAT.length;
+    if (!n) return false;
+    const boxes = MOUNTAIN_BBOXES;
+    for (let i = 0; i < n; i++) {
+      if (boxes && boxes.length === n) {
+        const b = boxes[i];
+        if (lon < b[0] || lon > b[2] || lat < b[1] || lat > b[3]) continue;
+      }
+      if (pointInRing(lon, lat, MOUNTAIN_RINGS_LONLAT[i])) return true;
+    }
+    return false;
   }
 
   function getSst(lon, lat, regions) {

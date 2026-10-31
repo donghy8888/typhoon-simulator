@@ -213,10 +213,10 @@
   function redrawTerrain() {
     layerGroups.terrain.clearLayers();
     // 陆地填充不再手绘：陆掩码已与 OSM 底图海岸对齐；再叠粗填充会「地图对不齐」。
-    // 仅保留山地示意（物理衰减用），低透明以免盖住海岸。
+    // 山地：WGS84 elev/NE 数据（物理衰减同源），低透明以免盖住 OSM 海岸。
     G.MOUNTAIN_POLYS.forEach(ring => {
       L.polygon(ring, {
-        color: '#6b5344', weight: 1, fillColor: '#8b7355', fillOpacity: 0.35,
+        color: '#6b5344', weight: 0.6, fillColor: '#8b7355', fillOpacity: 0.28,
         interactive: false
       }).addTo(layerGroups.terrain);
     });

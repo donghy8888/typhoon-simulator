@@ -1,0 +1,14 @@
+PROOF wind envelope ?v=20261031r
+FIX (user: 「线的东边」≠ 移向右舷):
+  Peak locked at geographic due EAST (ray=π/2 in atan2(east,north)).
+  Formula: r = r0·(1+A·cos(mid−π/2)) — heading ignored for peak angle.
+  Amp still from |V| (track polyline UV / steer); A_MAX stays 0.44.
+  Docs: 「路径线地理东侧」 not 「移向右舷」 / heading+90°.
+
+KEEP: 4 geo quadrants + N/E/S/W dual-vertex kinks; spawn asym from seed UV.
+
+CHECKS (node TyGeo):
+  NW/N/WNW/W/NE all → NE≈SE > NW≈SW (east drum)
+  stall amp=0 → circle
+  envelope mean lon bias > 0 for moving cases (east of center/blue path)
+  NW vs N: both bulge map-east of blue line through center (not NE-only for NW)

@@ -1016,9 +1016,10 @@
   }
 
   /**
-   * 风圈朝向/振幅用的平移 UV：优先路径折线（眼所见蓝线），
+   * 风圈振幅用的平移 UV（|V|）：优先路径折线（眼所见蓝线移速），
    * 其次轨迹上最近非零 u/v，再次引导气流，最后瞬时物理。
-   * 初生/停滞时用引导向量，避免风圈仍是正圆误导。
+   * 峰锁地理正东（路径线东侧），UV 不决定鼓向。
+   * 初生/停滞时用引导向量抬振幅，避免风圈仍是正圆误导。
    */
   function windEnvelopeMotionUV(main, track, idx, physU, physV) {
     const i = Math.max(0, idx | 0);
@@ -1098,7 +1099,7 @@
       const showRings = scrubbing
         ? (dVmax >= P.DISSIPATE_MS)
         : (main.alive || main.vmax >= P.DISSIPATE_MS);
-      // 风圈 UV：路径折线朝向优先（蓝线 NW→鼓 NE）；初生回退引导气流
+      // 风圈 UV：只供振幅；峰锁路径线地理东侧；初生回退引导气流
       const physU = (view && view.u != null) ? view.u : (main.u || 0);
       const physV = (view && view.v != null) ? view.v : (main.v || 0);
       const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);
@@ -1200,7 +1201,7 @@
     state.scrubIndex = null;
     state.members = [];
 
-    // 初生即用引导气流朝向/速度画非对称风圈（勿等开跑后才鼓起）
+    // 初生即用引导气流速度画东侧鼓起的非对称风圈（勿等开跑后才鼓起）
     let birthU = 0, birthV = 0;
     try {
       const st0 = P.steeringAt(lon, lat, cfgFromUI(), state.fugen, state.hole);

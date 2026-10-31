@@ -485,7 +485,7 @@
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
    * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3.5 m/s 半饱和。
-   * A_MAX≈0.44 → 典型移速右/左约 1.5–2.0（CMA 台阶可见，非卡通巨鼓）。
+   * A_MAX≈0.44 → 典型移速东/西约 1.5–2.0（鼓在路径线地理东侧；非卡通巨鼓）。
    */
   const WIND_ASYM_V_HALF = 3.5; // m/s translation → half asymmetry
   const WIND_ASYM_A_MAX = 0.44; // fractional amp (was 0.78; eastward cartoon)
@@ -530,19 +530,22 @@
 
   /**
    * 四象限半径 [rNE,rSE,rSW,rNW]。
-   * 各象限取中线角，用右舷峰公式：r = r0·(1+A·cos(mid−heading−π/2))。
-   * 峰在 heading+90°（运动右侧）；停滞 A≈0 → 四象限相等≈圆。
-   * 例：往 NW → NE 最大、SW 最小；往 N → NE+SE 东侧鼓；往 NE → SE 最大。
+   * 峰锁地理正东（ray=π/2）：r = r0·(1+A·cos(mid−π/2))。
+   * 大半径落在路径折线地理东侧（+lon / 地图东），不随移向右舷（heading+90°）旋转。
+   * headingRad 保留兼容，振幅仍由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。
+   * 例：NW/N/WNW 路径 → NE≈SE 大、NW≈SW 小，包络主体在蓝线以东。
    */
   function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
     const r0 = +meanRadiusDeg || 0;
     const A = +amp || 0;
-    const h = +headingRad || 0;
+    // peak locked due east — ignore motion heading for peak angle
+    void headingRad;
+    const peakRay = Math.PI / 2; // 地理正东 atan2(east,north)
     const out = [];
     for (let q = 0; q < 4; q++) {
       const mid = WIND_QUAD_MIDS[q];
-      const c = windQuadCosBoost(Math.cos(mid - h - Math.PI / 2));
-      // 左舷不低于 ~0.52·r0；右舷约 (1+A)·r0（A_MAX≈0.44 → ~1.44）
+      const c = windQuadCosBoost(Math.cos(mid - peakRay));
+      // 西侧不低于 ~0.52·r0；东侧约 (1+A)·r0（A_MAX≈0.44 → ~1.44）
       out.push(Math.max(r0 * 0.52, r0 * (1 + A * c)));
     }
     return out;
@@ -555,8 +558,9 @@
   }
 
   /**
-   * 由路径折线最近若干点估平移 UV（m/s），供风圈朝向与振幅。
-   * 优先于瞬时物理 u/v：路径看起来 NW 时鼓向 NE，避免物理 WNW→鼓向 N。
+   * 由路径折线最近若干点估平移 UV（m/s），供风圈振幅（|V|）。
+   * 峰方向已锁地理正东（路径线东侧）；UV 不再决定鼓向。
+   * 优先于瞬时物理 u/v，使振幅跟蓝线移速一致。
    * @param {Array<{lat,lon,t?}>} track
    * @param {number} endIdx 末端下标（含）
    * @returns {{u:number,v:number}|null}

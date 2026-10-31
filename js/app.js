@@ -1782,10 +1782,13 @@
   }
 
   function histMarkDtHours() {
+    // Selected storm: always true 2h densify — fitStorm rarely reaches the old ≥6 gate.
+    const selected = !!state.histSelectedId;
     if (H && typeof H.markDtHoursForZoom === 'function') {
-      return H.markDtHoursForZoom(map.getZoom());
+      return H.markDtHoursForZoom(map.getZoom(), selected);
     }
-    return map.getZoom() >= 6 ? 2 : 6;
+    if (selected) return 2;
+    return map.getZoom() >= 5 ? 2 : 6;
   }
 
   function redrawHistoryTracks() {

@@ -1,0 +1,21 @@
+PROOF history marks densify + selection/zoom gate — ?v=20261031ai
+
+Root cause of 「没有改」after ?v=20261031ah:
+- densifyMarksAlongTrack WAS on CDN and unit-correct (2h median).
+- But dense mode required zoom≥6 while fitStorm(maxZoom:6) for typical
+  WP tracks (e.g. EWINIAR span ~46°lat/~63°lon) lands at zoom ~3–4.
+- Selecting a storm therefore stayed on sparse ~6h marks; user saw no change.
+
+Fix (?v=20261031ai):
+- Selected storm → always dense 2h densify (markDtHoursForZoom(z, true)).
+- Overview (no selection): dense at zoom≥5 (was ≥6); sparse below.
+- fitStorm maxZoom 6→7 so compact storms can zoom further.
+- Polyline still uses every real IBTrACS fix. No invented storms.
+
+Storm: 2024141N03142 EWINIAR  fixes=109
+Dense (2h) marks=163  median gap=2.000h  mean=2h
+Sparse (6h) marks=55  median gap=6.000h  mean=6h
+markDtHoursForZoom(4)= 6  (5)=2  (6)=2
+markDtHoursForZoom(3, selected)= 2
+Sample 02:00 mid-point linear blend: lon=141.7333 (expect 141.7333) lat=2.4333 (expect 2.4333) match=true
+Interpolated marks: 108/163

@@ -185,10 +185,17 @@
   /** Zoomed-out: sparse ~6h marks; zoomed-in: dense ~2h marks. */
   const HIST_MARK_DT_H_SPARSE = 6;
   const HIST_MARK_DT_H_DENSE = 2;
-  /** Leaflet zoom at/above which dense (2h) marks are used. */
-  const HIST_MARK_ZOOM_DENSE = 6;
+  /** Leaflet zoom at/above which dense (2h) marks are used (overview / no selection). */
+  const HIST_MARK_ZOOM_DENSE = 5;
 
-  function markDtHoursForZoom(zoom) {
+  /**
+   * Cadence for intensity marks.
+   * @param {number} zoom Leaflet zoom
+   * @param {boolean} [selected] when true (inspecting one storm), always dense 2h —
+   *   fitStorm for long WP tracks often lands at zoom 3–5 and never hit the old ≥6 gate.
+   */
+  function markDtHoursForZoom(zoom, selected) {
+    if (selected) return HIST_MARK_DT_H_DENSE;
     const z = zoom == null ? NaN : +zoom;
     if (isFinite(z) && z >= HIST_MARK_ZOOM_DENSE) return HIST_MARK_DT_H_DENSE;
     return HIST_MARK_DT_H_SPARSE;
@@ -284,7 +291,7 @@
    * Sparse (zoom<6, ~6h): keep first fix, then next real fixes only when
    * ≥ dtHours since last kept mark. Fallback if times missing: every other
    * point (~6h from ~3h IBTrACS).
-   * Dense (zoom>=6, 2h): true 2-hour timeline via densifyMarksAlongTrack.
+   * Dense (selected OR zoom>=5, 2h): true 2-hour timeline via densifyMarksAlongTrack.
    */
   function selectIntensityMarkPoints(pts, dtHours) {
     dtHours = dtHours == null ? HIST_MARK_DT_H_SPARSE : dtHours;
@@ -437,7 +444,7 @@
   function fitStorm(map, storm) {
     if (!map || !storm || !storm.points || storm.points.length < 2) return;
     const bounds = L.latLngBounds(storm.points.map(function (p) { return [p.lat, p.lon]; }));
-    try { map.fitBounds(bounds.pad(0.2), { maxZoom: 6, animate: true }); } catch (e) { /* ignore */ }
+    try { map.fitBounds(bounds.pad(0.2), { maxZoom: 7, animate: true }); } catch (e) { /* ignore */ }
   }
 
   // —— 相似度（压缩索引 similarity-index.json）——

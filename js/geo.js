@@ -544,15 +544,25 @@
 
   /**
    * 峰向角（atan2 east,north）：由路径移向映射到鼓侧。
-   * 西北偏西→东北偏东（路径东侧，非正东北、非正北、非正东）；
-   * 北→正东；东北→东南。
-   * 斜向西行时若鼓落在路径北边，则折到路径东侧（东北偏东）。
+   * 用户映射：正西北→正东北；西北偏西→东北偏东（略东于东北，≈67°）；
+   * 北→正东；东北→东南。勿硬锁 π/2。
+   * 右舷法线为底；鼓偏北于东北时折到路径东侧。
+   * 纯西误读守卫：h≈−90° 时旧折 π/2−peak 会落到正东——拉回 WNW→ENE。
    */
   function windPeakRayFromHeading(headingRad) {
-    let peak = (+headingRad || 0) + Math.PI / 2;
+    let h = +headingRad || 0;
+    const dueW = -Math.PI / 2;
+    const wnw = -67.5 * Math.PI / 180;
+    // track UV 常丢掉 Δlat 把西北偏西读成正西；峰向前先拉回 WNW
+    const nearW = Math.abs(h - dueW);
+    if (nearW < 18 * Math.PI / 180) {
+      const t = 1 - nearW / (18 * Math.PI / 180);
+      h = h + t * (wnw - h);
+    }
+    let peak = h + Math.PI / 2;
     const north = Math.cos(peak);
     const east = Math.sin(peak);
-    // 鼓偏北（北分量大于东分量）→ 折到路径东侧：NNE↔ENE，正北→正东；正东北不动
+    // 鼓偏北（北分量大于东分量）→ 折到路径东侧：NNE→ENE；正东北不动
     if (north > east && north > 0) {
       peak = Math.PI / 2 - peak;
     }
@@ -561,11 +571,10 @@
 
   /**
    * 四象限半径 [rNE,rSE,rSW,rNW]。
-   * 峰向：西北偏西→东北偏东；北→正东；东北→东南（见 windPeakRayFromHeading）。
-   * 勿硬锁正东、勿用 eastwardTrackNormalRad、勿用移向对面。
-   * track UV 须保留斜向北分量：若把西北偏西读成正西，勿让鼓落到正北。
+   * 峰向：正西北→正东北；西北偏西→东北偏东≈67°；北→正东；东北→东南。
+   * 勿硬锁正东、勿用 eastwardTrackNormalRad；纯西误读不得折到正东。
    * r = r0·(1+A·cos(mid−peak))；包络仍以风暴为圆心（无质心偏移）。
-   * 振幅由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。
+   * 振幅由 |V| 决定；停滞 A≈0 → 四象限相等≈圆；十二级 amp=0 正圆。
    */
   function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
     const r0 = +meanRadiusDeg || 0;
@@ -589,8 +598,8 @@
 
   /**
    * 由路径折线最近若干点估平移 UV（m/s）：振幅 |V| + 峰向（西北偏西→东北偏东等）。
-   * 优先于瞬时物理 u/v，使蓝线西北偏西 ⇒ 鼓在东北偏东（路径东侧）；勿塌成正西再鼓向正北。
-   * 回溯略加长并要求最小位移，保留斜向 Δlat（西北偏西的北分量）。
+   * 优先于瞬时物理 u/v，使蓝线西北偏西 ⇒ 鼓在东北偏东（路径东侧）。
+   * 关键：末段常被读成正西（丢 Δlat）→ 峰折到正东；加长回溯并在西向塌缩时恢复北分量。
    * @param {Array<{lat,lon,t?}>} track
    * @param {number} endIdx 末端下标（含）
    * @returns {{u:number,v:number}|null}
@@ -600,7 +609,7 @@
     const i1 = Math.max(1, Math.min(track.length - 1, endIdx | 0));
     const cosLat = Math.cos((track[i1].lat || 0) * Math.PI / 180);
     const cos = Math.max(0.2, cosLat);
-    const maxBack = 8;
+    const maxBack = 16;
     let i0 = i1;
     let accum = 0;
     while (i0 > 0 && (i1 - i0) < maxBack) {
@@ -610,13 +619,37 @@
       const dlon = ((+b.lon || 0) - (+a.lon || 0)) * cos;
       accum += Math.hypot(dlat, dlon);
       i0--;
-      if (accum >= 0.12) break; // ~13 km — keep slant Δlat for WNW
+      if (accum >= 0.28) break; // ~30 km — hold WNW slant Δlat
     }
     if (i0 >= i1) return null;
-    const a = track[i0];
     const b = track[i1];
-    const dlat = (+b.lat || 0) - (+a.lat || 0);
-    const dlon = (+b.lon || 0) - (+a.lon || 0);
+    let a = track[i0];
+    let dlat = (+b.lat || 0) - (+a.lat || 0);
+    let dlon = (+b.lon || 0) - (+a.lon || 0);
+    let eastM = dlon * cos;
+    // 西向但北分量几乎丢失：继续回溯找回斜向；仍塌缩则地板到 WNW 比
+    if (eastM < -0.02 && Math.abs(dlat) < 0.25 * Math.abs(eastM)) {
+      while (i0 > 0 && (i1 - i0) < 24) {
+        i0--;
+        a = track[i0];
+        const dlat2 = (+b.lat || 0) - (+a.lat || 0);
+        const dlon2 = (+b.lon || 0) - (+a.lon || 0);
+        const east2 = dlon2 * cos;
+        if (dlat2 > 0.35 * Math.abs(east2) && Math.hypot(dlat2, east2) >= 0.12) {
+          dlat = dlat2;
+          dlon = dlon2;
+          eastM = east2;
+          break;
+        }
+        dlat = dlat2;
+        dlon = dlon2;
+        eastM = east2;
+      }
+    }
+    if (eastM < -0.03 && dlat < 0.08 * Math.abs(eastM)) {
+      // 纯西误读 → 恢复 WNW 北分量（|u|/v = tan 67.5° ≈ 2.414）
+      dlat = Math.abs(eastM) / 2.414;
+    }
     const move = Math.hypot(dlat, dlon * cos);
     if (move < 0.012) return null;
     let dt = (b.t != null && a.t != null) ? (+b.t - +a.t) : (i1 - i0);

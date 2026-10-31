@@ -1,0 +1,20 @@
+PROOF wind envelope ?v=20261031w
+FIX (user: 西北偏西还是正东 — pure-W misread→due E):
+  Root: track UV 丢 Δlat 把 WNW 读成 h=-90 → peak=h+π/2=0(N)
+        → fold north>east → π/2 正东（与硬锁正东同症）。
+  (1) windMotionUVFromTrack：回溯加长(~30km/16pts)；西向塌缩时续回溯；
+      仍无北分量则地板到 WNW 比 tan67.5°，保留斜向北。
+  (2) windPeakRayFromHeading：h≈−90° 先拉回 WNW，再右舷+折东侧；
+      正西北→正东北(45°)；西北偏西→东北偏东(67.5°)；北→正东；东北→东南。
+  勿硬锁 π/2；十二级 amp=0 正圆；7/10 A_MAX=0.44 CMA 台阶。
+
+CHECKS (node TyGeo):
+  N   h=0°     → peak=90° E
+  NE  h=45°    → peak=135° SE
+  NW  h=-45°   → peak=45° NE
+  WNW h=-67.5° → peak=67.5° ENE
+  W   h=-90°   → peak=67.5° ENE  (was 90° due E — fixed)
+  pure-W track UV → hdg=-67.5° peak=67.5° ENE
+  WNW track UV → peak≈ENE；collapse-tail → peak ENE-band not due E
+  amp=0 → all quads 1.000000
+  WNW A=0.44 → NE>SE>NW>SW (ENE peak)

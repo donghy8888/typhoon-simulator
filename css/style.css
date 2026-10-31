@@ -184,6 +184,7 @@ header.site-header .subtitle {
 }
 .form-row input[type="number"],
 .form-row input[type="text"],
+.form-row input[type="search"],
 .form-row select {
   flex: 1;
   min-width: 0;
@@ -198,6 +199,7 @@ header.site-header .subtitle {
 }
 .form-row input[type="number"]:focus,
 .form-row input[type="text"]:focus,
+.form-row input[type="search"]:focus,
 .form-row select:focus {
   outline: none;
   border-color: #2a7fc4;
@@ -614,3 +616,9 @@ body.mode-history .legend-sim-only { display: none; }
 }
 .hist-name-badge strong { font-size: 13px; letter-spacing: 0.02em; }
 .hist-name-badge span { font-size: 11px; opacity: 0.9; font-weight: 500; }
+
+#histNameQ {
+  font-family: inherit;
+  letter-spacing: 0.02em;
+}
+#histNameQ::placeholder { color: #7a8fa3; }

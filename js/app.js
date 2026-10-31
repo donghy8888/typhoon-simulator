@@ -30,7 +30,8 @@
     mode: 'sim',
     histYear: null,
     histSelectedId: null,
-    histData: null
+    histData: null,
+    histNameQuery: ''
   };
 
   // —— 地图（Canvas 渲染，缩放更顺）——
@@ -1397,23 +1398,42 @@
     sel.value = '2019';
   }
 
-  function populateHistStorms(data) {
+  function histQuery() {
+    const el = document.getElementById('histNameQ');
+    return el ? String(el.value || '').trim() : (state.histNameQuery || '');
+  }
+
+  function populateHistStorms(data, keepId) {
     const sel = document.getElementById('histStorm');
     if (!sel) return;
-    const keep = '';
+    const q = histQuery();
+    const storms = (H && data && data.storms)
+      ? H.filterStorms(data.storms, q)
+      : ((data && data.storms) || []);
+    const prev = keepId != null ? keepId : (sel.value || '');
     sel.innerHTML = '';
     const all = document.createElement('option');
     all.value = '';
-    all.textContent = '（全部 · ' + ((data && data.count) || 0) + ' 个）';
+    const total = (data && data.storms) ? data.storms.length : 0;
+    if (q) {
+      all.textContent = '（匹配 ' + storms.length + ' / ' + total + '）';
+    } else {
+      all.textContent = '（全部 · ' + total + ' 个）';
+    }
     sel.appendChild(all);
-    (data && data.storms ? data.storms : []).forEach(function (s) {
+    storms.forEach(function (s) {
       const opt = document.createElement('option');
       opt.value = s.id;
       const peak = s.maxVmax != null ? (' · ' + s.maxVmax.toFixed(0) + 'm/s') : '';
-      opt.textContent = (s.name || 'UNNAMED') + peak;
+      const label = H ? H.stormLabel(s) : (s.name || 'UNNAMED');
+      opt.textContent = label + peak;
       sel.appendChild(opt);
     });
-    sel.value = keep;
+    if (prev && storms.some(function (s) { return s.id === prev; })) {
+      sel.value = prev;
+    } else {
+      sel.value = '';
+    }
   }
 
   function setHistStatus(msg) {
@@ -1431,7 +1451,8 @@
     if (selectedId) {
       const s = (data.storms || []).find(function (x) { return x.id === selectedId; });
       if (s) {
-        html += '<br>当前：<strong>' + (s.name || 'UNNAMED') + '</strong> · 峰值 ' +
+        const label = H ? H.stormLabel(s) : (s.name || 'UNNAMED');
+        html += '<br>当前：<strong>' + label + '</strong> · 峰值 ' +
           (s.maxVmax != null ? s.maxVmax.toFixed(1) + ' m/s' : '—') +
           ' · ' + (s.points ? s.points.length : 0) + ' 点';
       }
@@ -1458,7 +1479,7 @@
     setHistMeta(state.histData, state.histSelectedId);
     if (state.histSelectedId) {
       const s = (state.histData.storms || []).find(function (x) { return x.id === state.histSelectedId; });
-      setHistStatus('已选中：' + ((s && s.name) || 'UNNAMED') + ' · 再点路径或「全部」可取消');
+      setHistStatus('已选中：' + (s && H ? H.stormLabel(s) : ((s && s.name) || 'UNNAMED')) + ' · 再点路径或「全部」可取消');
     } else {
       setHistStatus('只读 · IBTrACS WP · ' + (state.histYear || '') + ' 年 · 点选路径或下拉单台');
     }
@@ -1466,10 +1487,12 @@
 
   function redrawHistoryTracks() {
     if (!H || !state.histData) return;
+    const q = histQuery();
     H.drawYear(layerGroups.history, state.histData, {
       scale: getIntensityScale(),
       selectedId: state.histSelectedId,
       hideOthers: true,
+      filterQuery: q,
       onSelect: function (id) {
         selectHistStorm(id, { toggle: true, fit: true });
       }
@@ -1477,28 +1500,121 @@
     setHistMeta(state.histData, state.histSelectedId);
   }
 
-  function loadHistYear(year) {
+  function loadHistYear(year, opts) {
     if (!H) return;
+    opts = opts || {};
     const y = year | 0;
+    const pending = state._histPendingSelect || null;
+    state._histPendingSelect = null;
     state.histYear = y;
     state.histSelectedId = null;
     setHistStatus('加载 ' + y + ' 年纪录…');
     H.loadYear(y).then(function (data) {
       state.histData = data;
-      populateHistStorms(data);
-      redrawHistoryTracks();
-      setHistStatus('只读 · IBTrACS WP · ' + y + ' 年已加载');
-      // 略缩放到当年路径包络
-      try {
-        const all = [];
-        (data.storms || []).forEach(function (s) {
-          (s.points || []).forEach(function (p) { all.push([p.lat, p.lon]); });
-        });
-        if (all.length >= 2) map.fitBounds(L.latLngBounds(all).pad(0.08), { maxZoom: 5, animate: true });
-      } catch (e) { /* ignore */ }
+      const q = histQuery();
+      const matches = H.filterStorms(data.storms || [], q);
+      let pickId = null;
+      if (pending && (data.storms || []).some(function (s) { return s.id === pending; })) {
+        pickId = pending;
+      } else if (q && matches.length === 1) {
+        pickId = matches[0].id;
+      }
+      populateHistStorms(data, pickId || '');
+      if (pickId) {
+        selectHistStorm(pickId, { toggle: false, fit: true });
+        if (opts.crossYearNote) setHistStatus(opts.crossYearNote);
+      } else if (q && matches.length > 1) {
+        redrawHistoryTracks();
+        setHistStatus('「' + q + '」本年度匹配 ' + matches.length + ' 个 · 下拉或点选');
+        fitHistYearEnvelope(data, matches);
+      } else if (q && matches.length === 0) {
+        redrawHistoryTracks();
+        if (opts.skipJump) {
+          setHistStatus('本年度无匹配「' + q + '」');
+        } else {
+          setHistStatus('本年度无「' + q + '」· 正在跨年检索…');
+          jumpToNameMatch(q, y);
+        }
+      } else {
+        redrawHistoryTracks();
+        setHistStatus('只读 · IBTrACS WP · ' + y + ' 年已加载');
+        fitHistYearEnvelope(data, null);
+      }
     }).catch(function (err) {
       setHistStatus('加载失败：' + (err && err.message ? err.message : err));
     });
+  }
+
+  function fitHistYearEnvelope(data, stormSubset) {
+    try {
+      const all = [];
+      const list = stormSubset || (data && data.storms) || [];
+      list.forEach(function (s) {
+        (s.points || []).forEach(function (p) { all.push([p.lat, p.lon]); });
+      });
+      if (all.length >= 2) map.fitBounds(L.latLngBounds(all).pad(0.08), { maxZoom: 5, animate: true });
+    } catch (e) { /* ignore */ }
+  }
+
+  function jumpToNameMatch(q, excludeYear) {
+    if (!H || !q) return;
+    if (state._histJumping) return;
+    state._histJumping = true;
+    H.searchNameIndex(q).then(function (hits) {
+      state._histJumping = false;
+      const others = hits.filter(function (h) { return h.y !== excludeYear; });
+      if (!hits.length) {
+        setHistStatus('未找到中文名/英文名含「' + q + '」的纪录（覆盖 WMO 名单及除名台风）');
+        return;
+      }
+      const pick = others[0] || hits[0];
+      const yEl = document.getElementById('histYear');
+      if (yEl) yEl.value = String(pick.y);
+      state._histPendingSelect = pick.id;
+      const note = '跨年定位：' + pick.zh + ' (' + pick.n + ') · ' + pick.y +
+        (hits.length > 1 ? (' · 共 ' + hits.length + ' 条') : '');
+      loadHistYear(pick.y, { skipJump: true, crossYearNote: note });
+    }).catch(function () {
+      state._histJumping = false;
+      setHistStatus('跨年检索不可用');
+    });
+  }
+
+  function applyHistNameFilter(opts) {
+    opts = opts || {};
+    const q = histQuery();
+    state.histNameQuery = q;
+    if (!state.histData) return;
+    populateHistStorms(state.histData, state.histSelectedId);
+    const matches = H.filterStorms(state.histData.storms || [], q);
+    if (!q) {
+      redrawHistoryTracks();
+      setHistStatus('只读 · IBTrACS WP · ' + (state.histYear || '') + ' 年 · 点选路径或下拉单台');
+      return;
+    }
+    if (matches.length === 1) {
+      selectHistStorm(matches[0].id, { toggle: false, fit: true });
+      return;
+    }
+    if (matches.length > 1) {
+      // keep selection if still matched; else show filtered tracks only
+      if (state.histSelectedId && !matches.some(function (s) { return s.id === state.histSelectedId; })) {
+        state.histSelectedId = null;
+        const sel = document.getElementById('histStorm');
+        if (sel) sel.value = '';
+      }
+      redrawHistoryTracks();
+      setHistStatus('「' + q + '」本年度匹配 ' + matches.length + ' 个');
+      return;
+    }
+    // no match this year — cross-year jump
+    redrawHistoryTracks();
+    if (opts.allowJump !== false) {
+      setHistStatus('本年度无「' + q + '」· 正在跨年检索…');
+      jumpToNameMatch(q, state.histYear);
+    } else {
+      setHistStatus('本年度无匹配「' + q + '」');
+    }
   }
 
   function enterHistoryMode() {
@@ -1556,6 +1672,11 @@
     try { map.setMinZoom(3); } catch (e) { /* ignore */ }
     state.histData = null;
     state.histSelectedId = null;
+    state.histNameQuery = '';
+    state._histPendingSelect = null;
+    state._histJumping = false;
+    const nq = document.getElementById('histNameQ');
+    if (nq) nq.value = '';
 
     const tb = document.getElementById('mapToolbar');
     if (tb) { tb.textContent = ''; tb.hidden = true; }
@@ -1567,7 +1688,7 @@
   document.getElementById('btnModeSim').onclick = exitHistoryMode;
   document.getElementById('btnHistBack').onclick = exitHistoryMode;
   document.getElementById('histYear').onchange = function () {
-    loadHistYear(parseInt(this.value, 10));
+    loadHistYear(parseInt(this.value, 10), { skipJump: true });
   };
   document.getElementById('histStorm').onchange = function () {
     selectHistStorm(this.value || null, { toggle: false, fit: !!this.value });
@@ -1575,6 +1696,26 @@
   document.getElementById('btnHistClear').onclick = function () {
     selectHistStorm(null, { toggle: false, fit: false });
   };
+  (function wireHistNameSearch() {
+    const el = document.getElementById('histNameQ');
+    if (!el) return;
+    let t = null;
+    el.addEventListener('input', function () {
+      if (t) clearTimeout(t);
+      t = setTimeout(function () { applyHistNameFilter({ allowJump: false }); }, 180);
+    });
+    el.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (t) clearTimeout(t);
+        applyHistNameFilter({ allowJump: true });
+      }
+    });
+    el.addEventListener('search', function () {
+      // clear (x) button
+      applyHistNameFilter({ allowJump: false });
+    });
+  })();
   document.getElementById('btnHistFit').onclick = function () {
     if (!state.histData) return;
     if (state.histSelectedId) {

@@ -1,0 +1,21 @@
+PROOF mountains domain expand + sim 2h marks — ?v=20261031aj
+
+Root cause (mountains): mask clip was LON0=108 / LAT 10–42, so China WEST
+(Hengduan/Tibet edge), western Indochina, and Hokkaido were cut off. China
+east showed; Japan/PH/Korea existed in prior data but west/SE Asia did not.
+User:「除了中国东部…日本…没有」「中国西部和东南亚也没有」.
+
+Fix mountains:
+- scripts/build-mountain-mask.py basin → 100–150E / 5–50N (elev≥700m)
+- regenerated js/mountain-data.js: 459 rings, 653303 B (was 286 / 378863)
+- SVG mountains pane kept; fillOpacity 0.48→0.58 for clearer belts
+- Samples: JP Alps, Luzon, Hengduan, Annamite, Taebaek, Hokkaido, Wuyi = true;
+  Jianghan plain = false
+
+Fix sim intensity marks (record densify already in ?v=ai):
+- zoom-gated via H.markDtHoursForZoom (same as record overview)
+- sparse ~6h / dense ~2h; zoomend rebuilds marks in sim mode
+- hourly track cadence filter (median gap dense=2h, sparse=6h)
+- polyline still every sim step
+
+Hard-refresh: https://donghy8888.github.io/typhoon-simulator/?v=20261031aj

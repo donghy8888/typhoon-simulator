@@ -105,8 +105,9 @@
 
   // 副高空圈与风暴图层的可复用引用（tick 时原地更新，避免每小时 clear+重建）
   let holeCircleLayer = null;
-  /** 路径强度圆点：每 0.25 天（6h）一个，固定像素大小，色=当时 vmax */
-  const TRACK_MARK_DT_H = 6;
+  /** 路径强度圆点：zoom 稀疏 ~6h / 稠密 ~2h（与纪录 markDtHoursForZoom 共用） */
+  const TRACK_MARK_DT_H_SPARSE = 6;
+  const TRACK_MARK_DT_H_DENSE = 2;
 
   const stormRefs = {
     trackLine: null,
@@ -124,12 +125,21 @@
     stormRefs.intensityMarks = [];
     stormRefs.marker = null;
     stormRefs.landfallFlags = [];
+    state._simMarkDtH = null;
   }
 
-  function isQuarterDayMark(tHours) {
-    const t = Math.round(tHours * 1000) / 1000;
-    const rem = ((t % TRACK_MARK_DT_H) + TRACK_MARK_DT_H) % TRACK_MARK_DT_H;
-    return rem < 1e-6 || rem > TRACK_MARK_DT_H - 1e-6;
+  function simMarkDtHours() {
+    if (H && typeof H.markDtHoursForZoom === 'function') {
+      return H.markDtHoursForZoom(map.getZoom(), false);
+    }
+    return map.getZoom() >= 6 ? TRACK_MARK_DT_H_DENSE : TRACK_MARK_DT_H_SPARSE;
+  }
+
+  function isTrackCadenceMark(tHours, dtH) {
+    const step = dtH == null ? TRACK_MARK_DT_H_SPARSE : dtH;
+    const t = Math.round((+tHours || 0) * 1000) / 1000;
+    const rem = ((t % step) + step) % step;
+    return rem < 1e-6 || rem > step - 1e-6;
   }
 
   function getIntensityScale() {
@@ -155,29 +165,39 @@
     stormRefs.intensityMarks = [];
   }
 
-  /** 按 track 增量补画 6h 强度圆点（不每 tick 全量重建）；色随当前色阶模式 */
+  /**
+   * 强度圆点：与纪录模式同一套 zoom 门控（稀疏 ~6h / 稠密 ~2h）。
+   * 模拟步长通常 1h；稠密时用 densifyMarksAlongTrack 保证真 2h 时刻。
+   * cadence 翻转或 track 截断时全量重建；同 cadence 下仍增量补点。
+   */
+  function selectSimMarkPoints(track, dtH) {
+    if (!track || !track.length) return [];
+    // Sim track t is hours-from-start (number), usually 1h steps — cadence filter
+    // is enough for true 2h/6h marks. Do NOT call history densify (it stringifies t).
+    return track.filter(function (p) { return isTrackCadenceMark(p.t, dtH); });
+  }
+
   function syncIntensityMarks(track) {
     if (!track || !track.length) return;
+    const dtH = simMarkDtHours();
     const scale = getIntensityScale();
-    let have = stormRefs.intensityMarks.length;
-    // track 被截断或重置时重来
-    if (have && (track.length < have || !isQuarterDayMark(track[0].t))) {
-      const expected = track.filter(function (p) { return isQuarterDayMark(p.t); });
-      if (have > expected.length) {
-        clearIntensityMarks();
-        have = 0;
-      }
+    if (state._simMarkDtH !== dtH) {
+      clearIntensityMarks();
+      state._simMarkDtH = dtH;
     }
-    const needed = [];
-    for (let i = 0; i < track.length; i++) {
-      if (isQuarterDayMark(track[i].t)) needed.push(track[i]);
+    let have = stormRefs.intensityMarks.length;
+    const needed = selectSimMarkPoints(track, dtH);
+    if (have && have > needed.length) {
+      clearIntensityMarks();
+      have = 0;
+      state._simMarkDtH = dtH;
     }
     for (let i = have; i < needed.length; i++) {
       const p = needed[i];
       const fill = G.intensityTrackColor(p.vmax, scale);
       const cat = G.intensityScaleLabel(p.vmax, scale);
-      const tip = 't=' + (p.t / 24).toFixed(2) + '天 · ' + cat +
-        ' · ' + G.gradeLabel(p.vmax) + ' · ' + p.vmax.toFixed(1) + ' m/s';
+      const tip = 't=' + ((+p.t || 0) / 24).toFixed(2) + '天 · ' + cat +
+        ' · ' + G.gradeLabel(p.vmax) + ' · ' + (+p.vmax).toFixed(1) + ' m/s';
       const c = L.circleMarker([p.lat, p.lon], {
         radius: 5,
         color: '#ffffff',
@@ -235,8 +255,8 @@
         color: '#6b5344',
         weight: 0.9,
         fillColor: '#8b7355',
-        fillOpacity: 0.48,
-        opacity: 0.85,
+        fillOpacity: 0.58,
+        opacity: 0.9,
         interactive: false,
         pane: 'mountains',
         renderer: mountainRenderer
@@ -1371,10 +1391,26 @@
 
   // —— 事件 ——
   map.on('zoomend', function () {
-    if (state.mode !== 'history' || !state.histData) return;
-    const next = histMarkDtHours();
-    if (state._histMarkDtH === next) return; // only redraw when cadence flips
-    redrawHistoryTracks();
+    if (state.mode === 'history') {
+      if (!state.histData) return;
+      const next = histMarkDtHours();
+      if (state._histMarkDtH === next) return; // only redraw when cadence flips
+      redrawHistoryTracks();
+      return;
+    }
+    // 模拟模式：强度圆点同样随缩放在 6h↔2h 间切换
+    const next = simMarkDtHours();
+    if (state._simMarkDtH === next) return;
+    clearIntensityMarks();
+    state._simMarkDtH = next;
+    const track = getMainTrack();
+    if (track.length) {
+      syncIntensityMarks(track);
+      if (state.scrubIndex != null) {
+        const i = Math.max(0, Math.min(track.length - 1, state.scrubIndex));
+        highlightIntensityAt(track[i].t);
+      }
+    }
   });
 
   map.on('click', function (e) {

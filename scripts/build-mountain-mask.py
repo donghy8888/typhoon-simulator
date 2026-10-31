@@ -37,7 +37,7 @@ OUT = ROOT / "js" / "mountain-data.js"
 LAND_SHP = Path("/tmp/ne/ne_10m_land.shp")
 TILE_DIR = Path("/tmp/ne/terrarium")
 
-LON0, LON1, LAT0, LAT1 = 108.0, 148.0, 10.0, 42.0
+LON0, LON1, LAT0, LAT1 = 100.0, 150.0, 5.0, 50.0  # full WNP land: Hengduan/Tibet edge, Indochina, JP, PH, Korea, Hokkaido
 INSET = 0.08
 SIMPLIFY_ELEV = 0.005
 MIN_AREA = 0.010
@@ -271,6 +271,12 @@ def sample_checks(combined) -> None:
         (130.53, 30.34, True, "Yakushima"),
         (108.66, 12.06, True, "C Highlands VN"),
         (109.20, 12.25, False, "S Vietnam coast"),
+        (102.70, 25.05, True, "Hengduan / Kunming edge"),
+        (103.80, 27.90, True, "Daliang / SW Sichuan"),
+        (104.50, 19.00, True, "Annamite / Laos-VN"),
+        (101.00, 18.00, True, "N Laos highlands"),
+        (143.00, 43.50, True, "Hokkaido Daisetsu"),
+        (140.90, 42.80, True, "Hokkaido Hidaka"),
         (112.50, 30.50, False, "Jianghan plain"),
         (116.40, 39.90, False, "Beijing plain"),
     ]
@@ -331,13 +337,13 @@ def main() -> None:
         c = p.centroid
         islandish = (
             (119 < c.x < 132 and c.y < 34)
-            or (108.5 < c.x < 111.5 and c.y < 20.5)
+            or (100 < c.x < 112 and c.y < 23)  # Indochina / VN cordillera
             or (119 < c.x < 122.5 and 21 < c.y < 26)
-            or (125 < c.x < 131 and 33 < c.y < 39)
+            or (124 < c.x < 132 and 33 < c.y < 43)  # Korea / Changbai
             or (108 < c.x < 120.5 and 21.5 < c.y < 30.5)
-            or (129 < c.x < 146.5 and 30 < c.y < 42)
-            or (118 < c.x < 127 and 10 < c.y < 20.5)
-            or (108 < c.x < 110.5 and 11 < c.y < 23)
+            or (129 < c.x < 146.5 and 30 < c.y < 46)  # Japan + Hokkaido
+            or (118 < c.x < 127 and 5 < c.y < 20.5)  # PH
+            or (100 < c.x < 108.5 and 21 < c.y < 35)  # Hengduan / W China edge
         )
         amin = MIN_AREA_ISLAND if islandish else MIN_AREA
         if p.area >= amin:

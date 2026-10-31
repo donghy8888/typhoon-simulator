@@ -1,0 +1,13 @@
+PROOF wind envelope ?v=20261031u
+FIX (user: WNW「线东边」不能用斜线法线 — 法线变北/东北，鼓坐在蓝线北边):
+  peakRay HARD-LOCKED at geographic due EAST = π/2 (atan2 east,north).
+  Stop using eastwardTrackNormalRad for wind peak (kept exported, unused).
+  r = r0·(1+A·cos(mid−π/2)) → NE≈SE large, NW≈SW small.
+  Circle still centered on storm (NO centroid / whole-envelope offset).
+  Grade 12 amp=0 perfect circle; 7/10 CMA quadrant steps; A_MAX=0.44.
+
+CHECKS (node TyGeo):
+  WNW h=-67.5°: NE=1.311 SE=1.311 SW=0.689 NW=0.689 (E-side > W-side)
+  old eastwardTrackNormalRad(WNW)=22.5° NNE — would put drum north of slant (rejected)
+  amp=0 → all quads 1.000000
+  heading-independent peak: all headings same NE≈SE / NW≈SW pattern

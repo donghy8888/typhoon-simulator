@@ -485,7 +485,7 @@
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
    * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3.5 m/s 半饱和。
-   * A_MAX≈0.44 → 典型移速峰/对侧约 1.5–2.0（鼓在路径东向法线侧；非卡通巨鼓）。
+   * A_MAX≈0.44 → 典型移速峰/对侧约 1.5–2.0（鼓在地理正东；非卡通巨鼓）。
    */
   const WIND_ASYM_V_HALF = 3.5; // m/s translation → half asymmetry
   const WIND_ASYM_A_MAX = 0.44; // fractional amp (was 0.78; eastward cartoon)
@@ -513,8 +513,9 @@
 
   /**
    * 路径折线东向法线角（atan2(east,north)）。
-   * 两法线 h±π/2 中取东分量 sin(ray) 更大/为正者 → 鼓在蓝线地图东侧。
-   * E/W 路径两法线为 N/S（sin≈0）时回退地理正东 π/2。
+   * 保留导出；风圈峰向已改回硬锁地理正东 π/2，不再调用本函数
+   * （WNW 斜线法线≈N/NE，鼓会偏到蓝线北边）。
+   * 两法线 h±π/2 中取东分量 sin(ray) 更大/为正者。
    */
   function eastwardTrackNormalRad(headingRad) {
     const h = +headingRad || 0;
@@ -544,16 +545,17 @@
 
   /**
    * 四象限半径 [rNE,rSE,rSW,rNW]。
-   * 峰 = 路径切向的东向法线：peakRay = eastwardTrackNormalRad(heading)。
-   * r = r0·(1+A·cos(mid−peakRay)) → 鼓在蓝线折线地图东侧（斜线以东半平面），
-   * 非固定地理正东 blob（NW 路径固定正东会看起来偏在线北侧）。
-   * 振幅仍由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。
-   * 例：NW(h≈−π/4) → 东向法线≈NE(π/4)，NE 大、SW 小，鼓在斜线以东。
+   * 峰硬锁地理正东：peakRay = π/2（atan2(east,north)）。
+   * 不再用 eastwardTrackNormalRad：WNW/NW 斜线的「东向法线」≈N/NE，
+   * 鼓会整块坐在蓝线北边，用户看到的「东边」应是地图正东（更高 lon）。
+   * r = r0·(1+A·cos(mid−π/2)) → NE≈SE 大、NW≈SW 小；包络仍以风暴为圆心（无质心偏移）。
+   * 振幅仍由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。headingRad 保留签名、峰向不用。
    */
   function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
     const r0 = +meanRadiusDeg || 0;
     const A = +amp || 0;
-    const peakRay = eastwardTrackNormalRad(headingRad);
+    const peakRay = Math.PI / 2; // geographic due east — not track-normal
+    void headingRad; // peak locked geographic east; heading only mattered for old normal
     const out = [];
     for (let q = 0; q < 4; q++) {
       const mid = WIND_QUAD_MIDS[q];
@@ -571,9 +573,9 @@
   }
 
   /**
-   * 由路径折线最近若干点估平移 UV（m/s），供风圈振幅（|V|）与东向法线峰向。
-   * 峰 = eastwardTrackNormalRad(atan2(u,v))（蓝线东侧法线，非固定正东）。
-   * 优先于瞬时物理 u/v，使包络跟蓝线切向一致。
+   * 由路径折线最近若干点估平移 UV（m/s），供风圈振幅（|V|）。
+   * 峰向已硬锁地理正东 π/2；此处 UV 只决定振幅大小，不再驱动峰方位。
+   * 优先于瞬时物理 u/v，使振幅跟蓝线移速一致。
    * @param {Array<{lat,lon,t?}>} track
    * @param {number} endIdx 末端下标（含）
    * @returns {{u:number,v:number}|null}

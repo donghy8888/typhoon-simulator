@@ -1,0 +1,18 @@
+PROOF wind envelope ?v=20261031v
+FIX (user: 西北偏西鼓在路径东侧 ≈ 东北偏东；非正东北/正东/正北):
+  peakRay = windPeakRayFromHeading(track motionHeading):
+    base right-of-track, then if bulge would sit north of path east-side
+    fold to east side → 西北偏西→东北偏东(ENE≈67.5°).
+  北→正东；东北→东南；西北→东北（不动）。
+  勿硬锁 π/2 正东；勿 eastwardTrackNormal；注释不写「加九十度」。
+  Grade 12 amp=0 正圆；7/10 A_MAX=0.44 CMA 象限台阶；圆心钉风暴。
+  track UV 回溯加长，保留斜向 Δlat，避免西北偏西塌成正西→鼓正北。
+
+CHECKS (node TyGeo):
+  N   h=0°     → peak=90° E   ; NE=SE large
+  NE  h=45°    → peak=135° SE ; SE largest
+  NW  h=-45°   → peak=45° NE  ; NE largest
+  WNW h=-67.5° → peak=67.5° ENE; NE largest, SE next (偏东)
+  W   h=-90°   → peak=90° E   (fold avoids N)
+  amp=0 → all quads 1.000000
+  track polyline WNW-ish → peak≈ENE

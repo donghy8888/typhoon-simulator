@@ -1016,9 +1016,9 @@
   }
 
   /**
-   * 风圈振幅用的平移 UV（|V|）：优先路径折线（眼所见蓝线移速），
+   * 风圈振幅+峰向用的平移 UV：优先路径折线（眼所见蓝线），
    * 其次轨迹上最近非零 u/v，再次引导气流，最后瞬时物理。
-   * 峰锁地理正东（路径线东侧），UV 不决定鼓向。
+   * 峰向：西北偏西→东北偏东、北→正东、东北→东南；勿塌成正西→正北。
    * 初生/停滞时用引导向量抬振幅，避免风圈仍是正圆误导。
    */
   function windEnvelopeMotionUV(main, track, idx, physU, physV) {
@@ -1099,7 +1099,7 @@
       const showRings = scrubbing
         ? (dVmax >= P.DISSIPATE_MS)
         : (main.alive || main.vmax >= P.DISSIPATE_MS);
-      // 风圈 UV：振幅 + 东向法线峰向；十二级 amp=0 正圆；初生回退引导气流
+      // 风圈 UV：振幅 + 峰向（西北偏西→东北偏东）；十二级 amp=0 正圆；初生回退引导气流
       const physU = (view && view.u != null) ? view.u : (main.u || 0);
       const physV = (view && view.v != null) ? view.v : (main.v || 0);
       const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);
@@ -1109,7 +1109,7 @@
       const seen = {};
       rings.forEach(function (ring) {
         seen[ring.grade] = true;
-        // 十二级：正圆（amp=0）；七/十级：保留东侧鼓起的 CMA 阶梯包络
+        // 十二级：正圆（amp=0）；七/十级：CMA 阶梯包络（西北偏西→东北偏东）
         const ampOv = (ring.grade === 12) ? 0 : null;
         const latlngs = G.windEnvelopeLatLngs(dLat, dLon, ring.radiusDeg, dU, dV, dVmax, 64, ampOv);
         const existing = stormRefs.windCircles[ring.grade];
@@ -1203,7 +1203,7 @@
     state.scrubIndex = null;
     state.members = [];
 
-    // 初生即用引导气流速度画东侧鼓起的非对称风圈（勿等开跑后才鼓起）
+    // 初生即用引导气流速度画非对称风圈（勿等开跑后才鼓起）
     let birthU = 0, birthV = 0;
     try {
       const st0 = P.steeringAt(lon, lat, cfgFromUI(), state.fugen, state.hole);

@@ -485,7 +485,7 @@
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
    * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3.5 m/s 半饱和。
-   * A_MAX≈0.44 → 典型移速峰/对侧约 1.5–2.0（鼓在地理正东；非卡通巨鼓）。
+   * A_MAX≈0.44 → 典型移速峰/对侧约 1.5–2.0（鼓向按路径：西北偏西→东北偏东；非卡通巨鼓）。
    */
   const WIND_ASYM_V_HALF = 3.5; // m/s translation → half asymmetry
   const WIND_ASYM_A_MAX = 0.44; // fractional amp (was 0.78; eastward cartoon)
@@ -513,9 +513,8 @@
 
   /**
    * 路径折线东向法线角（atan2(east,north)）。
-   * 保留导出；风圈峰向已改回硬锁地理正东 π/2，不再调用本函数
-   * （WNW 斜线法线≈N/NE，鼓会偏到蓝线北边）。
-   * 两法线 h±π/2 中取东分量 sin(ray) 更大/为正者。
+   * 保留导出；风圈峰向已改为路径映射（西北偏西→东北偏东、北→正东、东北→东南），不再调用本函数。
+   * 两法线 h±π/2 中取东分量 sin(ray) 更大/为正者（与上述峰向映射在向西段不等价）。
    */
   function eastwardTrackNormalRad(headingRad) {
     const h = +headingRad || 0;
@@ -544,18 +543,34 @@
   }
 
   /**
+   * 峰向角（atan2 east,north）：由路径移向映射到鼓侧。
+   * 西北偏西→东北偏东（路径东侧，非正东北、非正北、非正东）；
+   * 北→正东；东北→东南。
+   * 斜向西行时若鼓落在路径北边，则折到路径东侧（东北偏东）。
+   */
+  function windPeakRayFromHeading(headingRad) {
+    let peak = (+headingRad || 0) + Math.PI / 2;
+    const north = Math.cos(peak);
+    const east = Math.sin(peak);
+    // 鼓偏北（北分量大于东分量）→ 折到路径东侧：NNE↔ENE，正北→正东；正东北不动
+    if (north > east && north > 0) {
+      peak = Math.PI / 2 - peak;
+    }
+    return peak;
+  }
+
+  /**
    * 四象限半径 [rNE,rSE,rSW,rNW]。
-   * 峰硬锁地理正东：peakRay = π/2（atan2(east,north)）。
-   * 不再用 eastwardTrackNormalRad：WNW/NW 斜线的「东向法线」≈N/NE，
-   * 鼓会整块坐在蓝线北边，用户看到的「东边」应是地图正东（更高 lon）。
-   * r = r0·(1+A·cos(mid−π/2)) → NE≈SE 大、NW≈SW 小；包络仍以风暴为圆心（无质心偏移）。
-   * 振幅仍由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。headingRad 保留签名、峰向不用。
+   * 峰向：西北偏西→东北偏东；北→正东；东北→东南（见 windPeakRayFromHeading）。
+   * 勿硬锁正东、勿用 eastwardTrackNormalRad、勿用移向对面。
+   * track UV 须保留斜向北分量：若把西北偏西读成正西，勿让鼓落到正北。
+   * r = r0·(1+A·cos(mid−peak))；包络仍以风暴为圆心（无质心偏移）。
+   * 振幅由 |V| 决定；停滞 A≈0 → 四象限相等≈圆。
    */
   function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
     const r0 = +meanRadiusDeg || 0;
     const A = +amp || 0;
-    const peakRay = Math.PI / 2; // geographic due east — not track-normal
-    void headingRad; // peak locked geographic east; heading only mattered for old normal
+    const peakRay = windPeakRayFromHeading(headingRad);
     const out = [];
     for (let q = 0; q < 4; q++) {
       const mid = WIND_QUAD_MIDS[q];
@@ -573,9 +588,9 @@
   }
 
   /**
-   * 由路径折线最近若干点估平移 UV（m/s），供风圈振幅（|V|）。
-   * 峰向已硬锁地理正东 π/2；此处 UV 只决定振幅大小，不再驱动峰方位。
-   * 优先于瞬时物理 u/v，使振幅跟蓝线移速一致。
+   * 由路径折线最近若干点估平移 UV（m/s）：振幅 |V| + 峰向（西北偏西→东北偏东等）。
+   * 优先于瞬时物理 u/v，使蓝线西北偏西 ⇒ 鼓在东北偏东（路径东侧）；勿塌成正西再鼓向正北。
+   * 回溯略加长并要求最小位移，保留斜向 Δlat（西北偏西的北分量）。
    * @param {Array<{lat,lon,t?}>} track
    * @param {number} endIdx 末端下标（含）
    * @returns {{u:number,v:number}|null}
@@ -585,7 +600,7 @@
     const i1 = Math.max(1, Math.min(track.length - 1, endIdx | 0));
     const cosLat = Math.cos((track[i1].lat || 0) * Math.PI / 180);
     const cos = Math.max(0.2, cosLat);
-    const maxBack = 4;
+    const maxBack = 8;
     let i0 = i1;
     let accum = 0;
     while (i0 > 0 && (i1 - i0) < maxBack) {
@@ -595,7 +610,7 @@
       const dlon = ((+b.lon || 0) - (+a.lon || 0)) * cos;
       accum += Math.hypot(dlat, dlon);
       i0--;
-      if (accum >= 0.06) break; // ~6–7 km
+      if (accum >= 0.12) break; // ~13 km — keep slant Δlat for WNW
     }
     if (i0 >= i1) return null;
     const a = track[i0];
@@ -822,6 +837,7 @@
     windRadiiForGrades,
     windAsymAmp,
     motionHeadingRad,
+    windPeakRayFromHeading,
     eastwardTrackNormalRad,
     windMotionUVFromTrack,
     windGeoQuadrant,

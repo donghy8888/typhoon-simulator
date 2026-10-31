@@ -181,6 +181,56 @@
     };
   }
 
+
+  /** Match sim path marks: ~6h between visible intensity circles. */
+  const HIST_MARK_DT_H = 6;
+
+  function parsePointTimeMs(t) {
+    if (t == null) return null;
+    if (typeof t === 'number' && isFinite(t)) {
+      // hours-from-epoch style is unused; treat large values as ms, small as hours
+      return t > 1e11 ? t : t * 3600 * 1000;
+    }
+    if (typeof t === 'string') {
+      const s = t.trim();
+      // "YYYY-MM-DD HH:MM:SS" → UTC
+      const iso = s.indexOf('T') >= 0 ? s : s.replace(' ', 'T');
+      const ms = Date.parse(/Z$|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + 'Z');
+      return isFinite(ms) ? ms : null;
+    }
+    return null;
+  }
+
+  /**
+   * Keep first fix, then next fixes only when ≥ dtHours since last kept mark.
+   * Fallback if times missing: keep every other point (IBTrACS ~3h → ~6h).
+   */
+  function selectIntensityMarkPoints(pts, dtHours) {
+    dtHours = dtHours == null ? HIST_MARK_DT_H : dtHours;
+    const out = [];
+    if (!pts || !pts.length) return out;
+    let lastMs = null;
+    let lastIdx = -1;
+    const minMs = dtHours * 3600 * 1000 - 1;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const ms = parsePointTimeMs(p && p.t);
+      if (ms == null) {
+        if (lastIdx < 0 || i - lastIdx >= 2) {
+          out.push(p);
+          lastIdx = i;
+        }
+        continue;
+      }
+      if (lastMs == null || (ms - lastMs) >= minMs) {
+        out.push(p);
+        lastMs = ms;
+        lastIdx = i;
+      }
+    }
+    return out;
+  }
+
   /**
    * Draw storms for a year onto layerGroup.
    * @param {object} opts { scale, selectedId, onSelect, hideOthers }
@@ -230,9 +280,11 @@
       }
       line.addTo(layerGroup);
 
-      // Intensity dots — every best-track fix (no thinning; full path)
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
+      // Intensity dots — thin to ~6h (same cadence as sim TRACK_MARK_DT_H);
+      // polyline still uses every fix. Avoids dense 3h/2h circles when zoomed in.
+      const markPts = selectIntensityMarkPoints(pts, HIST_MARK_DT_H);
+      for (let i = 0; i < markPts.length; i++) {
+        const p = markPts[i];
         const hex = G.intensityTrackColor(p.vmax, scale);
         const r = selected ? 5 : 3.2;
         const c = L.circleMarker([p.lat, p.lon], {

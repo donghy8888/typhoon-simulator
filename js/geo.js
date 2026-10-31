@@ -484,10 +484,11 @@
 
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
-   * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈6 m/s（约 22 km/h）半饱和。
+   * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈5 m/s 半饱和。
+   * A_MAX≈0.55 → 典型移速下右/左半径比约 1.6–2.1（CMA 预报图可见右鼓）。
    */
-  const WIND_ASYM_V_HALF = 6;   // m/s translation → half asymmetry
-  const WIND_ASYM_A_MAX = 0.34; // fractional amp at high speed / ref intensity
+  const WIND_ASYM_V_HALF = 5;   // m/s translation → half asymmetry
+  const WIND_ASYM_A_MAX = 0.55; // fractional amp (was 0.34; nearly round on map)
   function windAsymAmp(speedMs, vmaxMs) {
     const s = Math.max(0, +speedMs || 0);
     const speedFactor = s / (s + WIND_ASYM_V_HALF);
@@ -503,12 +504,15 @@
   }
 
   /**
-   * 方位半径：α = ray − heading；前=0、右=+π/2；右前峰 α=+π/4，左后谷 α=−3π/4。
-   * r(α) = r0 · (1 + A · cos(α − π/4))
+   * 方位半径：α = ray − heading（同 atan2 自北向东）。
+   * 峰在运动右侧：α = +π/2（heading+90° 顺时针）；谷在左侧 α = −π/2。
+   * 例：往 NW → 鼓向 NE；往 N → 鼓向 E；往 NE → 鼓向 SE（CMA 风圈）。
+   * r(α) = r0 · (1 + A · cos(α − π/2))  ≡  r0 · (1 + A · sin(α))
+   * （旧版 cos(α−π/4) 右前峰已废弃）
    */
   function windRadiusAtRay(meanRadiusDeg, headingRad, rayRad, amp) {
     const alpha = rayRad - headingRad;
-    return meanRadiusDeg * (1 + amp * Math.cos(alpha - Math.PI / 4));
+    return meanRadiusDeg * (1 + amp * Math.cos(alpha - Math.PI / 2));
   }
 
   /** 非对称风圈包络折线 [lat,lon]…（闭合）；nPts 默认 48 */

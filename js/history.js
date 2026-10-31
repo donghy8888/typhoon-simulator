@@ -211,17 +211,95 @@
   }
 
   /**
-   * Keep first fix, then next fixes only when ≥ dtHours since last kept mark.
-   * Fallback if times missing: dense (≤3h) keeps every point; sparse keeps every other (~6h from ~3h).
+   * Format UTC ms as "YYYY-MM-DD HH:MM:SS" (same shape as IBTrACS year JSON).
+   */
+  function formatPointTimeUtc(ms) {
+    const d = new Date(ms);
+    if (!isFinite(d.getTime())) return null;
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) +
+      ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds());
+  }
+
+  /**
+   * Dense marks: place points on a true dtHours timeline along the track by
+   * linear time-interpolation of lon/lat/vmax between adjacent timed IBTrACS
+   * fixes. Does not invent storms — only densifies between real fixes.
+   * Falls back to every real fix when fewer than 2 timed points exist.
+   */
+  function densifyMarksAlongTrack(pts, dtHours) {
+    const out = [];
+    if (!pts || !pts.length) return out;
+    const timed = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const ms = parsePointTimeMs(p && p.t);
+      if (ms == null) continue;
+      if (!isFinite(p.lat) || !isFinite(p.lon)) continue;
+      timed.push({ p: p, ms: ms });
+    }
+    if (timed.length < 2) {
+      // No usable timeline — keep real fixes (dense fallback = every point).
+      for (let i = 0; i < pts.length; i++) out.push(pts[i]);
+      return out;
+    }
+    const stepMs = dtHours * 3600 * 1000;
+    if (!(stepMs > 0)) return out;
+    const t0 = timed[0].ms;
+    const tEnd = timed[timed.length - 1].ms;
+    let seg = 0;
+    // Inclusive end within 1ms so an exact last-fix grid hit is kept.
+    for (let t = t0; t <= tEnd + 1; t += stepMs) {
+      while (seg < timed.length - 2 && timed[seg + 1].ms < t) seg++;
+      const a = timed[seg];
+      const b = timed[seg + 1];
+      const span = b.ms - a.ms;
+      let lon, lat, vmax;
+      if (span <= 0 || t <= a.ms) {
+        lon = a.p.lon; lat = a.p.lat; vmax = a.p.vmax;
+      } else if (t >= b.ms) {
+        lon = b.p.lon; lat = b.p.lat; vmax = b.p.vmax;
+      } else {
+        const f = (t - a.ms) / span;
+        lon = a.p.lon + f * (b.p.lon - a.p.lon);
+        lat = a.p.lat + f * (b.p.lat - a.p.lat);
+        const va = a.p.vmax == null ? null : +a.p.vmax;
+        const vb = b.p.vmax == null ? null : +b.p.vmax;
+        vmax = (va == null || vb == null || !isFinite(va) || !isFinite(vb))
+          ? (isFinite(va) ? va : (isFinite(vb) ? vb : null))
+          : va + f * (vb - va);
+      }
+      out.push({
+        lon: lon,
+        lat: lat,
+        vmax: vmax,
+        t: formatPointTimeUtc(t),
+        _interp: !(t === a.ms || t === b.ms)
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Sparse (zoom<6, ~6h): keep first fix, then next real fixes only when
+   * ≥ dtHours since last kept mark. Fallback if times missing: every other
+   * point (~6h from ~3h IBTrACS).
+   * Dense (zoom>=6, 2h): true 2-hour timeline via densifyMarksAlongTrack.
    */
   function selectIntensityMarkPoints(pts, dtHours) {
     dtHours = dtHours == null ? HIST_MARK_DT_H_SPARSE : dtHours;
     const out = [];
     if (!pts || !pts.length) return out;
+
+    // Dense cadence: interpolate on a true dtHours clock (IBTrACS is ~3-hourly).
+    if (dtHours <= HIST_MARK_DT_H_DENSE) {
+      return densifyMarksAlongTrack(pts, dtHours);
+    }
+
     let lastMs = null;
     let lastIdx = -1;
     const minMs = dtHours * 3600 * 1000 - 1;
-    const idxStep = dtHours <= 3 ? 1 : 2;
+    const idxStep = 2; // sparse fallback for ~3h fixes → ~6h
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       const ms = parsePointTimeMs(p && p.t);
@@ -535,6 +613,8 @@
     HIST_MARK_DT_H_DENSE: HIST_MARK_DT_H_DENSE,
     HIST_MARK_ZOOM_DENSE: HIST_MARK_ZOOM_DENSE,
     markDtHoursForZoom: markDtHoursForZoom,
+    selectIntensityMarkPoints: selectIntensityMarkPoints,
+    densifyMarksAlongTrack: densifyMarksAlongTrack,
     yearsList: yearsList,
     loadIndex: loadIndex,
     loadYear: loadYear,

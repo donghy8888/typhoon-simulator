@@ -1,0 +1,19 @@
+PROOF history intensity marks true 2h densify — ?v=20261031ah
+
+Bug: zoom≥6 used gap≥2h on real IBTrACS fixes; year files are ~3-hourly,
+so "dense" showed every ~3h fix, not every 2 hours.
+
+Fix: densifyMarksAlongTrack — for dtHours≤2, place marks on a true 2h
+timeline from first fix; linear-interpolate lon/lat/vmax between adjacent
+timed fixes. Sparse (6h) still filters real fixes (existing). Polyline
+still uses all real fixes. Mountains SVG pane untouched.
+
+Storm: 2024141N03142 EWINIAR  fixes=109
+Dense (2h) marks=163  median gap=2.000h  mean=2.000h
+Sparse (6h) marks=55  median gap=6.000h  mean=6.000h
+markDtHoursForZoom(6)=2  markDtHoursForZoom(5)=6
+Sample 02:00 between 2024-05-20 00:00:00 and 2024-05-20 03:00:00:
+  lon=141.7333 (expect 141.7333)
+  lat=2.4333 (expect 2.4333)
+  vmax=5.10
+Interpolated marks: 108/163

@@ -129,7 +129,7 @@
     landfallFlags: []
   };
 
-  // —— 降水：仅瞬时雨强连续 canvas（非瓦片）；累计已移除 ——
+  // —— 降水：仅瞬时雨强雷达阶梯 canvas（硬分档）；累计已移除 ——
   const rainState = {
     accum: R ? new R.AccumGrid(0.22) : null, // 仅供山地 mask 给雨强采样
     trackSynced: 0,
@@ -1090,8 +1090,8 @@
       c.className = 'ty-rain-canvas ty-rain-rate';
       c.style.position = 'absolute';
       c.style.pointerEvents = 'none';
-      c.style.imageRendering = 'auto';
-      c.style.opacity = '0.82';
+      c.style.imageRendering = 'crisp-edges';
+      c.style.opacity = '0.78';
       pane.appendChild(c);
       rainState.rateCanvas = c;
     }
@@ -1133,6 +1133,8 @@
     canvas.style.display = '';
     L.DomUtil.setPosition(canvas, topLeft);
     const ctx = canvas.getContext('2d');
+    // 阶梯色避免拉伸插值把档界抹成泥色渐变
+    ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, pxW, pxH);
     ctx.putImageData(imageData, 0, 0);
   }
@@ -1187,9 +1189,13 @@
       rainState.rateCanvas.style.display = 'none';
       return;
     }
-    // 连续填色：细采样像素，CSS 拉伸平滑，避免 coarse tile
-    const pxW = Math.max(80, Math.min(220, Math.round(dlon / 0.12)));
-    const pxH = Math.max(80, Math.min(220, Math.round(dlat / 0.12)));
+    // 连续空间场 + 硬分档色：采样贴近屏幕像素，档界保持锐利嵌套等值带
+    const topLeft = map.latLngToLayerPoint([box.ne.lat, box.sw.lon]);
+    const botRight = map.latLngToLayerPoint([box.sw.lat, box.ne.lon]);
+    const cssW = Math.max(1, botRight.x - topLeft.x);
+    const cssH = Math.max(1, botRight.y - topLeft.y);
+    const pxW = Math.max(140, Math.min(480, Math.round(cssW)));
+    const pxH = Math.max(140, Math.min(480, Math.round(cssH)));
     if (rainState.accum) rainState.accum.ensureMountainMask();
     const img = rainState.rateCanvas.getContext('2d').createImageData(pxW, pxH);
     R.paintRateImageData(img, pxW, pxH, [[box.sw.lat, box.sw.lon], [box.ne.lat, box.ne.lon]], storm, rainState.accum);

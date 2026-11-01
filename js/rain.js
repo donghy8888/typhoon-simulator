@@ -1,6 +1,6 @@
 /**
- * 台风降水场：仅瞬时雨强（mm/h）连续填色；不画累计。
- * 色标：毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红。
+ * 台风降水场：仅瞬时雨强（mm/h）雷达阶梯填色；不画累计。
+ * 色标（绝对 mm/h 分档，硬边界）：毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红。
  * 与非对称风圈对齐；山地迎/背风 7:3；折向北侧弱雨带；无移速雨因子；无眼干区。
  */
 (function (global) {
@@ -182,49 +182,30 @@
   }
 
   /**
-   * 瞬时雨强绝对色标（mm/h）— 用户指定：
+   * 瞬时雨强绝对色标（mm/h）— 雷达阶梯/分档填色（filled-contour）：
    * 毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红
-   * 断点按台风雨墙可读性拉开，避免「几毫米就一片红」。
-   * 累计层已移除，不再着色。
+   * 硬边界、档内纯色，不做档间插值，也不按帧 maxVal 拉伸。
+   * 半透明固定 alpha，底图可读。累计层已移除。
    */
+  // 绝对分档上界（mm/h）：[0.4,3) 毛毛雨 … [85,∞) 大暴雨（含 130+）
+  const RATE_BINS = [
+    { max: 3,   r: 70,  g: 200, b: 90,  a: 150 },  // 毛毛雨
+    { max: 12,  r: 50,  g: 120, b: 230, a: 160 },  // 小雨
+    { max: 28,  r: 245, g: 215, b: 30,  a: 168 },  // 中雨
+    { max: 50,  r: 245, g: 140, b: 25,  a: 175 },  // 大雨
+    { max: 85,  r: 150, g: 50,  b: 210, a: 180 },  // 暴雨
+    { max: Infinity, r: 220, g: 35, b: 40, a: 185 } // 大暴雨 ≥85（130+）
+  ];
+
   function colorForRate(mmh) {
     const x = +mmh || 0;
     if (x < 0.4) return [0, 0, 0, 0];
-    // 毛毛雨绿 → 小雨蓝 → 中雨黄 → 大雨橙 → 暴雨紫 → 大暴雨红
-    const stops = [
-      { v: 3,   r: 70,  g: 200, b: 90 },   // 毛毛雨
-      { v: 12,  r: 50,  g: 120, b: 230 },  // 小雨
-      { v: 28,  r: 245, g: 215, b: 30 },   // 中雨
-      { v: 50,  r: 245, g: 140, b: 25 },   // 大雨
-      { v: 85,  r: 150, g: 50,  b: 210 },  // 暴雨
-      { v: 130, r: 220, g: 35,  b: 40 }    // 大暴雨
-    ];
-    let r, g, b;
-    if (x <= stops[0].v) {
-      const u = clamp01(x / stops[0].v);
-      r = lerp(140, stops[0].r, u);
-      g = lerp(230, stops[0].g, u);
-      b = lerp(150, stops[0].b, u);
-    } else if (x >= stops[stops.length - 1].v) {
-      const last = stops[stops.length - 1];
-      const u = clamp01((x - last.v) / 80);
-      r = lerp(last.r, 170, u);
-      g = lerp(last.g, 10, u);
-      b = lerp(last.b, 25, u);
-    } else {
-      for (let i = 0; i < stops.length - 1; i++) {
-        if (x <= stops[i + 1].v) {
-          const u = (x - stops[i].v) / (stops[i + 1].v - stops[i].v);
-          r = lerp(stops[i].r, stops[i + 1].r, u);
-          g = lerp(stops[i].g, stops[i + 1].g, u);
-          b = lerp(stops[i].b, stops[i + 1].b, u);
-          break;
-        }
-      }
+    for (let i = 0; i < RATE_BINS.length; i++) {
+      const b = RATE_BINS[i];
+      if (x < b.max) return [b.r, b.g, b.b, b.a];
     }
-    const t = clamp01(Math.sqrt(x / 100));
-    const a = Math.round(255 * (0.22 + 0.48 * t));
-    return [r | 0, g | 0, b | 0, a];
+    const last = RATE_BINS[RATE_BINS.length - 1];
+    return [last.r, last.g, last.b, last.a];
   }
 
   /** 累计已停用 */
@@ -358,17 +339,17 @@
 
   function rateLegendItems() {
     return [
-      { hex: 'rgba(70,200,90,0.85)', text: '毛毛雨' },
-      { hex: 'rgba(50,120,230,0.85)', text: '小雨' },
-      { hex: 'rgba(245,215,30,0.88)', text: '中雨' },
-      { hex: 'rgba(245,140,25,0.9)', text: '大雨' },
-      { hex: 'rgba(150,50,210,0.9)', text: '暴雨' },
-      { hex: 'rgba(220,35,40,0.92)', text: '大暴雨' }
+      { hex: 'rgba(70,200,90,0.85)', text: '毛毛雨 <3 mm/h' },
+      { hex: 'rgba(50,120,230,0.85)', text: '小雨 3–12 mm/h' },
+      { hex: 'rgba(245,215,30,0.88)', text: '中雨 12–28 mm/h' },
+      { hex: 'rgba(245,140,25,0.9)', text: '大雨 28–50 mm/h' },
+      { hex: 'rgba(150,50,210,0.9)', text: '暴雨 50–85 mm/h' },
+      { hex: 'rgba(220,35,40,0.92)', text: '大暴雨 ≥85 mm/h' }
     ];
   }
 
   /**
-   * 把雨强场绘到 ImageData（连续采样，非瓦片）。
+   * 把雨强场绘到 ImageData（连续空间场采样 + 硬分档着色，非渐变）。
    * bounds: [[latMin,lonMin],[latMax,lonMax]]；w,h 像素
    */
   function paintRateImageData(imgData, w, h, bounds, storm, grid) {

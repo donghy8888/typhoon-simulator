@@ -198,7 +198,7 @@
 
   /**
    * WNW→N 折向：航向接近北向时，在 7 级圈北缘以北加 ~10 mm/h 弱雨带。
-   * 雨带为东西向横带（E–W 拉长、N–S 薄），不是南北向竖条。
+   * 雨带为东西向横带（E–W ~9–12°、N–S 薄），非正椭圆/体育场形，略不对称。
    */
   function isRecurvingNorth(headingRad) {
     let h = +headingRad || 0;
@@ -211,20 +211,27 @@
     if (!isRecurvingNorth(headingRad)) return 0;
     if (!(lat > r7NorthLat)) return 0;
     const dNorth = lat - r7NorthLat; // degrees north of R7 north edge
-    // 横带：北缘以北仅薄层（约 1–5.5°），禁止拉成 10°+ 竖条
-    if (dNorth > 5.5) return 0;
+    // 横带：北缘以北薄层（脊 ~2°，~3.7° 外熄灭），禁止拉成竖条
+    if (dNorth > 3.7) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
-    // 东西拉长：半宽约 ±11–13°（整体远宽于南北厚度）
-    const halfW = 11.5 + 0.35 * dNorth;
-    if (Math.abs(dLon) > halfW) return 0;
-    const lonGate = Math.cos((dLon / halfW) * (Math.PI / 2));
-    // 峰值 ~10 mm/h，落在 R7 北缘以北约 2.2–3.2° 的东西横脊上
-    const mid = 2.7;
-    const span = 1.45;
-    const radGate = Math.exp(-Math.pow((dNorth - mid) / span, 2));
-    const edgeFade = clamp01((dNorth - 0.12) / 0.75);
-    return 10 * radGate * Math.pow(lonGate, 1.15) * edgeFade;
+    // 轻微沿经度弯弧 + 软抖动，避免完美椭圆/体育场轮廓
+    const arc = 0.15 * Math.sin(dLon * 0.62) + 0.07 * Math.sin(dLon * 1.45 + 0.9);
+    const dN = dNorth - arc;
+    // 东西半宽约 ±4.3–5.0°（总宽 ~9–12°），西侧略宽、东侧略窄
+    const halfW = dLon < 0 ? 5.0 : 4.3;
+    const u = Math.abs(dLon) / halfW;
+    // 多尺度软衰减（高斯芯 + 外缘更快跌落），不用硬 cos 截断墙
+    const lonGate = Math.exp(-0.85 * u * u) * Math.exp(-0.55 * Math.pow(u, 3.6));
+    if (lonGate < 0.015) return 0;
+    const wobble = 1.0 + 0.07 * Math.sin(dLon * 2.15 + dNorth * 3.2) *
+      Math.sin(dLon * 0.85 - 0.55);
+    // 峰值 ~10 mm/h，脊约在 R7 北缘以北 1.5–2.5°
+    const mid = 1.95;
+    const span = 0.78;
+    const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
+    const edgeFade = clamp01((dNorth - 0.08) / 0.5);
+    return 10 * radGate * lonGate * wobble * edgeFade;
   }
 
   /**
@@ -387,12 +394,12 @@
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
     const maxR = meanR7 * (1 + amp7) * 1.15 + 0.8;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? 6.0 : 0; // 横带：只需薄层北扩
+    const bandExtra = recurveN ? 4.0 : 0; // 横带：薄层北扩（脊~2°，~3.7°外熄）
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
     const cos = Math.max(0.2, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4 + (recurveN ? 12 : 0)) / cos; // 横带东西更宽
+    const lonPad = (maxR + 4 + (recurveN ? 7 : 0)) / cos; // 横带东西半宽~5°
     const lonMin = Math.max(this.lon0, storm.lon - lonPad);
     const lonMax = Math.min(G.DOMAIN.lonMax, storm.lon + lonPad);
 

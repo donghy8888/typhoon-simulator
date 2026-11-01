@@ -1,0 +1,14 @@
+?v=20261101s
+North weak rainband: slightly thinner N–S + modest south shift.
+
+CHANGED
+- NORTH_RIDGE_MID 5.5 → 4.8 (modest south; not back to 3.0)
+- N–S half-thickness: span_s 2.55→2.15, span_n 0.88→0.72; outer cutoff +2.4→+2.05; northCap mid+1.75
+- Keep detached lobe + soft hypot merge; NORTH_BRIDGE_CAP=8; peak~10; E–W asym; no G-corners
+- Cache bump ?v=20261101s
+
+VERIFY (node due-N)
+- Ridge dNorth=4.8 band≈9.83 mm/h
+- bridgeMax≈7.29 mm/h; yellowBridge=false
+- half-max N–S thickness≈2.30°
+- ridge lon sweep max|Δ²rate|≈0.27 (soft)

@@ -75,8 +75,8 @@
     return Math.max(r0 * 0.52, r0 * (1 + A * c));
   }
 
-  /** 折向北侧弱雨带脊：相对 R7 北缘 ~5.5°（≈600 km） */
-  const NORTH_RIDGE_MID = 5.5;
+  /** 折向北侧弱雨带脊：相对 R7 北缘 ~4.8°（略南移；仍远于 3° 轻推） */
+  const NORTH_RIDGE_MID = 4.8;
   /** 北带峰值 ~10 mm/h（蓝档内）；永不抬到黄/橙，故重核不会与主体桥接 */
   const NORTH_BAND_PEAK = 10;
   /** 可选轻雨桥上限（绿/蓝）；桥区超过此值则软封顶 */
@@ -102,8 +102,8 @@
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
     if (!isRecurvingNorth(headingRad)) return 0;
     const dNorth = lat - r7NorthLat; // degrees relative to R7 north edge
-    // 仅从 R7 北缘稍北起叶；北侧在脊外 ~2.3° 熄灭
-    if (dNorth < 0.05 || dNorth > NORTH_RIDGE_MID + 2.4) return 0;
+    // 仅从 R7 北缘稍北起叶；北侧在脊外 ~2.0° 熄灭（N–S 略收）
+    if (dNorth < 0.05 || dNorth > NORTH_RIDGE_MID + 2.05) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
     // 轻微弯弧 + 软抖动，避免完美椭圆/体育场轮廓
@@ -116,12 +116,12 @@
     if (lonGate < 0.02) return 0;
     const wobble = 1.0 + 0.045 * Math.sin(dLon * 2.05 + dNorth * 2.9) *
       Math.sin(dLon * 0.9 - 0.4);
-    // 非对称径向门：北侧紧、南侧长尾 → 脊分离；南足只留下轻雨桥
+    // 非对称径向门：北侧紧、南侧长尾 → 脊分离；南足只留下轻雨桥（span 略收细）
     const mid = NORTH_RIDGE_MID;
-    const span = dN < mid ? 2.55 : 0.88;
+    const span = dN < mid ? 2.15 : 0.72;
     const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
     const edgeFade = clamp01((dNorth - 0.15) / 0.85);
-    const northCap = clamp01((mid + 2.05 - dNorth) / 0.95);
+    const northCap = clamp01((mid + 1.75 - dNorth) / 0.85);
     let band = NORTH_BAND_PEAK * radGate * lonGate * wobble * edgeFade * northCap;
     // 桥区（脊以南较远处）封顶，确保黄/橙/紫/红绝不跨缝
     if (dNorth < mid - 1.15 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
@@ -401,7 +401,7 @@
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
     const maxR = meanR7 * (1 + amp7) * 1.15 + 0.8;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 3.0) : 0; // 分离北带脊~5.5° + 北缘熄灭
+    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 2.8) : 0; // 分离北带脊~4.8° + 北缘熄灭
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);

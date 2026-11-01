@@ -1164,7 +1164,7 @@
     }
     const maxR = r7 * (1 + amp) * 1.25 + 1.0;
     const recurveN = R.isRecurvingNorth(G.motionHeadingRad(u, v));
-    const band = recurveN ? (R.NORTH_RIDGE_MID + 3.2) : 0; // 分离北带脊~5.5° + 熄灭裕量
+    const band = recurveN ? (R.NORTH_RIDGE_MID + 2.9) : 0; // 分离北带脊~4.8° + 熄灭裕量
     const cos = Math.max(0.25, Math.cos(storm.lat * Math.PI / 180));
     const lonPad = (maxR + 4 + (recurveN ? 3.8 : 0)) / cos;
     return {

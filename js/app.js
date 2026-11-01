@@ -1090,7 +1090,7 @@
       c.className = 'ty-rain-canvas ty-rain-rate';
       c.style.position = 'absolute';
       c.style.pointerEvents = 'none';
-      c.style.imageRendering = 'crisp-edges';
+      c.style.imageRendering = 'auto';
       c.style.opacity = '0.78';
       pane.appendChild(c);
       rainState.rateCanvas = c;

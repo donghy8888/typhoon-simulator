@@ -44,23 +44,60 @@
    * 径向廓线（无眼）：中心→R12 近峰值；R12→R7 衰减；R7 外继续衰减。
    * rNorm = dist / localR7；r12frac = localR12 / localR7
    */
+  /**
+   * 径向廓线（相对 localR7）。保留给外缘衰减；主色带由 shellRateMmH 按地理壳层控制。
+   */
   function radialProfile(rNorm, r12frac) {
     if (!(rNorm >= 0) || !isFinite(rNorm)) return 0;
     const f12 = Math.max(0.12, Math.min(0.55, +r12frac || 0.34));
-    if (rNorm <= f12) {
-      // 平坦近峰值，略向眼墙抬一点（无干眼）
-      const t = rNorm / f12;
-      return 0.88 + 0.12 * t;
-    }
+    if (rNorm <= f12) return 1;
     if (rNorm <= 1) {
       const t = (rNorm - f12) / Math.max(1e-6, 1 - f12);
-      // 平滑降到外缘 ~0.12
       const s = t * t * (3 - 2 * t);
-      return lerp(1, 0.12, s);
+      return lerp(1, 0.14, Math.pow(s, 1.25));
     }
-    // 风圈外：再衰减
-    const out = Math.exp(-(rNorm - 1) / 0.55);
-    return 0.12 * out;
+    return 0.14 * Math.exp(-(rNorm - 1) / 0.62);
+  }
+
+  /**
+   * 嵌套壳雨强（mm/h）：圆形 R12 内 = peak（满盘红核）；
+   * 其外按地理距离经过 紫→橙→黄→蓝→绿 控制点，保证红外必有可见紫壳。
+   * stretch 轻度卵形（大风侧壳略厚），避免四象限垂直接缝。
+   */
+  function shellRateMmH(dist, meanR12, meanR7, localR7, peak) {
+    const p = Math.max(0, +peak || 0);
+    const r12 = Math.max(1e-6, +meanR12 || 0.3);
+    const r7 = Math.max(r12 * 1.2, +meanR7 || 1);
+    if (dist <= r12) return p;
+    // 轻度拉伸：弱侧不太压薄，强侧不太拉飞
+    const stretch = Math.max(0.82, Math.min(1.22, (+localR7 || r7) / r7));
+    const d = (dist - r12) / stretch; // 出核地理距离
+    // 控制点：出核距离 → 雨强（紫壳足够宽）
+    const purpleMid = Math.min(72, Math.max(55, p * 0.58));
+    const pts = [
+      { d: 0, v: p },
+      { d: 0.10 * r7, v: Math.min(p * 0.92, 95) },          // 仍偏红/红紫过渡
+      { d: 0.22 * r7, v: purpleMid },                       // 暴雨紫
+      { d: 0.36 * r7, v: 40 },                              // 大雨橙
+      { d: 0.52 * r7, v: 18 },                              // 中雨黄
+      { d: 0.72 * r7, v: 7 },                               // 小雨蓝
+      { d: 0.95 * r7, v: 1.6 },                             // 毛毛雨绿
+      { d: 1.35 * r7, v: 0.2 }
+    ];
+    if (d <= 0) return p;
+    if (d >= pts[pts.length - 1].d) {
+      const last = pts[pts.length - 1];
+      return last.v * Math.exp(-(d - last.d) / (0.45 * r7));
+    }
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (d <= pts[i + 1].d) {
+        const span = pts[i + 1].d - pts[i].d;
+        const t = span > 1e-9 ? (d - pts[i].d) / span : 0;
+        const s = t * t * (3 - 2 * t);
+        return lerp(pts[i].v, pts[i + 1].v, s);
+      }
+    }
+    return 0;
   }
 
   /**
@@ -77,8 +114,32 @@
     return !!(G && G.isMountain && G.isMountain(lon, lat));
   }
 
+  /** 山地遮罩双线性采样 0..1，避免 0.22° 方格造成垂直/水平硬接缝 */
+  function mountainWeightSoft(lon, lat, grid) {
+    if (grid && grid.mtn) {
+      const u = (lon - grid.lon0) / grid.deg;
+      const v = (lat - grid.lat0) / grid.deg;
+      const i0 = Math.floor(u);
+      const j0 = Math.floor(v);
+      if (i0 < -1 || j0 < -1 || i0 >= grid.nlon || j0 >= grid.nlat) return 0;
+      const fx = u - i0;
+      const fy = v - j0;
+      function sample(ii, jj) {
+        if (ii < 0 || jj < 0 || ii >= grid.nlon || jj >= grid.nlat) return 0;
+        return grid.mtn[grid.idx(ii, jj)] ? 1 : 0;
+      }
+      const w00 = sample(i0, j0);
+      const w10 = sample(i0 + 1, j0);
+      const w01 = sample(i0, j0 + 1);
+      const w11 = sample(i0 + 1, j0 + 1);
+      return (w00 * (1 - fx) + w10 * fx) * (1 - fy) + (w01 * (1 - fx) + w11 * fx) * fy;
+    }
+    return isMountainFast(lon, lat, grid) ? 1 : 0;
+  }
+
   function mountainSideFactor(lon, lat, stormLon, stormLat, grid) {
-    if (!isMountainFast(lon, lat, grid)) return 1;
+    const wMtn = mountainWeightSoft(lon, lat, grid);
+    if (wMtn <= 1e-3) return 1;
     const cosLat = Math.cos(lat * Math.PI / 180);
     const dLat = stormLat - lat;
     const dLon = (stormLon - lon) * Math.max(0.2, cosLat);
@@ -87,9 +148,11 @@
     const step = 0.18; // ~20 km
     const tLat = lat + (dLat / dist) * step;
     const tLon = lon + ((stormLon - lon) / dist) * step;
-    const windward = !isMountainFast(tLon, tLat, grid);
-    // 迎风:背风 ≈ 70:30
-    return windward ? 1 : (3 / 7);
+    const wAhead = mountainWeightSoft(tLon, tLat, grid);
+    // 迎风偏 1，背风偏 3/7；按软权重混合，无方块边
+    const windward = wAhead < 0.45;
+    const side = windward ? 1 : (3 / 7);
+    return 1 + (side - 1) * wMtn;
   }
 
   /**
@@ -127,7 +190,8 @@
   /**
    * 单点雨强 mm/h。
    * storm: { lat, lon, vmax, u, v }
-   * 非对称与 7 级风圈同一套象限半径；大半径一侧雨强更强。
+   * 非对称与 7 级风圈同一套象限半径；大半径一侧雨强更强（仅 R12 外）。
+   * R12 内核全向近峰值，强台中心为满盘顶档（大红核）。
    */
   function rainRateAt(lat, lon, storm, opts) {
     if (!storm || !G) return 0;
@@ -159,23 +223,30 @@
     const dist = Math.hypot(dlat, dlon);
     const ray = dist < 1e-9 ? 0 : Math.atan2(dlon, dlat);
 
-    const localR7 = G.windRadiusAtRay(meanR7, hdg, ray, amp7);
-    const localR12 = G.windRadiusAtRay(meanR12, hdg, ray, 0); // 12 级环近圆
-    const rNorm = localR7 > 1e-6 ? dist / localR7 : 99;
-    const r12frac = localR7 > 1e-6 ? localR12 / localR7 : 0.34;
+    // 雨场用平滑椭圆包络（cos 方位），不用 CMA 四象限常半径——避免 N/E/S/W 垂直硬接缝
+    const peakRay = (G.windPeakRayFromHeading
+      ? G.windPeakRayFromHeading(hdg)
+      : (hdg + Math.PI / 2));
+    const asymCos = Math.cos(ray - peakRay);
+    const localR7 = meanR7 * Math.max(0.58, 1 + amp7 * asymCos);
 
     const peak = peakRainMmH(vmax);
-    // 大风圈一侧明显更强：按局地 R7 / 平均 R7
-    const asymBoost = Math.pow(Math.max(0.55, localR7 / Math.max(1e-6, meanR7)), 1.65);
+    const coreW = dist <= meanR12 ? 1 : (dist < meanR12 + 0.2 * meanR7
+      ? 1 - ((dist - meanR12) / (0.2 * meanR7))
+      : 0);
 
-    let rate = peak * asymBoost * radialProfile(rNorm, r12frac);
+    // 嵌套壳：满盘红核 + 紫→橙→黄→蓝→绿；轻度卵形，无垂直硬缝
+    let rate = shellRateMmH(dist, meanR12, meanR7, localR7, peak);
 
     // 北侧折向雨带（风圈外）
-    const r7North = lat0 + G.windRadiusAtRay(meanR7, hdg, 0, amp7);
+    const r7North = lat0 + meanR7 * Math.max(0.58, 1 + amp7 * Math.cos(0 - peakRay));
     const band = rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg);
     rate = Math.max(rate, band);
 
-    rate *= mountainSideFactor(lon, lat, lon0, lat0, grid);
+    // 山地软调制：R12 内核不打洞
+    let mtn = mountainSideFactor(lon, lat, lon0, lat0, grid);
+    if (coreW > 0) mtn = mtn + (1 - mtn) * coreW;
+    rate *= mtn;
 
     if (rate < 0.15) return 0;
     return rate;
@@ -395,9 +466,9 @@
   /**
    * 强制分档只与邻档接壤（绿↔蓝↔黄↔橙↔紫↔红），禁止红贴蓝等跳档。
    * 策略：高档像素若与更低邻档差 >1，则逐级下调；贴透明外缘则逐级降到 1。
-   * 重复后形成嵌套壳层（filled-contour / 雷达回波带）。
+   * protectMask[i]>0 的像素不降档（用于保护 R12 红核，避免形态学掏成「1/4 红」）。
    */
-  function enforceNestedBins(bins, w, h) {
+  function enforceNestedBins(bins, w, h, protectMask) {
     const n = w * h;
     const cur = new Int8Array(bins);
     const next = new Int8Array(n);
@@ -409,6 +480,10 @@
           const i = y * w + x;
           const b = cur[i];
           if (b <= 0) continue;
+          if (protectMask && protectMask[i]) {
+            next[i] = b;
+            continue;
+          }
           let target = b;
           const nbs = [];
           if (x > 0) nbs.push(cur[i - 1]);
@@ -438,8 +513,40 @@
   }
 
   /**
-   * 把雨强场绘到 ImageData：采样 → 平滑 → 硬分档 → 嵌套约束 → 档内纯色。
-   * 保证色带为嵌套壳（弱外强内），邻接仅限相邻雨强档；非渐变洗色。
+   * 保证大红核外侧有暴雨紫壳（邻接红的只能是紫，不能直接橙/黄/蓝）。
+   * 对红核做 1–2 px 膨胀环，环内低于紫的抬到 5。
+   */
+  function ensurePurpleShellAroundRed(bins, w, h) {
+    const n = w * h;
+    const isRed = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (bins[i] >= 6) isRed[i] = 1;
+    const ring = new Uint8Array(n);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (isRed[i]) continue;
+        let near = false;
+        for (let dy = -2; dy <= 2 && !near; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            if (dx * dx + dy * dy > 4) continue;
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            if (isRed[ny * w + nx]) near = true;
+          }
+        }
+        if (near) ring[i] = 1;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      if (ring[i] && bins[i] < 5) bins[i] = 5;
+    }
+    return bins;
+  }
+
+  /**
+   * 把雨强场绘到 ImageData：采样 → 轻平滑 → 硬分档 → 嵌套约束 → 档内纯色。
+   * R12 内核顶档受保护，形态学不会掏成「1/4 红」；外圈仍可非对称。
    * bounds: [[latMin,lonMin],[latMax,lonMax]]；w,h 像素
    */
   function paintRateImageData(imgData, w, h, bounds, storm, grid) {
@@ -450,21 +557,58 @@
     const data = imgData.data;
     const opt = grid ? { grid: grid } : null;
     const rates = new Float32Array(w * h);
+    const rawBins = new Int8Array(w * h);
+    const protect = new Uint8Array(w * h);
+
+    // 圆形 R12（与 rainRateAt 内核一致），用于保护中心满盘顶档
+    let coreR = 0.4;
+    if (storm && G) {
+      const vmax = +storm.vmax || 0;
+      const rings = G.windRadiiForGrades(vmax);
+      let meanR7 = G.windRadiusDeg(vmax) * 1.2;
+      let meanR12 = meanR7 * 0.34;
+      for (let i = 0; i < rings.length; i++) {
+        if (rings[i].grade === 7) meanR7 = rings[i].radiusDeg;
+        if (rings[i].grade === 12) meanR12 = rings[i].radiusDeg;
+      }
+      if (vmax < 32.7) meanR12 = Math.max(0.15, meanR7 * 0.28);
+      coreR = meanR12;
+    }
+    const lat0 = storm ? +storm.lat : 0;
+    const lon0 = storm ? +storm.lon : 0;
+    const cosLat = Math.cos(lat0 * Math.PI / 180);
+
     for (let y = 0; y < h; y++) {
       const lat = latMax - (y + 0.5) / h * (latMax - latMin);
       for (let x = 0; x < w; x++) {
         const lon = lonMin + (x + 0.5) / w * (lonMax - lonMin);
-        rates[y * w + x] = rainRateAt(lat, lon, storm, opt);
+        const i = y * w + x;
+        const rate = rainRateAt(lat, lon, storm, opt);
+        rates[i] = rate;
+        rawBins[i] = binIndexForRate(rate);
+        const dlat = lat - lat0;
+        const dlon = (lon - lon0) * Math.max(0.2, cosLat);
+        const dist = Math.hypot(dlat, dlon);
+        // 仅保护内核大红（档6）；紫壳在 R12 外形成，勿把 ≥5 整圈冻死
+        if (dist <= coreR * 0.98 && rawBins[i] >= 6) protect[i] = 1;
       }
     }
-    // 平滑硬崖（山地因子等），使绝对阈值之间必有过渡像素
-    blurRateField(rates, w, h, 3);
+    // 轻平滑即可；过重会把圆核对成偏心斑
+    blurRateField(rates, w, h, 2);
 
     const bins = new Int8Array(w * h);
     for (let i = 0; i < rates.length; i++) {
       bins[i] = binIndexForRate(rates[i]);
+      // 模糊后仍用原始内核顶档回填，保证强台中心整盘红
+      if (protect[i] && rawBins[i] > bins[i]) bins[i] = rawBins[i];
     }
-    enforceNestedBins(bins, w, h);
+    enforceNestedBins(bins, w, h, protect);
+    // 嵌套约束后再回填一次保护核，防止邻域剥蚀渗入
+    for (let i = 0; i < bins.length; i++) {
+      if (protect[i] && rawBins[i] > bins[i]) bins[i] = rawBins[i];
+    }
+    // 红外必有紫壳：红核外侧一圈若跳到橙及以下，抬到暴雨紫
+    ensurePurpleShellAroundRed(bins, w, h);
 
     for (let i = 0; i < bins.length; i++) {
       const c = colorForBin(bins[i]);
@@ -487,6 +631,7 @@
   global.TyRain = {
     peakRainMmH: peakRainMmH,
     rainRateAt: rainRateAt,
+    shellRateMmH: shellRateMmH,
     AccumGrid: AccumGrid,
     colorForRate: colorForRate,
     colorForBin: colorForBin,

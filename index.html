@@ -6,7 +6,7 @@
   <title>西北太平洋台风模拟器</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="css/style.css?v=20261101g" />
+  <link rel="stylesheet" href="css/style.css?v=20261101h" />
 </head>
 <body>
   <header class="site-header">
@@ -194,20 +194,14 @@
           <div><span class="swatch" style="background:#800080;border-radius:50%"></span>STY 强台风</div>
           <div><span class="swatch" style="background:#FF0000;border-radius:50%"></span>Super 超强台风</div>
         </div>
-        <div class="legend-sec legend-sim-only">降水累计 mm</div>
-        <div class="legend-sim-only" id="rainAccumLegend">
-          <div><span class="swatch" style="background:rgba(180,220,255,0.75)"></span>10</div>
-          <div><span class="swatch" style="background:rgba(80,180,220,0.8)"></span>50</div>
-          <div><span class="swatch" style="background:rgba(40,200,120,0.85)"></span>100</div>
-          <div><span class="swatch" style="background:rgba(250,220,40,0.9)"></span>200</div>
-          <div><span class="swatch" style="background:rgba(220,80,40,0.92)"></span>400+</div>
-        </div>
-        <div class="legend-sec legend-sim-only">雨强 mm/h</div>
+        <div class="legend-sec legend-sim-only">雨强</div>
         <div class="legend-sim-only" id="rainRateLegend">
-          <div><span class="swatch" style="background:rgba(120,190,240,0.75)"></span>10</div>
-          <div><span class="swatch" style="background:rgba(40,200,120,0.85)"></span>40</div>
-          <div><span class="swatch" style="background:rgba(250,220,40,0.9)"></span>80</div>
-          <div><span class="swatch" style="background:rgba(220,60,40,0.92)"></span>150+</div>
+          <div><span class="swatch" style="background:rgba(70,200,90,0.85)"></span>毛毛雨</div>
+          <div><span class="swatch" style="background:rgba(50,120,230,0.85)"></span>小雨</div>
+          <div><span class="swatch" style="background:rgba(245,215,30,0.88)"></span>中雨</div>
+          <div><span class="swatch" style="background:rgba(245,140,25,0.9)"></span>大雨</div>
+          <div><span class="swatch" style="background:rgba(150,50,210,0.9)"></span>暴雨</div>
+          <div><span class="swatch" style="background:rgba(220,35,40,0.92)"></span>大暴雨</div>
         </div>
         <div class="legend-sec legend-sim-only">引导</div>
         <div class="legend-sim-only"><span class="swatch" style="background:transparent;border:2px dashed #1e8449"></span>副高北缘（绿线）</div>
@@ -217,14 +211,14 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/land-mask-data.js?v=20261101g"></script>
-  <script src="js/mountain-data.js?v=20261101g"></script>
-  <script src="js/geo.js?v=20261101g"></script>
-  <script src="js/physics.js?v=20261101g"></script>
-  <script src="js/typhoon-names-zh.js?v=20261101g"></script>
-  <script src="js/typhoon-intros.js?v=20261101g"></script>
-  <script src="js/history.js?v=20261101g"></script>
-  <script src="js/rain.js?v=20261101g"></script>
-  <script src="js/app.js?v=20261101g"></script>
+  <script src="js/land-mask-data.js?v=20261101h"></script>
+  <script src="js/mountain-data.js?v=20261101h"></script>
+  <script src="js/geo.js?v=20261101h"></script>
+  <script src="js/physics.js?v=20261101h"></script>
+  <script src="js/typhoon-names-zh.js?v=20261101h"></script>
+  <script src="js/typhoon-intros.js?v=20261101h"></script>
+  <script src="js/history.js?v=20261101h"></script>
+  <script src="js/rain.js?v=20261101h"></script>
+  <script src="js/app.js?v=20261101h"></script>
 </body>
 </html>

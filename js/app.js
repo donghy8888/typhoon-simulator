@@ -129,15 +129,15 @@
     landfallFlags: []
   };
 
-  // —— 降水：累计格 + 连续 canvas 填色（非瓦片）——
+  // —— 降水：仅瞬时雨强连续 canvas（非瓦片）；累计已移除 ——
   const rainState = {
-    accum: R ? new R.AccumGrid(0.22) : null,
-    trackSynced: 0, // 已积分到 track 下标
+    accum: R ? new R.AccumGrid(0.22) : null, // 仅供山地 mask 给雨强采样
+    trackSynced: 0,
     rateCanvas: null,
     accumCanvas: null,
     scrubTimer: null,
     showRate: true,
-    showAccum: true
+    showAccum: false
   };
 
   function clearStormRefs() {
@@ -1080,15 +1080,10 @@
     if (!R) return;
     const pane = map.getPane('rain');
     if (!pane) return;
-    if (!rainState.accumCanvas) {
-      const c = document.createElement('canvas');
-      c.className = 'ty-rain-canvas ty-rain-accum';
-      c.style.position = 'absolute';
-      c.style.pointerEvents = 'none';
-      c.style.imageRendering = 'auto';
-      c.style.opacity = '0.85';
-      pane.appendChild(c);
-      rainState.accumCanvas = c;
+    // 累计层已移除：若旧会话残留 canvas 则拿掉
+    if (rainState.accumCanvas) {
+      if (rainState.accumCanvas.parentNode) rainState.accumCanvas.parentNode.removeChild(rainState.accumCanvas);
+      rainState.accumCanvas = null;
     }
     if (!rainState.rateCanvas) {
       const c = document.createElement('canvas');
@@ -1096,13 +1091,14 @@
       c.style.position = 'absolute';
       c.style.pointerEvents = 'none';
       c.style.imageRendering = 'auto';
-      c.style.opacity = '0.9';
+      c.style.opacity = '0.82';
       pane.appendChild(c);
       rainState.rateCanvas = c;
     }
   }
 
   function resetRainField() {
+    // 不再维护累计格；仅清瞬时雨墙
     if (rainState.accum) rainState.accum.clear();
     rainState.trackSynced = 0;
     if (rainState.scrubTimer) {
@@ -1115,9 +1111,8 @@
       rainState.rateCanvas.style.display = 'none';
     }
     if (rainState.accumCanvas) {
-      const ctx = rainState.accumCanvas.getContext('2d');
-      if (ctx) ctx.clearRect(0, 0, rainState.accumCanvas.width, rainState.accumCanvas.height);
-      rainState.accumCanvas.style.display = 'none';
+      if (rainState.accumCanvas.parentNode) rainState.accumCanvas.parentNode.removeChild(rainState.accumCanvas);
+      rainState.accumCanvas = null;
     }
   }
 
@@ -1227,24 +1222,11 @@
   }
 
   function paintRainAccum() {
-    if (!R || !rainState.accum || state.mode === 'history') {
-      if (rainState.accumCanvas) rainState.accumCanvas.style.display = 'none';
-      return;
+    // 累计层已按需求移除
+    if (rainState.accumCanvas) {
+      if (rainState.accumCanvas.parentNode) rainState.accumCanvas.parentNode.removeChild(rainState.accumCanvas);
+      rainState.accumCanvas = null;
     }
-    ensureRainCanvases();
-    const box = accumPaintBounds(rainState.accum);
-    if (!box) {
-      rainState.accumCanvas.style.display = 'none';
-      return;
-    }
-    const dlat = box.ne.lat - box.sw.lat;
-    const dlon = box.ne.lon - box.sw.lon;
-    const pxW = Math.max(128, Math.min(512, Math.round(dlon / 0.08)));
-    const pxH = Math.max(128, Math.min(512, Math.round(dlat / 0.08)));
-    const ctx = rainState.accumCanvas.getContext('2d');
-    const img = ctx.createImageData(pxW, pxH);
-    R.paintAccumImageData(img, pxW, pxH, [[box.sw.lat, box.sw.lon], [box.ne.lat, box.ne.lon]], rainState.accum);
-    placeRainCanvas(rainState.accumCanvas, box.sw, box.ne, pxW, pxH, img);
   }
 
   /** 直播推进：把新 track 点累加进格点 */
@@ -1299,23 +1281,12 @@
     const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);
     const storm = rainStormFromView(view, envUV);
 
-    if (scrubbing) {
-      scheduleRainScrubRebuild(track, idx);
-    } else if (opts.justStepped) {
-      syncRainAccumLive(track);
-    } else if (rainState.trackSynced < track.length) {
-      syncRainAccumLive(track);
-    }
-
-    // 播放/回看：移动雨强填色；累计始终可画
+    // 仅瞬时雨墙；不积分/不画累计
     const showRings = scrubbing
       ? (view && view.vmax >= P.DISSIPATE_MS)
       : (main.alive || main.vmax >= P.DISSIPATE_MS);
     if (showRings && storm && storm.vmax >= 10) paintRainRate(storm);
     else if (rainState.rateCanvas) rainState.rateCanvas.style.display = 'none';
-
-    if (!scrubbing) paintRainAccum();
-    // scrub 时 accum 在 rebuild 回调里画
   }
 
   /**

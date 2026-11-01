@@ -1,0 +1,7 @@
+?v=20261101h
+Rain viz: instantaneous rate ONLY (accum fill removed per t365u).
+Color scale (absolute mm/h): 毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红
+Breaks ~3 / 12 / 28 / 50 / 85 / 130+ mm/h — no relative maxVal squash, no all-red blob for modest rates.
+Physics unchanged: continuous field, mm units, peak near R12, asym large-R7 side stronger,
+mountain windward~70%/leeward~30%, no translation-speed rain factor, WNW→N ~10mm/h band N of R7.
+No intro/help text. Legend: rate categories only.

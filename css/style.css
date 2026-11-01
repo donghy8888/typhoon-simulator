@@ -793,10 +793,14 @@ body.mode-history .match-chip { display: none !important; }
 }
 
 
-/* 降水连续填色（canvas in rain pane） */
+/* 降水连续填色（仅瞬时雨强；累计已移除） */
 .ty-rain-canvas {
   pointer-events: none !important;
   image-rendering: auto;
+}
+.ty-rain-rate {
+  /* soft continuous field over basemap */
+  opacity: 0.82;
 }
 .leaflet-rain-pane {
   pointer-events: none;

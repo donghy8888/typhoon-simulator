@@ -1,7 +1,7 @@
 /**
- * 台风降水场：连续雨强（mm/h）+ 累计降水（mm）
- * 与非对称风圈对齐；山地迎/背风 7:3；折向北侧弱雨带。
- * 不单独用移速调制雨强；不建台风眼干区。
+ * 台风降水场：仅瞬时雨强（mm/h）连续填色；不画累计。
+ * 色标：毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红。
+ * 与非对称风圈对齐；山地迎/背风 7:3；折向北侧弱雨带；无移速雨因子；无眼干区。
  */
 (function (global) {
   'use strict';
@@ -181,35 +181,63 @@
     return rate;
   }
 
-  /** 累计/雨强配色（青绿→黄→红），返回 [r,g,b,a] */
-  function colorForMm(mm, maxMm, alphaScale) {
-    const t = clamp01(mm / Math.max(1, maxMm));
+  /**
+   * 瞬时雨强绝对色标（mm/h）— 用户指定：
+   * 毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红
+   * 断点按台风雨墙可读性拉开，避免「几毫米就一片红」。
+   * 累计层已移除，不再着色。
+   */
+  function colorForRate(mmh) {
+    const x = +mmh || 0;
+    if (x < 0.4) return [0, 0, 0, 0];
+    // 毛毛雨绿 → 小雨蓝 → 中雨黄 → 大雨橙 → 暴雨紫 → 大暴雨红
+    const stops = [
+      { v: 3,   r: 70,  g: 200, b: 90 },   // 毛毛雨
+      { v: 12,  r: 50,  g: 120, b: 230 },  // 小雨
+      { v: 28,  r: 245, g: 215, b: 30 },   // 中雨
+      { v: 50,  r: 245, g: 140, b: 25 },   // 大雨
+      { v: 85,  r: 150, g: 50,  b: 210 },  // 暴雨
+      { v: 130, r: 220, g: 35,  b: 40 }    // 大暴雨
+    ];
     let r, g, b;
-    if (t < 0.2) {
-      const u = t / 0.2;
-      r = lerp(180, 80, u); g = lerp(220, 180, u); b = lerp(255, 220, u);
-    } else if (t < 0.45) {
-      const u = (t - 0.2) / 0.25;
-      r = lerp(80, 40, u); g = lerp(180, 200, u); b = lerp(220, 120, u);
-    } else if (t < 0.7) {
-      const u = (t - 0.45) / 0.25;
-      r = lerp(40, 250, u); g = lerp(200, 220, u); b = lerp(120, 40, u);
+    if (x <= stops[0].v) {
+      const u = clamp01(x / stops[0].v);
+      r = lerp(140, stops[0].r, u);
+      g = lerp(230, stops[0].g, u);
+      b = lerp(150, stops[0].b, u);
+    } else if (x >= stops[stops.length - 1].v) {
+      const last = stops[stops.length - 1];
+      const u = clamp01((x - last.v) / 80);
+      r = lerp(last.r, 170, u);
+      g = lerp(last.g, 10, u);
+      b = lerp(last.b, 25, u);
     } else {
-      const u = (t - 0.7) / 0.3;
-      r = lerp(250, 180, u); g = lerp(220, 40, u); b = lerp(40, 40, u);
+      for (let i = 0; i < stops.length - 1; i++) {
+        if (x <= stops[i + 1].v) {
+          const u = (x - stops[i].v) / (stops[i + 1].v - stops[i].v);
+          r = lerp(stops[i].r, stops[i + 1].r, u);
+          g = lerp(stops[i].g, stops[i + 1].g, u);
+          b = lerp(stops[i].b, stops[i + 1].b, u);
+          break;
+        }
+      }
     }
-    const a = Math.round(255 * Math.min(0.72, (0.18 + 0.62 * Math.sqrt(t)) * (alphaScale == null ? 1 : alphaScale)));
+    const t = clamp01(Math.sqrt(x / 100));
+    const a = Math.round(255 * (0.22 + 0.48 * t));
     return [r | 0, g | 0, b | 0, a];
   }
 
-  /** 雨强色（同族，略透） */
-  function colorForRate(mmh) {
-    return colorForMm(mmh, 160, 0.85);
+  /** 累计已停用 */
+  function colorForAccum(mm) {
+    return [0, 0, 0, 0];
   }
 
-  /** 累计色 */
-  function colorForAccum(mm) {
-    return colorForMm(mm, 600, 1);
+  function colorForMm(mm, maxMm, alphaScale) {
+    const c = colorForRate(mm);
+    if (alphaScale != null && alphaScale !== 1 && c[3] > 0) {
+      c[3] = Math.round(c[3] * alphaScale);
+    }
+    return c;
   }
 
   /**
@@ -323,24 +351,19 @@
     }
   };
 
-  /** 图例条目：累计 mm */
+  /** 图例：仅瞬时雨强（累计已移除） */
   function accumLegendItems() {
-    return [
-      { hex: 'rgba(180,220,255,0.7)', text: '10 mm' },
-      { hex: 'rgba(80,180,220,0.75)', text: '50 mm' },
-      { hex: 'rgba(40,200,120,0.8)', text: '100 mm' },
-      { hex: 'rgba(250,220,40,0.85)', text: '200 mm' },
-      { hex: 'rgba(220,80,40,0.9)', text: '400+ mm' }
-    ];
+    return [];
   }
 
-  /** 图例条目：雨强 mm/h（紧凑，无说明文案） */
   function rateLegendItems() {
     return [
-      { hex: 'rgba(120,190,240,0.7)', text: '10 mm/h' },
-      { hex: 'rgba(40,200,120,0.8)', text: '40 mm/h' },
-      { hex: 'rgba(250,220,40,0.85)', text: '80 mm/h' },
-      { hex: 'rgba(220,60,40,0.9)', text: '150+ mm/h' }
+      { hex: 'rgba(70,200,90,0.85)', text: '毛毛雨' },
+      { hex: 'rgba(50,120,230,0.85)', text: '小雨' },
+      { hex: 'rgba(245,215,30,0.88)', text: '中雨' },
+      { hex: 'rgba(245,140,25,0.9)', text: '大雨' },
+      { hex: 'rgba(150,50,210,0.9)', text: '暴雨' },
+      { hex: 'rgba(220,35,40,0.92)', text: '大暴雨' }
     ];
   }
 
@@ -373,40 +396,9 @@
   }
 
   function paintAccumImageData(imgData, w, h, bounds, grid) {
-    const latMin = bounds[0][0];
-    const lonMin = bounds[0][1];
-    const latMax = bounds[1][0];
-    const lonMax = bounds[1][1];
+    // 累计层已移除：保持透明
     const data = imgData.data;
-    const deg = grid.deg;
-    const maxShow = Math.max(80, Math.min(900, (grid.maxVal || 50) * 1.1));
-    for (let y = 0; y < h; y++) {
-      const lat = latMax - (y + 0.5) / h * (latMax - latMin);
-      const jf = (lat - grid.lat0) / deg;
-      const j0 = Math.floor(jf);
-      const tj = jf - j0;
-      for (let x = 0; x < w; x++) {
-        const lon = lonMin + (x + 0.5) / w * (lonMax - lonMin);
-        const if_ = (lon - grid.lon0) / deg;
-        const i0 = Math.floor(if_);
-        const ti = if_ - i0;
-        let mm = 0;
-        if (i0 >= 0 && j0 >= 0 && i0 + 1 < grid.nlon && j0 + 1 < grid.nlat) {
-          const v00 = grid.data[grid.idx(i0, j0)];
-          const v10 = grid.data[grid.idx(i0 + 1, j0)];
-          const v01 = grid.data[grid.idx(i0, j0 + 1)];
-          const v11 = grid.data[grid.idx(i0 + 1, j0 + 1)];
-          mm = lerp(lerp(v00, v10, ti), lerp(v01, v11, ti), tj);
-        }
-        const p = (y * w + x) * 4;
-        if (mm < 1.5) {
-          data[p] = 0; data[p + 1] = 0; data[p + 2] = 0; data[p + 3] = 0;
-        } else {
-          const c = colorForMm(mm, maxShow, 1);
-          data[p] = c[0]; data[p + 1] = c[1]; data[p + 2] = c[2]; data[p + 3] = c[3];
-        }
-      }
-    }
+    data.fill(0);
     return imgData;
   }
 

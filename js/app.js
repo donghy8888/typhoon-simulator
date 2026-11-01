@@ -1212,7 +1212,6 @@
 
     if (!state.members.length) {
       clock.textContent = '模拟时钟：未开始';
-      syncSimLossBar(null);
       return;
     }
 
@@ -1227,35 +1226,7 @@
     } else if (state.running) {
       clockExtra = '（运行中）';
     }
-    let lossStr = '';
-    if (typeof P.estimateTrackLoss === 'function') {
-      const info = P.estimateTrackLoss(track);
-      if (info && info.loss > 0) {
-        lossStr = ' · 损失 ' + P.formatTrackLoss(info);
-      } else if (info && track.length >= 2) {
-        lossStr = ' · 损失 0';
-      }
-    }
-    clock.textContent = '模拟时钟：' + timeStr + clockExtra + lossStr;
-    syncSimLossBar(track);
-  }
-
-  function syncSimLossBar(track) {
-    const el = document.getElementById('simLossBar');
-    if (!el) return;
-    if (state.mode === 'history') {
-      el.hidden = true;
-      return;
-    }
-    if (!track || track.length < 2 || typeof P.estimateTrackLoss !== 'function') {
-      el.hidden = true;
-      el.textContent = '';
-      return;
-    }
-    const info = P.estimateTrackLoss(track);
-    el.hidden = false;
-    el.textContent = '模拟损失指数：' + P.formatTrackLoss(info) +
-      (info.crossedCmr ? ' · 路径穿越台湾中央山脉' : '');
+    clock.textContent = '模拟时钟：' + timeStr + clockExtra;
   }
 
   function initVmaxFromGrade() {
@@ -1577,31 +1548,6 @@
   }
 
 
-  function lossLineForPoints(pts) {
-    if (!pts || !pts.length || typeof P.estimateTrackLoss !== 'function') return null;
-    // History points use ISO time strings — normalize to hours-from-start for Δt
-    const norm = [];
-    let t0 = null;
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
-      if (!p) continue;
-      let t = p.t;
-      if (typeof t === 'string') {
-        const ms = Date.parse(String(t).replace(' ', 'T'));
-        if (!isFinite(ms)) continue;
-        if (t0 == null) t0 = ms;
-        t = (ms - t0) / 3600000;
-      } else if (typeof t !== 'number' || !isFinite(t)) {
-        t = i; // fallback 1-step
-      }
-      norm.push({ lon: p.lon, lat: p.lat, vmax: p.vmax, t: t });
-    }
-    const info = P.estimateTrackLoss(norm);
-    if (!info) return null;
-    return '模拟损失指数：' + P.formatTrackLoss(info) +
-      (info.crossedCmr ? '（路径穿越台湾中央山脉，损失×2）' : '');
-  }
-
   function openIntroPanel(model) {
     if (!model) return;
     const panel = document.getElementById('introPanel');
@@ -1620,20 +1566,13 @@
     if (model.maxVmax != null) metaHtml += ' · 峰值 ' + Number(model.maxVmax).toFixed(0) + ' m/s';
     if (meta) meta.innerHTML = metaHtml || '—';
     if (text) text.textContent = model.intro || '';
-    let dmgText = model.damage || '破坏损失：本库暂未收录该台风的公开损失摘要';
-    if (model.lossLine) {
-      dmgText = dmgText + '\n' + model.lossLine;
-    }
-    if (dmg) dmg.textContent = dmgText;
+    if (dmg) dmg.textContent = model.damage || '破坏损失：本库暂未收录该台风的公开损失摘要';
     panel.hidden = false;
   }
 
   function openIntroForStorm(storm, extras) {
     if (!INTRO || !storm) return;
-    const model = INTRO.buildPanelModel(storm, extras || {});
-    const ll = lossLineForPoints(storm.points || []);
-    if (ll) model.lossLine = ll;
-    openIntroPanel(model);
+    openIntroPanel(INTRO.buildPanelModel(storm, extras || {}));
   }
 
   function openIntroForMatch(match) {
@@ -1647,18 +1586,13 @@
         maxVmax: match.maxVmax,
         points: []
       };
-      const model = INTRO.buildPanelModel(fakeStorm, {
+      openIntroPanel(INTRO.buildPanelModel(fakeStorm, {
         id: match.id,
         name: match.name,
         year: match.year,
         maxVmax: match.maxVmax,
         durationH: match.durationH
-      });
-      // 模拟路径损失指数（若穿越中央山脉则已 ×2）
-      const simTrack = getMainTrack();
-      const ll = lossLineForPoints(simTrack);
-      if (ll) model.lossLine = '本场模拟 · ' + ll;
-      openIntroPanel(model);
+      }));
       return;
     }
     openIntroPanel({

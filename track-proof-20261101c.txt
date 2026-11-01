@@ -1,0 +1,6 @@
+?v=20261101c
+Removed invented simulated loss index (user did not want it).
+- Deleted TyPhysics.estimateTrackLoss / formatTrackLoss / trackCrossesTaiwanCentralRange / TW_CMR_*
+- Deleted clock 「· 损失 N（中央山脉×2）」, #simLossBar, intro/hist/match lossLine
+- Kept: tracks pane z=470 above mountains; WNW/10级 near-round from 20261101b
+- Kept: qualitative introDamage historical text from typhoon-intros.js

@@ -1019,87 +1019,6 @@
     return null;
   }
 
-  /** 台湾中央山脉脊廊（穿越判定用；与 TW_MTN 吸引中心一致） */
-  const TW_CMR_LON0 = 121.0;
-  const TW_CMR_LON1 = 121.5;
-  const TW_CMR_LAT0 = 22.5;
-  const TW_CMR_LAT1 = 24.5;
-  /** 脊廊外缘：elev≥700m 山地掩码 + 略扩框，捕捉擦脊路径 */
-  const TW_CMR_WIDE_LON0 = 120.7;
-  const TW_CMR_WIDE_LON1 = 121.7;
-  const TW_CMR_WIDE_LAT0 = 22.3;
-  const TW_CMR_WIDE_LAT1 = 24.7;
-
-  function inTaiwanCentralRange(lon, lat) {
-    if (!(isFinite(lon) && isFinite(lat))) return false;
-    if (lon >= TW_CMR_LON0 && lon <= TW_CMR_LON1 &&
-        lat >= TW_CMR_LAT0 && lat <= TW_CMR_LAT1) {
-      return true;
-    }
-    if (lon >= TW_CMR_WIDE_LON0 && lon <= TW_CMR_WIDE_LON1 &&
-        lat >= TW_CMR_WIDE_LAT0 && lat <= TW_CMR_WIDE_LAT1 &&
-        G.isMountain(lon, lat)) {
-      return true;
-    }
-    return false;
-  }
-
-  /** 路径是否穿过/经过台湾中央山脉（点 + 段内插） */
-  function trackCrossesTaiwanCentralRange(track) {
-    if (!track || !track.length) return false;
-    for (let i = 0; i < track.length; i++) {
-      const p = track[i];
-      if (p && inTaiwanCentralRange(p.lon, p.lat)) return true;
-    }
-    for (let i = 1; i < track.length; i++) {
-      const a = track[i - 1];
-      const b = track[i];
-      if (!a || !b) continue;
-      for (let k = 1; k <= 4; k++) {
-        const t = k / 5;
-        const lon = a.lon + (b.lon - a.lon) * t;
-        const lat = a.lat + (b.lat - a.lat) * t;
-        if (inTaiwanCentralRange(lon, lat)) return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * 模拟损失指数（相对无量纲）：陆地路径上按 (vmax/10)^2 · Δt 积分。
-   * 若路径穿越台湾中央山脉，损失 ×2（地形致灾放大）。
-   */
-  function estimateTrackLoss(track) {
-    let base = 0;
-    if (!track || track.length < 2) {
-      return { base: 0, loss: 0, crossedCmr: false, factor: 1 };
-    }
-    for (let i = 1; i < track.length; i++) {
-      const prev = track[i - 1];
-      const p = track[i];
-      if (!prev || !p) continue;
-      const dt = Math.max(0, (+p.t || 0) - (+prev.t || 0));
-      if (!(dt > 0)) continue;
-      if (!G.isLand(p.lon, p.lat)) continue;
-      const v = Math.max(0, +p.vmax || 0);
-      const nv = v / 10;
-      base += nv * nv * dt;
-    }
-    base = Math.round(base * 10) / 10;
-    const crossedCmr = trackCrossesTaiwanCentralRange(track);
-    const factor = crossedCmr ? 2 : 1;
-    const loss = Math.round(base * factor * 10) / 10;
-    return { base: base, loss: loss, crossedCmr: crossedCmr, factor: factor };
-  }
-
-  function formatTrackLoss(info) {
-    if (!info) return '—';
-    const n = (info.loss != null && isFinite(info.loss)) ? info.loss : 0;
-    let s = String(n);
-    if (info.crossedCmr) s += '（中央山脉×2）';
-    return s;
-  }
-
   function updateHole(hole, lon, lat, vmax) {
     if (!hole) return null;
     hole.lon = lon;
@@ -1135,14 +1054,6 @@
     steeringAt,
     betaDrift,
     taiwanMtnAttract,
-    TW_CMR_LON0,
-    TW_CMR_LON1,
-    TW_CMR_LAT0,
-    TW_CMR_LAT1,
-    inTaiwanCentralRange,
-    trackCrossesTaiwanCentralRange,
-    estimateTrackLoss,
-    formatTrackLoss,
     moveStep,
     intensityTendency,
     stepMember,

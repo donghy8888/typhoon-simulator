@@ -1,6 +1,6 @@
 /**
  * 台风降水场：仅瞬时雨强（mm/h）雷达阶梯填色；不画累计。
- * 色标（绝对 mm/h 分档，硬边界）：毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红。
+ * 色标（绝对 mm/h 嵌套阶梯带）：毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红；邻接仅限相邻档。
  * 与非对称风圈对齐；山地迎/背风 7:3；折向北侧弱雨带；无移速雨因子；无眼干区。
  */
 (function (global) {
@@ -348,8 +348,98 @@
     ];
   }
 
+  /** 分档序号：0 无雨，1 毛毛雨 … 6 大暴雨（与 RATE_BINS 顺序一致） */
+  function binIndexForRate(mmh) {
+    const x = +mmh || 0;
+    if (x < 0.4) return 0;
+    for (let i = 0; i < RATE_BINS.length; i++) {
+      if (x < RATE_BINS[i].max) return i + 1;
+    }
+    return RATE_BINS.length;
+  }
+
+  function colorForBin(bin) {
+    if (bin <= 0) return [0, 0, 0, 0];
+    const b = RATE_BINS[Math.min(RATE_BINS.length, bin) - 1];
+    return [b.r, b.g, b.b, b.a];
+  }
+
+  /** 3×3 盒式模糊（原地两次缓冲），抹平山地等硬崖，便于分档后形成嵌套等值带 */
+  function blurRateField(src, w, h, passes) {
+    const n = w * h;
+    let a = src;
+    let b = new Float32Array(n);
+    const p = Math.max(1, passes | 0);
+    for (let pass = 0; pass < p; pass++) {
+      for (let y = 0; y < h; y++) {
+        const y0 = y > 0 ? y - 1 : y;
+        const y1 = y;
+        const y2 = y + 1 < h ? y + 1 : y;
+        for (let x = 0; x < w; x++) {
+          const x0 = x > 0 ? x - 1 : x;
+          const x1 = x;
+          const x2 = x + 1 < w ? x + 1 : x;
+          const s =
+            a[y0 * w + x0] + a[y0 * w + x1] + a[y0 * w + x2] +
+            a[y1 * w + x0] + a[y1 * w + x1] + a[y1 * w + x2] +
+            a[y2 * w + x0] + a[y2 * w + x1] + a[y2 * w + x2];
+          b[y * w + x] = s / 9;
+        }
+      }
+      const tmp = a; a = b; b = tmp;
+    }
+    if (a !== src) src.set(a);
+    return src;
+  }
+
   /**
-   * 把雨强场绘到 ImageData（连续空间场采样 + 硬分档着色，非渐变）。
+   * 强制分档只与邻档接壤（绿↔蓝↔黄↔橙↔紫↔红），禁止红贴蓝等跳档。
+   * 策略：高档像素若与更低邻档差 >1，则逐级下调；贴透明外缘则逐级降到 1。
+   * 重复后形成嵌套壳层（filled-contour / 雷达回波带）。
+   */
+  function enforceNestedBins(bins, w, h) {
+    const n = w * h;
+    const cur = new Int8Array(bins);
+    const next = new Int8Array(n);
+    for (let pass = 0; pass < 16; pass++) {
+      next.set(cur);
+      let changed = false;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x;
+          const b = cur[i];
+          if (b <= 0) continue;
+          let target = b;
+          const nbs = [];
+          if (x > 0) nbs.push(cur[i - 1]);
+          if (x + 1 < w) nbs.push(cur[i + 1]);
+          if (y > 0) nbs.push(cur[i - w]);
+          if (y + 1 < h) nbs.push(cur[i + w]);
+          for (let k = 0; k < nbs.length; k++) {
+            const bn = nbs[k];
+            // 每次只降一档，逐步填出中间壳，避免高核被一次抽塌
+            if (bn <= 0) {
+              if (target > 1) target = target - 1;
+            } else if (target > bn + 1) {
+              target = target - 1;
+            }
+          }
+          if (target !== b) {
+            next[i] = target;
+            changed = true;
+          }
+        }
+      }
+      cur.set(next);
+      if (!changed) break;
+    }
+    bins.set(cur);
+    return bins;
+  }
+
+  /**
+   * 把雨强场绘到 ImageData：采样 → 平滑 → 硬分档 → 嵌套约束 → 档内纯色。
+   * 保证色带为嵌套壳（弱外强内），邻接仅限相邻雨强档；非渐变洗色。
    * bounds: [[latMin,lonMin],[latMax,lonMax]]；w,h 像素
    */
   function paintRateImageData(imgData, w, h, bounds, storm, grid) {
@@ -359,19 +449,30 @@
     const lonMax = bounds[1][1];
     const data = imgData.data;
     const opt = grid ? { grid: grid } : null;
+    const rates = new Float32Array(w * h);
     for (let y = 0; y < h; y++) {
       const lat = latMax - (y + 0.5) / h * (latMax - latMin);
       for (let x = 0; x < w; x++) {
         const lon = lonMin + (x + 0.5) / w * (lonMax - lonMin);
-        const rate = rainRateAt(lat, lon, storm, opt);
-        const p = (y * w + x) * 4;
-        if (rate <= 0) {
-          data[p] = 0; data[p + 1] = 0; data[p + 2] = 0; data[p + 3] = 0;
-        } else {
-          const c = colorForRate(rate);
-          data[p] = c[0]; data[p + 1] = c[1]; data[p + 2] = c[2]; data[p + 3] = c[3];
-        }
+        rates[y * w + x] = rainRateAt(lat, lon, storm, opt);
       }
+    }
+    // 平滑硬崖（山地因子等），使绝对阈值之间必有过渡像素
+    blurRateField(rates, w, h, 3);
+
+    const bins = new Int8Array(w * h);
+    for (let i = 0; i < rates.length; i++) {
+      bins[i] = binIndexForRate(rates[i]);
+    }
+    enforceNestedBins(bins, w, h);
+
+    for (let i = 0; i < bins.length; i++) {
+      const c = colorForBin(bins[i]);
+      const p = i * 4;
+      data[p] = c[0];
+      data[p + 1] = c[1];
+      data[p + 2] = c[2];
+      data[p + 3] = c[3];
     }
     return imgData;
   }
@@ -388,6 +489,8 @@
     rainRateAt: rainRateAt,
     AccumGrid: AccumGrid,
     colorForRate: colorForRate,
+    colorForBin: colorForBin,
+    binIndexForRate: binIndexForRate,
     colorForAccum: colorForAccum,
     colorForMm: colorForMm,
     accumLegendItems: accumLegendItems,

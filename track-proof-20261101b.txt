@@ -1,0 +1,5 @@
+?v=20261101b
+WNW wind envelope: peak 53°(ENE) → 22.5°(NNE / h+π/2); rNW > rSE (was SE≳NW at 53°)
+Grade amp: 12→0 round; 10→windAsymAmp×0.22 near-round slight; 7→full CMA stepped
+windAmpForGrade() in geo.js; app.js uses it for all rings
+Verify (hdg=-67.5°, |V|~6): peak=22.5°; r7 NW>SE; r10 near-round NW>SE; r12 equal

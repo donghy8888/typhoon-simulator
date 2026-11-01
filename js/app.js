@@ -1061,7 +1061,7 @@
   /**
    * 风圈振幅+峰向用的平移 UV：优先路径折线（眼所见蓝线），
    * 其次轨迹上最近非零 u/v，再次引导气流，最后瞬时物理。
-   * 峰向：西北偏西→东北偏东、北→正东、东北→东南；勿塌成正西→正北。
+   * 峰向：西北偏西→北偏东(~22.5°，rNW>rSE)、北→正东、东北→东南；勿塌成正西→正北。
    * 初生/停滞时用引导向量抬振幅，避免风圈仍是正圆误导。
    */
   function windEnvelopeMotionUV(main, track, idx, physU, physV) {
@@ -1142,7 +1142,7 @@
       const showRings = scrubbing
         ? (dVmax >= P.DISSIPATE_MS)
         : (main.alive || main.vmax >= P.DISSIPATE_MS);
-      // 风圈 UV：振幅 + 峰向（西北偏西→东北偏东）；十二级 amp=0 正圆；初生回退引导气流
+      // 风圈 UV：振幅 + 峰向（WNW→北偏东~22.5°，NW>SE）；12正圆、10近圆微不对称、7满阶梯
       const physU = (view && view.u != null) ? view.u : (main.u || 0);
       const physV = (view && view.v != null) ? view.v : (main.v || 0);
       const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);
@@ -1152,8 +1152,8 @@
       const seen = {};
       rings.forEach(function (ring) {
         seen[ring.grade] = true;
-        // 十二级：正圆（amp=0）；七/十级：CMA 阶梯包络（西北偏西→东北偏东）
-        const ampOv = (ring.grade === 12) ? 0 : null;
+        // 12：正圆；10：近圆微不对称；7：满振幅 CMA 阶梯（WNW 时 rNW>rSE）
+        const ampOv = G.windAmpForGrade(ring.grade, Math.hypot(dU, dV), dVmax);
         const latlngs = G.windEnvelopeLatLngs(dLat, dLon, ring.radiusDeg, dU, dV, dVmax, 64, ampOv);
         const existing = stormRefs.windCircles[ring.grade];
         const tip = ring.label + ' · 当时 ' + G.gradeLabel(dVmax);

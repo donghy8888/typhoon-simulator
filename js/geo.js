@@ -484,7 +484,8 @@
   /**
    * NH 风圈非对称振幅：静止≈0（圆）；随平移速度增大并饱和；强度轻度放大。
    * speedFactor = |V| / (|V| + V_HALF)，V_HALF≈3.5 m/s 半饱和。
-   * A_MAX≈0.44 → 典型移速峰/对侧约 1.5–2.0（鼓向按路径：西北偏西→东北偏东；非卡通巨鼓）。
+   * A_MAX≈0.44 → 7级峰/对侧约 1.5–2.0；10级再×GRADE10_SCALE≈近圆微不对称；12级 amp=0。
+   * 鼓向：西北偏西→北偏东(~22.5°)，使 NW 象限半径 > SE（非旧 53° ENE，彼时 SE≳NW）。
    */
   const WIND_ASYM_V_HALF = 3.5; // m/s translation → half asymmetry
   const WIND_ASYM_A_MAX = 0.44; // fractional amp (was 0.78; eastward cartoon)
@@ -493,6 +494,19 @@
     const speedFactor = s / (s + WIND_ASYM_V_HALF);
     const inten = 1 + 0.12 * Math.max(0, ((+vmaxMs || 0) - 17) / 55);
     return WIND_ASYM_A_MAX * speedFactor * Math.min(1.4, inten);
+  }
+
+  /** 10级：近圆、仅一点不对称（相对 7级满振幅缩放） */
+  const WIND_ASYM_GRADE10_SCALE = 0.22;
+
+  /**
+   * 分等级风圈振幅：12→0 正圆；10→轻微不对称；7（及其它）→满振幅 CMA 阶梯。
+   */
+  function windAmpForGrade(grade, speedMs, vmaxMs) {
+    if (+grade === 12) return 0;
+    const a = windAsymAmp(speedMs, vmaxMs);
+    if (+grade === 10) return a * WIND_ASYM_GRADE10_SCALE;
+    return a;
   }
 
   /**
@@ -512,8 +526,8 @@
 
   /**
    * 路径折线东向法线角（atan2(east,north)）。
-   * 保留导出；风圈峰向已改为路径映射（西北偏西→东北偏东、北→正东、东北→东南），不再调用本函数。
-   * 两法线 h±π/2 中取东分量 sin(ray) 更大/为正者（与上述峰向映射在向西段不等价）。
+   * 保留导出；风圈峰向已改为路径右舷映射（西北偏西→北偏东~22.5°、北→正东、东北→东南）。
+   * 两法线 h±π/2 中取东分量 sin(ray) 更大/为正者；WNW 段与右舷 h+π/2 一致（NW>SE）。
    */
   function eastwardTrackNormalRad(headingRad) {
     const h = +headingRad || 0;
@@ -543,10 +557,10 @@
 
   /**
    * 峰向角（atan2 east,north）：由路径移向显式扇区映射到鼓侧。
-   * 用户映射（硬表，禁止 π/2−peak 折到正东）：
+   * 用户映射（硬表，禁止 π/2−peak 折到正东；WNW 须 NW 象限 > SE）：
    *   正西北 (−45°) → 正东北 (45°)
-   *   西北偏西 (−67.5°) → 东北偏东一点 (~53°, ≈0.93 rad) — 绝非 67.5°/正东
-   *   正西误读 (−90°) → 同 WNW ~53°
+   *   西北偏西 (−67.5°) → 北偏东 (~22.5°, 右舷 h+π/2) — 使 rNW > rSE（旧 53° ENE 会 SE≳NW）
+   *   正西误读 (−90°) → 同 WNW ~22.5°
    *   北 (0°) → 正东 (90°)
    *   东北 (45°) → 东南 (135°)
    * 其它航向：右舷法线 h+π/2（无 fold）。
@@ -556,15 +570,15 @@
     // normalize to (−π, π]
     h = Math.atan2(Math.sin(h), Math.cos(h));
     const D = Math.PI / 180;
-    // 东北偏东一点：略东于东北(45°)，远小于正东(90°) / 旧折 67.5°
-    const WNW_PEAK = 53 * D; // ≈0.925 rad
+    // 北偏东：WNW 右舷；象限 cos → NW>SE（峰值仍在 NE 侧）
+    const WNW_PEAK = 22.5 * D; // ≈0.393 rad
 
-    // 西扇区：纯西 / WNW → 硬返回 ~53°（删除 fold；绝不落到 π/2）
+    // 西扇区：纯西 / WNW → 硬返回 ~22.5°（与 h+π/2@−67.5° 一致；勿用旧 53°）
     // (−105°, −55°] 覆盖 −90° 与 −67.5°
     if (h > -105 * D && h <= -55 * D) {
       return WNW_PEAK;
     }
-    // −55° → −45°：53° 平滑接到正东北 45°
+    // −55° → −45°：22.5° 平滑接到正东北 45°
     if (h > -55 * D && h < -45 * D) {
       const t = (h - (-55 * D)) / (10 * D);
       return WNW_PEAK + t * (45 * D - WNW_PEAK);
@@ -575,10 +589,10 @@
 
   /**
    * 四象限半径 [rNE,rSE,rSW,rNW]。
-   * 峰向：正西北→正东北；西北偏西/正西→东北偏东~53°；北→正东；东北→东南。
-   * 勿硬锁正东、勿用 eastwardTrackNormalRad；禁止 π/2−peak fold。
+   * 峰向：正西北→正东北；西北偏西/正西→北偏东~22.5°（rNW>rSE）；北→正东；东北→东南。
+   * 勿硬锁正东、勿用旧 53° ENE；禁止 π/2−peak fold。
    * r = r0·(1+A·cos(mid−peak))；包络仍以风暴为圆心（无质心偏移）。
-   * 振幅由 |V| 决定；停滞 A≈0 → 四象限相等≈圆；十二级 amp=0 正圆。
+   * 振幅由 |V|×等级：7满、10微、12零；停滞 A≈0 → 四象限相等≈圆。
    */
   function windQuadrantRadii(meanRadiusDeg, headingRad, amp) {
     const r0 = +meanRadiusDeg || 0;
@@ -601,8 +615,8 @@
   }
 
   /**
-   * 由路径折线最近若干点估平移 UV（m/s）：振幅 |V| + 峰向（西北偏西→东北偏东等）。
-   * 优先于瞬时物理 u/v，使蓝线西北偏西 ⇒ 鼓在东北偏东（路径东侧）。
+   * 由路径折线最近若干点估平移 UV（m/s）：振幅 |V| + 峰向（西北偏西→北偏东~22.5°等）。
+   * 优先于瞬时物理 u/v，使蓝线西北偏西 ⇒ 鼓在北偏东且 rNW>rSE。
    * 关键：末段常被读成正西（丢 Δlat）→ 峰折到正东；加长回溯并在西向塌缩时恢复北分量。
    * @param {Array<{lat,lon,t?}>} track
    * @param {number} endIdx 末端下标（含）
@@ -671,7 +685,7 @@
    * 每象限 = 常半径 90° 圆弧；在每个正 N/E/S/W 角写入「双顶点」
    * （上一象限半径 + 本象限半径同角），强迫 Leaflet 画短径向台阶（可见 kink），
    * 而非相邻象限弦切线抹掉阶跃。非光滑卵形 / 柠檬椭圆。
-   * ampOverride：可选；传 0 → 四象限等半径正圆（十二级风圈用）；省略则按移速算振幅。
+   * ampOverride：可选；传 0 → 正圆（十二级）；传较小值 → 近圆（十级）；省略则按移速满振幅（七级）。
    */
   function windEnvelopeLatLngs(lat0, lon0, meanRadiusDeg, uMs, vMs, vmaxMs, nPts, ampOverride) {
     nPts = nPts || 64;
@@ -873,6 +887,8 @@
     windRadiusDeg,
     windRadiiForGrades,
     windAsymAmp,
+    windAmpForGrade,
+    WIND_ASYM_GRADE10_SCALE,
     motionHeadingRad,
     windPeakRayFromHeading,
     eastwardTrackNormalRad,

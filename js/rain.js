@@ -60,44 +60,85 @@
   }
 
   /**
-   * 嵌套壳雨强（mm/h）：圆形 R12 内 = peak（满盘红核）；
-   * 其外按地理距离经过 紫→橙→黄→蓝→绿 控制点，保证红外必有可见紫壳。
-   * stretch 轻度卵形（大风侧壳略厚），避免四象限垂直接缝。
+   * 与风圈同一套四象限半径，但在 N/E/S/W 边界做短角平滑，避免垂直接缝。
+   * 外形仍跟 windRadiusAtRay / windQuadrantRadii（WNW→NW 侧大、SE 侧小）。
+   */
+  function rainLocalR7(meanR7, headingRad, rayRad, amp) {
+    if (!G || !G.windQuadrantRadii) {
+      return G && G.windRadiusAtRay
+        ? G.windRadiusAtRay(meanR7, headingRad, rayRad, amp)
+        : (+meanR7 || 1);
+    }
+    const rs = G.windQuadrantRadii(meanR7, headingRad, amp);
+    let a = (+rayRad || 0) % (Math.PI * 2);
+    if (a < 0) a += Math.PI * 2;
+    const q = (a < Math.PI / 2) ? 0 : (a < Math.PI) ? 1 : (a < 3 * Math.PI / 2) ? 2 : 3;
+    const starts = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2];
+    let a0 = a - starts[q];
+    if (a0 < 0) a0 += Math.PI * 2;
+    const qW = Math.PI / 2;
+    const blend = 18 * Math.PI / 180; // ~18° 平滑带
+    const rHere = rs[q];
+    const rPrev = rs[(q + 3) % 4];
+    const rNext = rs[(q + 1) % 4];
+    if (a0 < blend) {
+      const t = a0 / blend;
+      const s = t * t * (3 - 2 * t);
+      return lerp(rPrev, rHere, s);
+    }
+    if (a0 > qW - blend) {
+      const t = (a0 - (qW - blend)) / blend;
+      const s = t * t * (3 - 2 * t);
+      return lerp(rHere, rNext, s);
+    }
+    return rHere;
+  }
+
+  /**
+   * 嵌套壳雨强（mm/h）：圆形 R12 内 = peak（满盘红核 + 外接紫壳的起点）；
+   * 其外按「出核距离 / 风圈局地半径比」拉伸：大风侧壳更宽更强，绝非正圆靶心。
+   * 控制点保证 红→紫→橙→黄→蓝→绿 不跳档。
    */
   function shellRateMmH(dist, meanR12, meanR7, localR7, peak) {
     const p = Math.max(0, +peak || 0);
     const r12 = Math.max(1e-6, +meanR12 || 0.3);
     const r7 = Math.max(r12 * 1.2, +meanR7 || 1);
     if (dist <= r12) return p;
-    // 轻度拉伸：弱侧不太压薄，强侧不太拉飞
-    const stretch = Math.max(0.82, Math.min(1.22, (+localR7 || r7) / r7));
-    const d = (dist - r12) / stretch; // 出核地理距离
-    // 控制点：出核距离 → 雨强（紫壳足够宽）
+    // 跟风圈非对称同量级：局地 R7 / 平均 R7（约 0.52–1.45）
+    const stretch = Math.max(0.52, Math.min(1.55, (+localR7 || r7) / r7));
+    const d = (dist - r12) / stretch;
     const purpleMid = Math.min(72, Math.max(55, p * 0.58));
+    // 紫壳用接近圆形的最小宽度，外圈随 stretch 明显拉长
+    const purpleW = 0.20 * r7;
     const pts = [
       { d: 0, v: p },
-      { d: 0.10 * r7, v: Math.min(p * 0.92, 95) },          // 仍偏红/红紫过渡
-      { d: 0.22 * r7, v: purpleMid },                       // 暴雨紫
-      { d: 0.36 * r7, v: 40 },                              // 大雨橙
-      { d: 0.52 * r7, v: 18 },                              // 中雨黄
-      { d: 0.72 * r7, v: 7 },                               // 小雨蓝
-      { d: 0.95 * r7, v: 1.6 },                             // 毛毛雨绿
-      { d: 1.35 * r7, v: 0.2 }
+      { d: 0.08 * r7, v: Math.min(p * 0.92, 95) },
+      { d: purpleW, v: purpleMid },
+      { d: 0.34 * r7, v: 40 },
+      { d: 0.50 * r7, v: 18 },
+      { d: 0.70 * r7, v: 7 },
+      { d: 0.95 * r7, v: 1.6 },
+      { d: 1.40 * r7, v: 0.2 }
     ];
-    if (d <= 0) return p;
+    let rate;
     if (d >= pts[pts.length - 1].d) {
       const last = pts[pts.length - 1];
-      return last.v * Math.exp(-(d - last.d) / (0.45 * r7));
-    }
-    for (let i = 0; i < pts.length - 1; i++) {
-      if (d <= pts[i + 1].d) {
-        const span = pts[i + 1].d - pts[i].d;
-        const t = span > 1e-9 ? (d - pts[i].d) / span : 0;
-        const s = t * t * (3 - 2 * t);
-        return lerp(pts[i].v, pts[i + 1].v, s);
+      rate = last.v * Math.exp(-(d - last.d) / (0.45 * r7));
+    } else {
+      rate = 0;
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (d <= pts[i + 1].d) {
+          const span = pts[i + 1].d - pts[i].d;
+          const t = span > 1e-9 ? (d - pts[i].d) / span : 0;
+          const s = t * t * (3 - 2 * t);
+          rate = lerp(pts[i].v, pts[i + 1].v, s);
+          break;
+        }
       }
     }
-    return 0;
+    // 大风侧外圈再略抬强（不作用于 R12 内核）
+    const intenBias = Math.pow(stretch, 0.55);
+    return rate * intenBias;
   }
 
   /**
@@ -190,8 +231,8 @@
   /**
    * 单点雨强 mm/h。
    * storm: { lat, lon, vmax, u, v }
-   * 非对称与 7 级风圈同一套象限半径；大半径一侧雨强更强（仅 R12 外）。
-   * R12 内核全向近峰值，强台中心为满盘顶档（大红核）。
+   * 外圈非对称与 7 级风圈同一套象限半径（大风侧更宽更强）；边界短角平滑。
+   * R12 内核仍为满盘红核+紫壳，不被非对称切成扇形。
    */
   function rainRateAt(lat, lon, storm, opts) {
     if (!storm || !G) return 0;
@@ -223,23 +264,19 @@
     const dist = Math.hypot(dlat, dlon);
     const ray = dist < 1e-9 ? 0 : Math.atan2(dlon, dlat);
 
-    // 雨场用平滑椭圆包络（cos 方位），不用 CMA 四象限常半径——避免 N/E/S/W 垂直硬接缝
-    const peakRay = (G.windPeakRayFromHeading
-      ? G.windPeakRayFromHeading(hdg)
-      : (hdg + Math.PI / 2));
-    const asymCos = Math.cos(ray - peakRay);
-    const localR7 = meanR7 * Math.max(0.58, 1 + amp7 * asymCos);
+    // 与风圈同一套非对称（windQuadrantRadii），边界短角平滑防垂直接缝
+    const localR7 = rainLocalR7(meanR7, hdg, ray, amp7);
 
     const peak = peakRainMmH(vmax);
-    const coreW = dist <= meanR12 ? 1 : (dist < meanR12 + 0.2 * meanR7
-      ? 1 - ((dist - meanR12) / (0.2 * meanR7))
+    const coreW = dist <= meanR12 ? 1 : (dist < meanR12 + 0.18 * meanR7
+      ? 1 - ((dist - meanR12) / (0.18 * meanR7))
       : 0);
 
-    // 嵌套壳：满盘红核 + 紫→橙→黄→蓝→绿；轻度卵形，无垂直硬缝
+    // 嵌套壳：满盘红核+紫壳；外圈随大风侧明显拉宽拉强（非正圆）
     let rate = shellRateMmH(dist, meanR12, meanR7, localR7, peak);
 
     // 北侧折向雨带（风圈外）
-    const r7North = lat0 + meanR7 * Math.max(0.58, 1 + amp7 * Math.cos(0 - peakRay));
+    const r7North = lat0 + rainLocalR7(meanR7, hdg, 0, amp7);
     const band = rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg);
     rate = Math.max(rate, band);
 
@@ -632,6 +669,7 @@
     peakRainMmH: peakRainMmH,
     rainRateAt: rainRateAt,
     shellRateMmH: shellRateMmH,
+    rainLocalR7: rainLocalR7,
     AccumGrid: AccumGrid,
     colorForRate: colorForRate,
     colorForBin: colorForBin,

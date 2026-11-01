@@ -1,0 +1,18 @@
+?v=20261101r
+Detached north weak rainband (not same-envelope bulge).
+
+CHANGED
+- Removed NORTH_BULGE_EXTRA / rainLocalR7Envelope same-shell north stretch
+- Restored separate rainbandNorthMmH + mergeNorthBand(hypot) soft envelope
+- Ridge NORTH_RIDGE_MID = 5.5° (~600 km) north of local R7 north edge; peak ~10 mm/h
+- Soft N–S gates (span_s≈2.55 / span_n≈0.88); E–W soft lonGate; no Math.max silhouette
+- Bridge zone (R7+0.5 .. mid−1.2) capped at NORTH_BRIDGE_CAP=8 → yellow/orange/purple/red do NOT bridge
+- shellRateMmH stretch ceiling back to wind-scale 1.55
+- Keep: stepped radar colors; R12 full red+purple; wind-side asym outside R12
+
+VERIFY (node due-N vmax=45, v=8)
+- Ridge dNorth=5.5 band≈10.0 mm/h
+- bridgeMax≈7.8 mm/h; yellowBridge=false
+- gap/bridge min ~1.5 mm/h (drizzle–light green) between main fringe and north lobe
+- ridge lon sweep max|Δ²rate|≈0.23 (soft, no G-horn step)
+- asym at 0.7 R7 E/W still strong (~64 vs ~14)

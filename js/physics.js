@@ -846,6 +846,31 @@
     return { lon, lat, u, v, steer: st };
   }
 
+  /** 台湾中央山脉脊廊：强度衰减加速判定（与 TW_MTN 吸引中心一致） */
+  const TW_CMR_LON0 = 121.0;
+  const TW_CMR_LON1 = 121.5;
+  const TW_CMR_LAT0 = 22.5;
+  const TW_CMR_LAT1 = 24.5;
+  /** 脊廊外缘：elev≥700m 山地掩码 + 略扩框 */
+  const TW_CMR_WIDE_LON0 = 120.7;
+  const TW_CMR_WIDE_LON1 = 121.7;
+  const TW_CMR_WIDE_LAT0 = 22.3;
+  const TW_CMR_WIDE_LAT1 = 24.7;
+
+  function inTaiwanCentralRange(lon, lat) {
+    if (!(isFinite(lon) && isFinite(lat))) return false;
+    if (lon >= TW_CMR_LON0 && lon <= TW_CMR_LON1 &&
+        lat >= TW_CMR_LAT0 && lat <= TW_CMR_LAT1) {
+      return true;
+    }
+    if (lon >= TW_CMR_WIDE_LON0 && lon <= TW_CMR_WIDE_LON1 &&
+        lat >= TW_CMR_WIDE_LAT0 && lat <= TW_CMR_WIDE_LAT1 &&
+        G.isMountain(lon, lat)) {
+      return true;
+    }
+    return false;
+  }
+
   function intensityTendency(lon, lat, vmax, sst) {
     const land = G.isLand(lon, lat);
     const mtn = G.isMountain(lon, lat);
@@ -858,7 +883,13 @@
       dV = -1.25 - (vmax / 35) * 1.45;
       if (mtn) dV -= 1.85;
       if (dV < 0) dV *= 0.30;
-      phase = mtn ? '登陆衰减（山地加速）' : '登陆衰减';
+      // 穿过台湾中央山脉：减弱速度 ×2（仅脊廊/TW mtn，不改全局陆地慢衰减）
+      if (dV < 0 && inTaiwanCentralRange(lon, lat)) {
+        dV *= 2;
+        phase = '登陆衰减（中央山脉×2）';
+      } else {
+        phase = mtn ? '登陆衰减（山地加速）' : '登陆衰减';
+      }
     } else {
       const gap = pot - vmax;
       if (sst < 26.5) {
@@ -1054,6 +1085,11 @@
     steeringAt,
     betaDrift,
     taiwanMtnAttract,
+    TW_CMR_LON0,
+    TW_CMR_LON1,
+    TW_CMR_LAT0,
+    TW_CMR_LAT1,
+    inTaiwanCentralRange,
     moveStep,
     intensityTendency,
     stepMember,

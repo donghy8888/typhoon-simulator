@@ -1,0 +1,8 @@
+?v=20261101f
+Strengthen general mountain land-decay; Taiwan CMR = exactly 2× other mountains (not soft-mtn×4).
+- isMountain (JP/Luzon/China/…): mountain bonus −1.85 → −5.5 before ×0.30 softener
+- CMR: apply mountain base even if ridge misses mask, then dV×2 (was ×4 on soft mountain)
+- phase「登陆衰减（中央山脉×2）」; no damage/loss UI
+spot vmax=40:
+  BEFORE plain dV=-0.872  mtn=-1.427 (×1.64 plain)  CMR=-5.709 (×4 mtn)
+  AFTER  plain dV=-0.872  mtn=-2.522 (×2.89 plain)  CMR=-5.044 (×2.00 mtn)

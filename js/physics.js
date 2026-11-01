@@ -879,16 +879,18 @@
     const pot = mpi(sst);
 
     if (land) {
-      // 登陆衰减再放慢约一半量级（相对 k 的 ×0.58 再 ×~0.52）；山地相对平原仍稍快
+      // 登陆衰减慢衰减 ×0.30；一般山地相对平原明显加快；中央山脉 = 其他山脉 ×2
+      const cmr = inTaiwanCentralRange(lon, lat);
       dV = -1.25 - (vmax / 35) * 1.45;
-      if (mtn) dV -= 1.85;
+      // 一般山地（日/吕宋/中国等 isMountain）：加强相对平原的衰减差（原 −1.85 过软）
+      // CMR 脊廊即使未命中掩码也按山地底再 ×2，保证「中央山脉 = 其他山脉 ×2」
+      if (mtn || cmr) dV -= 5.5;
       if (dV < 0) dV *= 0.30;
-      // 穿过台湾中央山脉：减弱速度 ×4（仅脊廊/TW mtn，不改全局陆地慢衰减）
-      if (dV < 0 && inTaiwanCentralRange(lon, lat)) {
-        dV *= 4;
-        phase = '登陆衰减（中央山脉×4）';
+      if (dV < 0 && cmr) {
+        dV *= 2;
+        phase = '登陆衰减（中央山脉×2）';
       } else {
-        phase = mtn ? '登陆衰减（山地加速）' : '登陆衰减';
+        phase = (mtn || cmr) ? '登陆衰减（山地加速）' : '登陆衰减';
       }
     } else {
       const gap = pot - vmax;

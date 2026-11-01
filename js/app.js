@@ -6,6 +6,7 @@
 
   const G = window.TyGeo;
   const P = window.TyPhysics;
+  const R = window.TyRain;
 
   // —— 状态 ——
   const state = {
@@ -84,6 +85,11 @@
   map.getPane('tracks').style.zIndex = 470;
   // 保留点击：历史路径选台、强度点 tooltip
 
+  // 降水连续填色 pane：低于 tracks(470)，路径始终压在雨面上
+  map.createPane('rain');
+  map.getPane('rain').style.zIndex = 460;
+  map.getPane('rain').style.pointerEvents = 'none';
+
   const mountainRenderer = L.svg({ pane: 'mountains' });
 
   const layerGroups = {
@@ -123,6 +129,17 @@
     landfallFlags: []
   };
 
+  // —— 降水：累计格 + 连续 canvas 填色（非瓦片）——
+  const rainState = {
+    accum: R ? new R.AccumGrid(0.22) : null,
+    trackSynced: 0, // 已积分到 track 下标
+    rateCanvas: null,
+    accumCanvas: null,
+    scrubTimer: null,
+    showRate: true,
+    showAccum: true
+  };
+
   function clearStormRefs() {
     layerGroups.track.clearLayers();
     layerGroups.storm.clearLayers();
@@ -132,6 +149,7 @@
     stormRefs.marker = null;
     stormRefs.landfallFlags = [];
     state._simMarkDtH = null;
+    resetRainField();
   }
 
   function simMarkDtHours() {
@@ -1058,6 +1076,248 @@
     updateStatus();
   }
 
+  function ensureRainCanvases() {
+    if (!R) return;
+    const pane = map.getPane('rain');
+    if (!pane) return;
+    if (!rainState.accumCanvas) {
+      const c = document.createElement('canvas');
+      c.className = 'ty-rain-canvas ty-rain-accum';
+      c.style.position = 'absolute';
+      c.style.pointerEvents = 'none';
+      c.style.imageRendering = 'auto';
+      c.style.opacity = '0.85';
+      pane.appendChild(c);
+      rainState.accumCanvas = c;
+    }
+    if (!rainState.rateCanvas) {
+      const c = document.createElement('canvas');
+      c.className = 'ty-rain-canvas ty-rain-rate';
+      c.style.position = 'absolute';
+      c.style.pointerEvents = 'none';
+      c.style.imageRendering = 'auto';
+      c.style.opacity = '0.9';
+      pane.appendChild(c);
+      rainState.rateCanvas = c;
+    }
+  }
+
+  function resetRainField() {
+    if (rainState.accum) rainState.accum.clear();
+    rainState.trackSynced = 0;
+    if (rainState.scrubTimer) {
+      clearTimeout(rainState.scrubTimer);
+      rainState.scrubTimer = null;
+    }
+    if (rainState.rateCanvas) {
+      const ctx = rainState.rateCanvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, rainState.rateCanvas.width, rainState.rateCanvas.height);
+      rainState.rateCanvas.style.display = 'none';
+    }
+    if (rainState.accumCanvas) {
+      const ctx = rainState.accumCanvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, rainState.accumCanvas.width, rainState.accumCanvas.height);
+      rainState.accumCanvas.style.display = 'none';
+    }
+  }
+
+  function placeRainCanvas(canvas, southWest, northEast, pxW, pxH, imageData) {
+    if (!canvas) return;
+    const swLat = southWest.lat;
+    const swLon = southWest.lon;
+    const neLat = northEast.lat;
+    const neLon = northEast.lon;
+    const topLeft = map.latLngToLayerPoint([neLat, swLon]);
+    const botRight = map.latLngToLayerPoint([swLat, neLon]);
+    const wCss = Math.max(1, botRight.x - topLeft.x);
+    const hCss = Math.max(1, botRight.y - topLeft.y);
+    canvas.width = pxW;
+    canvas.height = pxH;
+    canvas.style.width = wCss + 'px';
+    canvas.style.height = hCss + 'px';
+    canvas.style.display = '';
+    L.DomUtil.setPosition(canvas, topLeft);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, pxW, pxH);
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+
+  function rainStormFromView(view, envUV) {
+    if (!view) return null;
+    return {
+      lat: view.lat,
+      lon: view.lon,
+      vmax: view.vmax,
+      u: envUV ? envUV.u : (view.u || 0),
+      v: envUV ? envUV.v : (view.v || 0)
+    };
+  }
+
+  function rainLocalBounds(storm) {
+    if (!storm || !R) return null;
+    const u = storm.u || 0;
+    const v = storm.v || 0;
+    const speed = Math.hypot(u, v);
+    const amp = G.windAsymAmp(speed, storm.vmax);
+    const rings = G.windRadiiForGrades(storm.vmax);
+    let r7 = G.windRadiusDeg(storm.vmax) * 1.2;
+    for (let i = 0; i < rings.length; i++) {
+      if (rings[i].grade === 7) r7 = rings[i].radiusDeg;
+    }
+    const maxR = r7 * (1 + amp) * 1.25 + 1.0;
+    const band = R.isRecurvingNorth(G.motionHeadingRad(u, v)) ? 18.5 : 0;
+    const cos = Math.max(0.25, Math.cos(storm.lat * Math.PI / 180));
+    const lonPad = (maxR + 4) / cos;
+    return {
+      sw: { lat: Math.max(G.DOMAIN.latMin, storm.lat - maxR - 0.6), lon: Math.max(G.DOMAIN.lonMin, storm.lon - lonPad) },
+      ne: { lat: Math.min(G.DOMAIN.latMax, storm.lat + maxR + band + 0.6), lon: Math.min(G.DOMAIN.lonMax, storm.lon + lonPad) }
+    };
+  }
+
+  function paintRainRate(storm) {
+    if (!R || !storm || state.mode === 'history') {
+      if (rainState.rateCanvas) rainState.rateCanvas.style.display = 'none';
+      return;
+    }
+    ensureRainCanvases();
+    const box = rainLocalBounds(storm);
+    if (!box) {
+      rainState.rateCanvas.style.display = 'none';
+      return;
+    }
+    const dlat = box.ne.lat - box.sw.lat;
+    const dlon = box.ne.lon - box.sw.lon;
+    if (!(dlat > 0.05 && dlon > 0.05)) {
+      rainState.rateCanvas.style.display = 'none';
+      return;
+    }
+    // 连续填色：细采样像素，CSS 拉伸平滑，避免 coarse tile
+    const pxW = Math.max(80, Math.min(220, Math.round(dlon / 0.12)));
+    const pxH = Math.max(80, Math.min(220, Math.round(dlat / 0.12)));
+    if (rainState.accum) rainState.accum.ensureMountainMask();
+    const img = rainState.rateCanvas.getContext('2d').createImageData(pxW, pxH);
+    R.paintRateImageData(img, pxW, pxH, [[box.sw.lat, box.sw.lon], [box.ne.lat, box.ne.lon]], storm, rainState.accum);
+    placeRainCanvas(rainState.rateCanvas, box.sw, box.ne, pxW, pxH, img);
+  }
+
+  function accumPaintBounds(grid) {
+    if (!grid || grid.maxVal < 1) return null;
+    let iMin = grid.nlon, iMax = -1, jMin = grid.nlat, jMax = -1;
+    for (let j = 0; j < grid.nlat; j++) {
+      for (let i = 0; i < grid.nlon; i++) {
+        if (grid.data[grid.idx(i, j)] >= 1.5) {
+          if (i < iMin) iMin = i;
+          if (i > iMax) iMax = i;
+          if (j < jMin) jMin = j;
+          if (j > jMax) jMax = j;
+        }
+      }
+    }
+    if (iMax < 0) return null;
+    const pad = 2;
+    iMin = Math.max(0, iMin - pad);
+    jMin = Math.max(0, jMin - pad);
+    iMax = Math.min(grid.nlon - 1, iMax + pad);
+    jMax = Math.min(grid.nlat - 1, jMax + pad);
+    return {
+      sw: { lat: grid.lat0 + jMin * grid.deg, lon: grid.lon0 + iMin * grid.deg },
+      ne: { lat: grid.lat0 + jMax * grid.deg, lon: grid.lon0 + iMax * grid.deg }
+    };
+  }
+
+  function paintRainAccum() {
+    if (!R || !rainState.accum || state.mode === 'history') {
+      if (rainState.accumCanvas) rainState.accumCanvas.style.display = 'none';
+      return;
+    }
+    ensureRainCanvases();
+    const box = accumPaintBounds(rainState.accum);
+    if (!box) {
+      rainState.accumCanvas.style.display = 'none';
+      return;
+    }
+    const dlat = box.ne.lat - box.sw.lat;
+    const dlon = box.ne.lon - box.sw.lon;
+    const pxW = Math.max(128, Math.min(512, Math.round(dlon / 0.08)));
+    const pxH = Math.max(128, Math.min(512, Math.round(dlat / 0.08)));
+    const ctx = rainState.accumCanvas.getContext('2d');
+    const img = ctx.createImageData(pxW, pxH);
+    R.paintAccumImageData(img, pxW, pxH, [[box.sw.lat, box.sw.lon], [box.ne.lat, box.ne.lon]], rainState.accum);
+    placeRainCanvas(rainState.accumCanvas, box.sw, box.ne, pxW, pxH, img);
+  }
+
+  /** 直播推进：把新 track 点累加进格点 */
+  function syncRainAccumLive(track) {
+    if (!R || !rainState.accum || !track || track.length < 2) return;
+    let i = Math.max(1, rainState.trackSynced);
+    for (; i < track.length; i++) {
+      const a = track[i - 1];
+      const b = track[i];
+      let dt = (b.t != null && a.t != null) ? (+b.t - +a.t) : 1;
+      if (!(dt > 0)) dt = 1;
+      rainState.accum.addStormHour(b, dt);
+    }
+    rainState.trackSynced = track.length;
+  }
+
+  function scheduleRainScrubRebuild(track, idx) {
+    if (!R || !rainState.accum) return;
+    if (rainState.scrubTimer) clearTimeout(rainState.scrubTimer);
+    rainState.scrubTimer = setTimeout(function () {
+      rainState.scrubTimer = null;
+      rainState.accum.rebuildFromTrack(track, idx);
+      rainState.trackSynced = Math.min(track.length, idx + 1);
+      paintRainAccum();
+    }, 80);
+  }
+
+  function updateRainDisplay(opts) {
+    opts = opts || {};
+    if (!R || state.mode === 'history') {
+      resetRainField();
+      return;
+    }
+    if (!state.members.length) {
+      resetRainField();
+      return;
+    }
+    const main = state.members[0];
+    const track = main.track || [];
+    if (!track.length) {
+      resetRainField();
+      return;
+    }
+    const liveIdx = track.length - 1;
+    const scrubbing = state.scrubIndex != null;
+    const idx = scrubbing
+      ? Math.max(0, Math.min(liveIdx, state.scrubIndex))
+      : liveIdx;
+    const view = track[idx];
+    const physU = (view && view.u != null) ? view.u : (main.u || 0);
+    const physV = (view && view.v != null) ? view.v : (main.v || 0);
+    const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);
+    const storm = rainStormFromView(view, envUV);
+
+    if (scrubbing) {
+      scheduleRainScrubRebuild(track, idx);
+    } else if (opts.justStepped) {
+      syncRainAccumLive(track);
+    } else if (rainState.trackSynced < track.length) {
+      syncRainAccumLive(track);
+    }
+
+    // 播放/回看：移动雨强填色；累计始终可画
+    const showRings = scrubbing
+      ? (view && view.vmax >= P.DISSIPATE_MS)
+      : (main.alive || main.vmax >= P.DISSIPATE_MS);
+    if (showRings && storm && storm.vmax >= 10) paintRainRate(storm);
+    else if (rainState.rateCanvas) rainState.rateCanvas.style.display = 'none';
+
+    if (!scrubbing) paintRainAccum();
+    // scrub 时 accum 在 rebuild 回调里画
+  }
+
   /**
    * 风圈振幅+峰向用的平移 UV：优先路径折线（眼所见蓝线），
    * 其次轨迹上最近非零 u/v，再次引导气流，最后瞬时物理。
@@ -1194,6 +1454,7 @@
       stormRefs.marker = L.marker([dLat, dLon], { icon: stormIcon(), pane: 'tracks' })
         .addTo(layerGroups.storm);
     }
+    updateRainDisplay({ justStepped: false });
     syncTimelineUI();
   }
 
@@ -1399,6 +1660,12 @@
   }
 
   // —— 事件 ——
+  map.on('moveend zoomend viewreset', function () {
+    if (state.mode === 'sim' && state.members.length) {
+      updateRainDisplay({});
+    }
+  });
+
   map.on('zoomend', function () {
     if (state.mode === 'history') {
       if (!state.histData) return;
@@ -2002,6 +2269,7 @@
     document.getElementById('btnModeHistory').classList.remove('secondary');
     document.getElementById('btnModeHistory').classList.add('primary');
 
+    resetRainField();
     // 隐藏模拟风暴图层 + 副高/海温/引导（纪录模式不显示环境场）
     if (map.hasLayer(layerGroups.track)) map.removeLayer(layerGroups.track);
     if (map.hasLayer(layerGroups.storm)) map.removeLayer(layerGroups.storm);
@@ -2152,6 +2420,12 @@
       initialDraw();
       // 再补一次山地：部分浏览器首帧 pane 尺寸仍不稳
       requestAnimationFrame(redrawTerrain);
+      // 预热山地掩码，避免首小时降水累加卡顿
+      setTimeout(function () {
+        try {
+          if (rainState.accum) rainState.accum.ensureMountainMask();
+        } catch (e) { /* ignore */ }
+      }, 0);
     });
   });
 })();

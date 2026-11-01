@@ -791,3 +791,13 @@ body.mode-history .match-chip { display: none !important; }
   font-size: 12px;
   min-height: 24px;
 }
+
+
+/* 降水连续填色（canvas in rain pane） */
+.ty-rain-canvas {
+  pointer-events: none !important;
+  image-rendering: auto;
+}
+.leaflet-rain-pane {
+  pointer-events: none;
+}

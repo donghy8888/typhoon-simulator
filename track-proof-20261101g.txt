@@ -1,0 +1,7 @@
+?v=20261101g
+Rainfall: continuous rain-rate fill + accum mm (sim mode). No intro panels.
+- Peak mm/h near R12/eyewall by CMA: TD 8–15 … SuperTY 150–200; no eye dry hole
+- Decay to/beyond asymmetric R7; large-radius side stronger (asymBoost)
+- Mountain windward:leeward ≈ 70:30 (1 : 3/7); no separate translation-speed rain scale
+- WNW→N recurvature: ~10 mm/h band north of R7 north edge, ~1000–2000 km
+- Pane rain z=460 under tracks 470; legend mm + mm/h swatches only

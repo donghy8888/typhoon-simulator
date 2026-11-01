@@ -82,9 +82,9 @@
     return Math.pow(c, 2.4);
   }
 
-  /** 折向北突脊相对 R7 北缘的度数（比 o 的 2.35 再往北一点） */
-  const NORTH_RIDGE_MID = 3.0;
-  /** 正北额外局地 R7：≈1.85×脊距，使 dist=R7+mid 处约 10 mm/h，绿缘仍包住脊 */
+  /** 折向北突脊相对 R7 北缘的度数（中间档：约 5.5°≈600 km，非 3° 轻推也非千公里外带） */
+  const NORTH_RIDGE_MID = 5.5;
+  /** 正北额外局地 R7：≈1.45×脊距，使 dist=R7+mid 处约 10 mm/h，绿缘仍平滑包住脊 */
   const NORTH_BULGE_EXTRA = NORTH_RIDGE_MID * 1.45; // ~10 mm/h at R7+mid on due-N
 
   /**
@@ -368,7 +368,7 @@
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
     const maxR = meanR7 * (1 + amp7) * 1.15 + 0.8;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? (NORTH_BULGE_EXTRA + 1.8) : 0; // 同一包络北突
+    const bandExtra = recurveN ? (NORTH_BULGE_EXTRA + 3.3) : 0; // 同一包络北突（随 5.5° 脊加宽 bbox）
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);

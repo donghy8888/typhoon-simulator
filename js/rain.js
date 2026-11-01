@@ -197,8 +197,8 @@
   }
 
   /**
-   * WNW→N 折向：航向接近北向时，在 7 级圈北缘以北加 ~10 mm/h 弱雨带。
-   * 雨带为东西向横带（E–W ~9–12°、N–S 薄），非正椭圆/体育场形，略不对称。
+   * WNW→N 折向：航向接近北向时，在 7 级圈北缘附近加 ~10 mm/h 弱雨带。
+   * 雨带为东西向横带（E–W ~9–12°、N–S 薄），自主体雨场软长出（无硬 max 并集 G角）。
    */
   function isRecurvingNorth(headingRad) {
     let h = +headingRad || 0;
@@ -207,31 +207,54 @@
     return h > -50 * Math.PI / 180 && h < 40 * Math.PI / 180;
   }
 
+  /**
+   * Soft envelope merge of core + north band (replaces Math.max union G-corners).
+   * Hypot/power-mean p=2: exact when either side is 0 (no floor), rounds the
+   * crossing, and slightly fills NW/NE armpits so outer green stays smooth.
+   */
+  function mergeNorthBand(rate, band) {
+    const aa = Math.max(0, +rate || 0);
+    const bb = Math.max(0, +band || 0);
+    if (bb <= 1e-9) return aa;
+    if (aa <= 1e-9) return bb;
+    return Math.hypot(aa, bb); // p=2 power mean ≡ soft envelope
+  }
+
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
     if (!isRecurvingNorth(headingRad)) return 0;
-    if (!(lat > r7NorthLat)) return 0;
-    const dNorth = lat - r7NorthLat; // degrees north of R7 north edge
-    // 横带：北缘以北薄层（脊 ~2°，~3.7° 外熄灭），禁止拉成竖条
-    if (dNorth > 3.7) return 0;
+    const dNorth = lat - r7NorthLat; // degrees relative to R7 north edge
+    // Soft southern foot into main envelope; soft northern extinguish (no flat lat cliff)
+    if (dNorth < -0.75 || dNorth > 4.5) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
     // 轻微沿经度弯弧 + 软抖动，避免完美椭圆/体育场轮廓
-    const arc = 0.15 * Math.sin(dLon * 0.62) + 0.07 * Math.sin(dLon * 1.45 + 0.9);
+    const arc = 0.12 * Math.sin(dLon * 0.62) + 0.06 * Math.sin(dLon * 1.45 + 0.9);
     const dN = dNorth - arc;
-    // 东西半宽约 ±4.3–5.0°（总宽 ~9–12°），西侧略宽、东侧略窄
-    const halfW = dLon < 0 ? 5.0 : 4.3;
-    const u = Math.abs(dLon) / halfW;
-    // 多尺度软衰减（高斯芯 + 外缘更快跌落），不用硬 cos 截断墙
-    const lonGate = Math.exp(-0.85 * u * u) * Math.exp(-0.55 * Math.pow(u, 3.6));
-    if (lonGate < 0.015) return 0;
-    const wobble = 1.0 + 0.07 * Math.sin(dLon * 2.15 + dNorth * 3.2) *
+    // Full E–W half-width ~±4.3–5.0° (west wider). Start ≈ oval north width so the
+    // union envelope never cinches into a waist, then flare to full ribbon width.
+    const halfWFull = dLon < 0 ? 5.0 : 4.3;
+    const halfW0 = dLon < 0 ? 3.5 : 3.1; // ≥ main green half-width at R7 north
+    const tw = clamp01((dNorth + 0.2) / 2.4);
+    const tws = tw * tw * (3 - 2 * tw);
+    const halfW = lerp(halfW0, halfWFull, tws);
+    const u = Math.abs(dLon) / Math.max(0.4, halfW);
+    // Soft lon falloff; keep green skirt from making square horns
+    const lonGate = Math.exp(-1.05 * u * u) * Math.exp(-0.65 * Math.pow(u, 3.5));
+    if (lonGate < 0.02) return 0;
+    const wobble = 1.0 + 0.05 * Math.sin(dLon * 2.15 + dNorth * 3.2) *
       Math.sin(dLon * 0.85 - 0.55);
-    // 峰值 ~10 mm/h，脊约在 R7 北缘以北 1.5–2.5°
-    const mid = 1.95;
-    const span = 0.78;
+    // Peak ~10 mm/h; ridge nudged slightly further north of R7 on recurvature.
+    // Asymmetric N–S gate: longer southern tail keeps the R7 join filled (no waist/G角)
+    // while the crest sits a bit further north.
+    const mid = 2.35;
+    const span = dN < mid ? 1.35 : 0.78;
     const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
-    const edgeFade = clamp01((dNorth - 0.08) / 0.5);
-    return 10 * radGate * lonGate * wobble * edgeFade;
+    // Faster onset north of R7 so band width holds the envelope as the oval shrinks
+    const edgeFade = dNorth < 0
+      ? clamp01((dNorth + 0.75) / 0.75)
+      : clamp01(dNorth / 0.35);
+    const northCap = clamp01((4.1 - dNorth) / 0.85);
+    return 10 * radGate * lonGate * wobble * edgeFade * northCap;
   }
 
   /**
@@ -281,10 +304,10 @@
     // 嵌套壳：满盘红核+紫壳；外圈随大风侧明显拉宽拉强（非正圆）
     let rate = shellRateMmH(dist, meanR12, meanR7, localR7, peak);
 
-    // 北侧折向雨带（风圈外）
+    // 北侧折向雨带：hypot soft envelope（禁 Math.max 硬并集 → 东西 G角）
     const r7North = lat0 + rainLocalR7(meanR7, hdg, 0, amp7);
     const band = rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg);
-    rate = Math.max(rate, band);
+    rate = mergeNorthBand(rate, band);
 
     // 山地软调制：R12 内核不打洞
     let mtn = mountainSideFactor(lon, lat, lon0, lat0, grid);
@@ -394,7 +417,7 @@
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
     const maxR = meanR7 * (1 + amp7) * 1.15 + 0.8;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? 4.0 : 0; // 横带：薄层北扩（脊~2°，~3.7°外熄）
+    const bandExtra = recurveN ? 4.5 : 0; // 横带：薄层北扩（脊~2.35°，~4°外熄）
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);

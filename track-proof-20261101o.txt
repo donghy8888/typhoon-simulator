@@ -1,0 +1,10 @@
+?v=20261101o
+North recurvature rainband G-corner fix + slight north nudge.
+- Replace Math.max(rate, band) with mergeNorthBand = hypot(rate, band) soft envelope
+  (no near-zero floor; rounds green/blue join; fills NW/NE armpits vs hard union).
+- Band grows out of main oval: halfW starts ~oval north width (W3.5/E3.1) then flares
+  to full ribbon (±5.0/±4.3); soft N/S fades — no flat horizontal cut, no stadium step.
+- Ridge mid 1.95 → 2.35° north of R7 (user: 往北一小点); asymmetric span S=1.35/N=0.78
+  keeps join filled so north nudge does not reopen a waist/G角.
+- Keep: ~10 mm/h peak, thin N–S E–W ribbon, isRecurvingNorth only, stepped radar colors,
+  R12 full red+purple, wind asymmetry outside R12.

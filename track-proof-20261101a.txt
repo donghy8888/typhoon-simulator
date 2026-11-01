@@ -1,0 +1,4 @@
+?v=20261101a
+1) tracks pane zIndex=470 > mountains(425) > overlay(400); sim/history path+intensity marks use pane:'tracks'
+2) estimateTrackLoss: land (vmax/10)^2·Δt; trackCrossesTaiwanCentralRange (ridge 121.0–121.5E / 22.5–24.5N or wide+isMountain) → loss×2
+3) UI: clock 「损失 N（中央山脉×2）」+ #simLossBar; intro panel lossLine for hist/match

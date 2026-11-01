@@ -78,6 +78,12 @@
   map.getPane('guides').style.zIndex = 450;
   map.getPane('guides').style.pointerEvents = 'none';
 
+  // 路径/强度点专用 pane：必须高于 mountains(425)，否则山地填充会盖住路径
+  // （默认 overlay=400 < mountains；guides=450；tracks 再压过引导线）
+  map.createPane('tracks');
+  map.getPane('tracks').style.zIndex = 470;
+  // 保留点击：历史路径选台、强度点 tooltip
+
   const mountainRenderer = L.svg({ pane: 'mountains' });
 
   const layerGroups = {
@@ -87,10 +93,10 @@
     steer: L.layerGroup().addTo(map),
     // guides 永远在地图上（黄/绿线）
     guides: L.layerGroup({ pane: 'guides' }).addTo(map),
-    track: L.layerGroup().addTo(map),
-    storm: L.layerGroup().addTo(map),
-    history: L.layerGroup(), // 仅历史模式挂到地图
-    matchHist: L.layerGroup() // 模拟结束后淡显相似历史路径
+    track: L.layerGroup({ pane: 'tracks' }).addTo(map),
+    storm: L.layerGroup({ pane: 'tracks' }).addTo(map),
+    history: L.layerGroup({ pane: 'tracks' }), // 仅历史模式挂到地图
+    matchHist: L.layerGroup({ pane: 'tracks' }) // 模拟结束后淡显相似历史路径
   };
 
   // 域边框
@@ -204,7 +210,8 @@
         weight: 1.2,
         fillColor: fill,
         fillOpacity: 0.92,
-        opacity: 0.95
+        opacity: 0.95,
+        pane: 'tracks'
       });
       c._tyVmax = p.vmax;
       c._tyT = p.t;
@@ -933,7 +940,8 @@
           icon: landfallFlagIcon(),
           interactive: false,
           keyboard: false,
-          zIndexOffset: 200
+          zIndexOffset: 200,
+          pane: 'tracks'
         }).addTo(layerGroups.track));
       }
     }
@@ -1121,7 +1129,7 @@
           stormRefs.trackLine.setLatLngs(latlngs);
         } else {
           stormRefs.trackLine = L.polyline(latlngs, {
-            color: '#2980b9', weight: 2.5
+            color: '#2980b9', weight: 2.5, pane: 'tracks'
           }).addTo(layerGroups.track);
         }
       } else if (stormRefs.trackLine) {
@@ -1153,7 +1161,8 @@
           color: ring.color,
           weight: ring.weight,
           fillColor: ring.fill,
-          fillOpacity: ring.fillOpacity
+          fillOpacity: ring.fillOpacity,
+          pane: 'tracks'
         };
         // 非对称包络用 polygon（非同心圆）；旧 circle 层则替换
         if (existing && existing.setLatLngs) {
@@ -1182,7 +1191,7 @@
     if (stormRefs.marker) {
       stormRefs.marker.setLatLng([dLat, dLon]);
     } else {
-      stormRefs.marker = L.marker([dLat, dLon], { icon: stormIcon() })
+      stormRefs.marker = L.marker([dLat, dLon], { icon: stormIcon(), pane: 'tracks' })
         .addTo(layerGroups.storm);
     }
     syncTimelineUI();
@@ -1203,6 +1212,7 @@
 
     if (!state.members.length) {
       clock.textContent = '模拟时钟：未开始';
+      syncSimLossBar(null);
       return;
     }
 
@@ -1217,7 +1227,35 @@
     } else if (state.running) {
       clockExtra = '（运行中）';
     }
-    clock.textContent = '模拟时钟：' + timeStr + clockExtra;
+    let lossStr = '';
+    if (typeof P.estimateTrackLoss === 'function') {
+      const info = P.estimateTrackLoss(track);
+      if (info && info.loss > 0) {
+        lossStr = ' · 损失 ' + P.formatTrackLoss(info);
+      } else if (info && track.length >= 2) {
+        lossStr = ' · 损失 0';
+      }
+    }
+    clock.textContent = '模拟时钟：' + timeStr + clockExtra + lossStr;
+    syncSimLossBar(track);
+  }
+
+  function syncSimLossBar(track) {
+    const el = document.getElementById('simLossBar');
+    if (!el) return;
+    if (state.mode === 'history') {
+      el.hidden = true;
+      return;
+    }
+    if (!track || track.length < 2 || typeof P.estimateTrackLoss !== 'function') {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    const info = P.estimateTrackLoss(track);
+    el.hidden = false;
+    el.textContent = '模拟损失指数：' + P.formatTrackLoss(info) +
+      (info.crossedCmr ? ' · 路径穿越台湾中央山脉' : '');
   }
 
   function initVmaxFromGrade() {
@@ -1538,6 +1576,32 @@
     if (panel) panel.hidden = true;
   }
 
+
+  function lossLineForPoints(pts) {
+    if (!pts || !pts.length || typeof P.estimateTrackLoss !== 'function') return null;
+    // History points use ISO time strings — normalize to hours-from-start for Δt
+    const norm = [];
+    let t0 = null;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      if (!p) continue;
+      let t = p.t;
+      if (typeof t === 'string') {
+        const ms = Date.parse(String(t).replace(' ', 'T'));
+        if (!isFinite(ms)) continue;
+        if (t0 == null) t0 = ms;
+        t = (ms - t0) / 3600000;
+      } else if (typeof t !== 'number' || !isFinite(t)) {
+        t = i; // fallback 1-step
+      }
+      norm.push({ lon: p.lon, lat: p.lat, vmax: p.vmax, t: t });
+    }
+    const info = P.estimateTrackLoss(norm);
+    if (!info) return null;
+    return '模拟损失指数：' + P.formatTrackLoss(info) +
+      (info.crossedCmr ? '（路径穿越台湾中央山脉，损失×2）' : '');
+  }
+
   function openIntroPanel(model) {
     if (!model) return;
     const panel = document.getElementById('introPanel');
@@ -1556,13 +1620,20 @@
     if (model.maxVmax != null) metaHtml += ' · 峰值 ' + Number(model.maxVmax).toFixed(0) + ' m/s';
     if (meta) meta.innerHTML = metaHtml || '—';
     if (text) text.textContent = model.intro || '';
-    if (dmg) dmg.textContent = model.damage || '破坏损失：本库暂未收录该台风的公开损失摘要';
+    let dmgText = model.damage || '破坏损失：本库暂未收录该台风的公开损失摘要';
+    if (model.lossLine) {
+      dmgText = dmgText + '\n' + model.lossLine;
+    }
+    if (dmg) dmg.textContent = dmgText;
     panel.hidden = false;
   }
 
   function openIntroForStorm(storm, extras) {
     if (!INTRO || !storm) return;
-    openIntroPanel(INTRO.buildPanelModel(storm, extras || {}));
+    const model = INTRO.buildPanelModel(storm, extras || {});
+    const ll = lossLineForPoints(storm.points || []);
+    if (ll) model.lossLine = ll;
+    openIntroPanel(model);
   }
 
   function openIntroForMatch(match) {
@@ -1576,13 +1647,18 @@
         maxVmax: match.maxVmax,
         points: []
       };
-      openIntroPanel(INTRO.buildPanelModel(fakeStorm, {
+      const model = INTRO.buildPanelModel(fakeStorm, {
         id: match.id,
         name: match.name,
         year: match.year,
         maxVmax: match.maxVmax,
         durationH: match.durationH
-      }));
+      });
+      // 模拟路径损失指数（若穿越中央山脉则已 ×2）
+      const simTrack = getMainTrack();
+      const ll = lossLineForPoints(simTrack);
+      if (ll) model.lossLine = '本场模拟 · ' + ll;
+      openIntroPanel(model);
       return;
     }
     openIntroPanel({
@@ -1621,7 +1697,7 @@
       state.simMatch = match;
       showMatchChip(match.labelText);
       if (!map.hasLayer(layerGroups.matchHist)) layerGroups.matchHist.addTo(map);
-      H.drawMatchOverlay(layerGroups.matchHist, match, { opacity: 0.42, weight: 2.4 });
+      H.drawMatchOverlay(layerGroups.matchHist, match, { opacity: 0.42, weight: 2.4, pane: 'tracks' });
     }).catch(function () { /* ignore */ });
   }
 
@@ -1842,6 +1918,7 @@
       landfallIndex: state.histLandfallIndex,
       zoom: map.getZoom(),
       markDtHours: markDt,
+      pane: 'tracks',
       onSelect: function (id) {
         selectHistStorm(id, { toggle: true, fit: true });
       }

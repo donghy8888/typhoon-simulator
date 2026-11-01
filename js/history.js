@@ -357,11 +357,13 @@
       if (dimmed && hideOthers) return; // 选中时只画该台
 
       const latlngs = pts.map(function (p) { return [p.lat, p.lon]; });
+      const trackPane = opts.pane || 'tracks';
       const line = L.polyline(latlngs, {
         color: selected ? '#0b3d5c' : '#5d6d7e',
         weight: selected ? 4 : 1.7,
         opacity: selected ? 0.98 : (dimmed ? 0.18 : 0.55),
-        interactive: true
+        interactive: true,
+        pane: trackPane
       });
       const tip =
         stormLabel(storm) + ' · ' + storm.season +
@@ -391,7 +393,8 @@
           fillColor: hex,
           fillOpacity: selected ? 0.98 : 0.75,
           opacity: selected ? 0.95 : 0.55,
-          interactive: true
+          interactive: true,
+          pane: trackPane
         });
         if (typeof opts.onSelect === 'function') {
           c.on('click', function (e) {
@@ -406,10 +409,12 @@
         const a = pts[0];
         const b = pts[pts.length - 1];
         L.circleMarker([a.lat, a.lon], {
-          radius: 7, color: '#145a32', weight: 2, fillColor: '#82e0aa', fillOpacity: 0.95, interactive: false
+          radius: 7, color: '#145a32', weight: 2, fillColor: '#82e0aa', fillOpacity: 0.95, interactive: false,
+          pane: trackPane
         }).bindTooltip('起点', { direction: 'top' }).addTo(layerGroup);
         L.circleMarker([b.lat, b.lon], {
-          radius: 7, color: '#7b241c', weight: 2, fillColor: '#f5b7b1', fillOpacity: 0.95, interactive: false
+          radius: 7, color: '#7b241c', weight: 2, fillColor: '#f5b7b1', fillOpacity: 0.95, interactive: false,
+          pane: trackPane
         }).bindTooltip('终点', { direction: 'top' }).addTo(layerGroup);
 
         // Name badge near peak / mid track
@@ -426,6 +431,7 @@
           interactive: false,
           keyboard: false,
           zIndexOffset: 400,
+          pane: trackPane,
           icon: L.divIcon({
             className: 'hist-name-icon',
             html: nameHtml,
@@ -609,7 +615,8 @@
       weight: opts.weight || 2.5,
       opacity: opts.opacity != null ? opts.opacity : 0.45,
       dashArray: opts.dashArray || '6 8',
-      interactive: false
+      interactive: false,
+      pane: opts.pane || 'tracks'
     }).addTo(layerGroup);
   }
 

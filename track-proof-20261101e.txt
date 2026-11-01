@@ -1,0 +1,5 @@
+?v=20261101e
+Central Range crossing → land/mountain weakening rate ×4 (another ×2 on top of 20261101d's ×2).
+- inTaiwanCentralRange unchanged: ridge 121.0–121.5E × 22.5–24.5N, or wide 120.7–121.7E × 22.3–24.7N + isMountain
+- intensityTendency land branch: after existing ×0.30 softener, if CMR then dV×4; phase「登陆衰减（中央山脉×4）」
+- Elsewhere land decay unchanged (still slower ×0.30); no damage/loss UI

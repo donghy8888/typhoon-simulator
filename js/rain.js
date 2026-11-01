@@ -197,8 +197,8 @@
   }
 
   /**
-   * WNW→N 折向：航向接近北向时，在 7 级圈北缘以北加 ~10 mm/h 弱雨带，
-   * 向北延伸约 1000–2000 km（域内）。
+   * WNW→N 折向：航向接近北向时，在 7 级圈北缘以北加 ~10 mm/h 弱雨带。
+   * 雨带为东西向横带（E–W 拉长、N–S 薄），不是南北向竖条。
    */
   function isRecurvingNorth(headingRad) {
     let h = +headingRad || 0;
@@ -210,22 +210,21 @@
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
     if (!isRecurvingNorth(headingRad)) return 0;
     if (!(lat > r7NorthLat)) return 0;
-    const dNorth = lat - r7NorthLat; // degrees
-    // 1000–2000 km ≈ 9–18°
-    if (dNorth > 18) return 0;
+    const dNorth = lat - r7NorthLat; // degrees north of R7 north edge
+    // 横带：北缘以北仅薄层（约 1–5.5°），禁止拉成 10°+ 竖条
+    if (dNorth > 5.5) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
-    // 经向宽度约 ±4°（随距离略展宽）
-    const halfW = 3.2 + 0.15 * dNorth;
+    // 东西拉长：半宽约 ±11–13°（整体远宽于南北厚度）
+    const halfW = 11.5 + 0.35 * dNorth;
     if (Math.abs(dLon) > halfW) return 0;
     const lonGate = Math.cos((dLon / halfW) * (Math.PI / 2));
-    // 峰值 ~10 mm/h，在 9–14° 一带，两端衰减
-    const mid = 12;
-    const span = 6;
+    // 峰值 ~10 mm/h，落在 R7 北缘以北约 2.2–3.2° 的东西横脊上
+    const mid = 2.7;
+    const span = 1.45;
     const radGate = Math.exp(-Math.pow((dNorth - mid) / span, 2));
-    // 靠近北缘处较弱抬升，避免与主雨场硬接
-    const edgeFade = clamp01((dNorth - 0.15) / 1.2);
-    return 10 * radGate * lonGate * lonGate * edgeFade;
+    const edgeFade = clamp01((dNorth - 0.12) / 0.75);
+    return 10 * radGate * Math.pow(lonGate, 1.15) * edgeFade;
   }
 
   /**
@@ -387,12 +386,13 @@
     const meanR7 = (G.windRadiiForGrades(vmax).find(function (r) { return r.grade === 7; }) ||
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
     const maxR = meanR7 * (1 + amp7) * 1.15 + 0.8;
-    const bandExtra = isRecurvingNorth(G.motionHeadingRad(u, v)) ? 18.5 : 0;
+    const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
+    const bandExtra = recurveN ? 6.0 : 0; // 横带：只需薄层北扩
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
     const cos = Math.max(0.2, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4) / cos;
+    const lonPad = (maxR + 4 + (recurveN ? 12 : 0)) / cos; // 横带东西更宽
     const lonMin = Math.max(this.lon0, storm.lon - lonPad);
     const lonMax = Math.min(G.DOMAIN.lonMax, storm.lon + lonPad);
 

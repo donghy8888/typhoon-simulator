@@ -1164,9 +1164,9 @@
     }
     const maxR = r7 * (1 + amp) * 1.25 + 1.0;
     const recurveN = R.isRecurvingNorth(G.motionHeadingRad(u, v));
-    const band = recurveN ? 6.0 : 0; // 北侧东西向横带，勿 18° 竖条
+    const band = recurveN ? 7.5 : 0; // 同一包络北突（脊~3°，外缘再外）
     const cos = Math.max(0.25, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4 + (recurveN ? 12 : 0)) / cos;
+    const lonPad = (maxR + 4 + (recurveN ? 4 : 0)) / cos;
     return {
       sw: { lat: Math.max(G.DOMAIN.latMin, storm.lat - maxR - 0.6), lon: Math.max(G.DOMAIN.lonMin, storm.lon - lonPad) },
       ne: { lat: Math.min(G.DOMAIN.latMax, storm.lat + maxR + band + 0.6), lon: Math.min(G.DOMAIN.lonMax, storm.lon + lonPad) }

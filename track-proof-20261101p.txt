@@ -1,0 +1,24 @@
+?v=20261101p
+Kill E/W G-horns on outer green/blue + same-envelope north bulge.
+
+REMOVED
+- rainLocalR7: 4-quadrant constant radii + 18° hermite blends (stadium/stair → E/W G角)
+- rainbandNorthMmH separate E–W ribbon + mergeNorthBand(hypot) (union waist/horns)
+
+REPLACED WITH
+- rainLocalR7: continuous cos(ray − windPeakRay) · amp, floor 0.52·r0 (same peak side as wind;
+  asymmetry KEPT — large-wind side fatter; NOT equalized four ways)
+- rainLocalR7Envelope: when isRecurvingNorth, add NORTH_BULGE_EXTRA·cos^{2.4}(ray) on northern
+  rays only — northward bulge of the SAME egg; no separate rate blob
+- shellRateMmH stretch ceiling 1.55 → 3.4 so north geometry can extend; intenBias still capped
+  at wind-asym 1.55 so intensity asymmetry stays wind-scale
+
+PARAMS
+- NORTH_RIDGE_MID = 3.0° (was 2.35 in o; user: 稍微再往北一小点)
+- NORTH_BULGE_EXTRA = mid × 1.45 ≈ 4.35° on due-N
+- North lobe weight cos^{2.4} → modest E–W width
+
+VERIFY (node polar ring thr=1.5 mm/h)
+- Non-recurve WNW: max|Δ²r|~0.02, E/W neighbors monotonic smooth (no stair spike)
+- Peak-side vs opposite rate at r=2.2 still strongly asymmetric (~36 vs ~5)
+- Recurve due-N: ridge rate at R7+mid ~10 mm/h class; green N extends as one closed egg

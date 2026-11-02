@@ -131,13 +131,13 @@
 
   // —— 降水：仅瞬时雨强雷达阶梯 canvas（硬分档）；累计已移除 ——
   const rainState = {
-    accum: R ? new R.AccumGrid(0.22) : null, // 仅供山地 mask 给雨强采样
+    accum: R ? new R.AccumGrid(0.22) : null, // 路径积分累计格；结束后上图
     trackSynced: 0,
     rateCanvas: null,
     accumCanvas: null,
     scrubTimer: null,
-    showRate: true,
-    showAccum: false
+    showRate: false,  // 运行时不画瞬时雨强
+    showAccum: true   // 仅路径结束后画累计
   };
 
   function clearStormRefs() {
@@ -1080,25 +1080,24 @@
     if (!R) return;
     const pane = map.getPane('rain');
     if (!pane) return;
-    // 累计层已移除：若旧会话残留 canvas 则拿掉
-    if (rainState.accumCanvas) {
-      if (rainState.accumCanvas.parentNode) rainState.accumCanvas.parentNode.removeChild(rainState.accumCanvas);
-      rainState.accumCanvas = null;
-    }
-    if (!rainState.rateCanvas) {
+    if (!rainState.accumCanvas) {
       const c = document.createElement('canvas');
-      c.className = 'ty-rain-canvas ty-rain-rate';
+      c.className = 'ty-rain-canvas ty-rain-accum';
       c.style.position = 'absolute';
       c.style.pointerEvents = 'none';
       c.style.imageRendering = 'auto';
       c.style.opacity = '0.78';
       pane.appendChild(c);
-      rainState.rateCanvas = c;
+      rainState.accumCanvas = c;
+    }
+    // 瞬时雨墙已停用：若旧会话残留则隐藏/移除
+    if (rainState.rateCanvas) {
+      if (rainState.rateCanvas.parentNode) rainState.rateCanvas.parentNode.removeChild(rainState.rateCanvas);
+      rainState.rateCanvas = null;
     }
   }
 
   function resetRainField() {
-    // 不再维护累计格；仅清瞬时雨墙
     if (rainState.accum) rainState.accum.clear();
     rainState.trackSynced = 0;
     if (rainState.scrubTimer) {
@@ -1111,9 +1110,27 @@
       rainState.rateCanvas.style.display = 'none';
     }
     if (rainState.accumCanvas) {
-      if (rainState.accumCanvas.parentNode) rainState.accumCanvas.parentNode.removeChild(rainState.accumCanvas);
-      rainState.accumCanvas = null;
+      const ctx = rainState.accumCanvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, rainState.accumCanvas.width, rainState.accumCanvas.height);
+      rainState.accumCanvas.style.display = 'none';
     }
+    setRainLegendVisible(false);
+  }
+
+  /** 图例：仅路径结束后显示「累计降水」mm 色阶 */
+  function setRainLegendVisible(on) {
+    const sec = document.querySelectorAll('.legend-rain-sec');
+    sec.forEach(function (el) { el.hidden = !on; });
+    const box = document.getElementById('rainRateLegend');
+    if (!box) return;
+    box.hidden = !on;
+    if (!on || !R || typeof R.accumLegendItems !== 'function') return;
+    const items = R.accumLegendItems();
+    box.innerHTML = items.map(function (it) {
+      return '<div><span class="swatch" style="background:' + it.hex + '"></span>' + it.text + '</div>';
+    }).join('');
+    const title = document.getElementById('rainLegendTitle');
+    if (title) title.textContent = '累计降水';
   }
 
   function placeRainCanvas(canvas, southWest, northEast, pxW, pxH, imageData) {
@@ -1229,11 +1246,32 @@
   }
 
   function paintRainAccum() {
-    // 累计层已按需求移除
-    if (rainState.accumCanvas) {
-      if (rainState.accumCanvas.parentNode) rainState.accumCanvas.parentNode.removeChild(rainState.accumCanvas);
-      rainState.accumCanvas = null;
+    if (!R || !rainState.accum || state.mode === 'history') {
+      if (rainState.accumCanvas) rainState.accumCanvas.style.display = 'none';
+      return;
     }
+    ensureRainCanvases();
+    const box = accumPaintBounds(rainState.accum);
+    if (!box) {
+      rainState.accumCanvas.style.display = 'none';
+      return;
+    }
+    const dlat = box.ne.lat - box.sw.lat;
+    const dlon = box.ne.lon - box.sw.lon;
+    if (!(dlat > 0.05 && dlon > 0.05)) {
+      rainState.accumCanvas.style.display = 'none';
+      return;
+    }
+    const topLeft = map.latLngToLayerPoint([box.ne.lat, box.sw.lon]);
+    const botRight = map.latLngToLayerPoint([box.sw.lat, box.ne.lon]);
+    const cssW = Math.max(1, botRight.x - topLeft.x);
+    const cssH = Math.max(1, botRight.y - topLeft.y);
+    const pxW = Math.max(160, Math.min(560, Math.round(cssW)));
+    const pxH = Math.max(160, Math.min(560, Math.round(cssH)));
+    const ctx = rainState.accumCanvas.getContext('2d');
+    const img = ctx.createImageData(pxW, pxH);
+    R.paintAccumImageData(img, pxW, pxH, [[box.sw.lat, box.sw.lon], [box.ne.lat, box.ne.lon]], rainState.accum);
+    placeRainCanvas(rainState.accumCanvas, box.sw, box.ne, pxW, pxH, img);
   }
 
   /** 直播推进：把新 track 点累加进格点 */
@@ -1283,17 +1321,40 @@
       ? Math.max(0, Math.min(liveIdx, state.scrubIndex))
       : liveIdx;
     const view = track[idx];
-    const physU = (view && view.u != null) ? view.u : (main.u || 0);
-    const physV = (view && view.v != null) ? view.v : (main.v || 0);
-    const envUV = windEnvelopeMotionUV(main, track, idx, physU, physV);
-    const storm = rainStormFromView(view, envUV);
 
-    // 仅瞬时雨墙；不积分/不画累计
-    const showRings = scrubbing
-      ? (view && view.vmax >= P.DISSIPATE_MS)
-      : (main.alive || main.vmax >= P.DISSIPATE_MS);
-    if (showRings && storm && storm.vmax >= 10) paintRainRate(storm);
-    else if (rainState.rateCanvas) rainState.rateCanvas.style.display = 'none';
+    // 始终隐藏瞬时雨墙（运行时不显示降水量）
+    if (rainState.rateCanvas) rainState.rateCanvas.style.display = 'none';
+
+    const finished = !main.alive;
+
+    // 运行中：只静默积分累计格，不上图
+    if (!finished) {
+      if (!scrubbing && (opts.justStepped || rainState.trackSynced < track.length)) {
+        syncRainAccumLive(track);
+      }
+      if (rainState.accumCanvas) rainState.accumCanvas.style.display = 'none';
+      setRainLegendVisible(false);
+      return;
+    }
+
+    // 路径结束：有风圈可视时（或已消亡终态）画累计降水
+    // 消亡瞬间 vmax 可能已 <7 级，showRings 为 false，仍应展示全程累计
+    if (scrubbing) {
+      scheduleRainScrubRebuild(track, idx);
+      setRainLegendVisible(true);
+      return;
+    }
+    if (rainState.trackSynced < track.length) {
+      // 补齐未同步段；若从未积分则整轨重建更稳
+      if (rainState.trackSynced <= 1) {
+        rainState.accum.rebuildFromTrack(track, liveIdx);
+        rainState.trackSynced = track.length;
+      } else {
+        syncRainAccumLive(track);
+      }
+    }
+    paintRainAccum();
+    setRainLegendVisible(true);
   }
 
   /**
@@ -1560,6 +1621,8 @@
     if (!state.members[0].alive) {
       stopSim();
       document.getElementById('clockBar').textContent += ' · 结束';
+      // 终态：补齐累计并上图（updateStormInPlace 已调过一次；再刷确保 finished 分支）
+      updateRainDisplay({ justStepped: true });
       runSimilarityMatch();
     }
   }

@@ -1,6 +1,6 @@
 /**
- * 台风降水场：仅瞬时雨强（mm/h）雷达阶梯填色；不画累计。
- * 色标（绝对 mm/h 嵌套阶梯带）：毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红；邻接仅限相邻档。
+ * 台风降水场：运行中只积分累计格、不画瞬时雨墙；路径结束后再画累计降水（mm）雷达阶梯填色。
+ * 累计色标（绿→蓝→黄→橙→紫→红，绝对 mm）：同族阶梯带；雨强采样算法不变。
  * 外圈平滑余弦非对称（大风侧肥，非象限阶梯）；山地迎/背风 7:3；折向=分离北侧弱雨带（轻雨桥）；无移速雨因子；无眼干区。
  */
 (function (global) {
@@ -303,10 +303,8 @@
   }
 
   /**
-   * 瞬时雨强绝对色标（mm/h）— 雷达阶梯/分档填色（filled-contour）：
-   * 毛毛雨绿 / 小雨蓝 / 中雨黄 / 大雨橙 / 暴雨紫 / 大暴雨红
-   * 硬边界、档内纯色，不做档间插值，也不按帧 maxVal 拉伸。
-   * 半透明固定 alpha，底图可读。累计层已移除。
+   * 瞬时雨强绝对色标（mm/h）— 仍供 rainRateAt / 积分用；运行时不再上图。
+   * 累计色标见 ACCUM_BINS（mm 总量，同色族阶梯）。
    */
   // 绝对分档上界（mm/h）：[0.4,3) 毛毛雨 … [85,∞) 大暴雨（含 130+）
   const RATE_BINS = [
@@ -316,6 +314,16 @@
     { max: 50,  r: 245, g: 140, b: 25,  a: 175 },  // 大雨
     { max: 85,  r: 150, g: 50,  b: 210, a: 180 },  // 暴雨
     { max: Infinity, r: 220, g: 35, b: 40, a: 185 } // 大暴雨 ≥85（130+）
+  ];
+
+  // 累计降水绝对分档上界（mm）：同色族雷达阶梯
+  const ACCUM_BINS = [
+    { max: 10,  r: 70,  g: 200, b: 90,  a: 150 },  // <10
+    { max: 25,  r: 50,  g: 120, b: 230, a: 160 },  // 10–25
+    { max: 50,  r: 245, g: 215, b: 30,  a: 168 },  // 25–50
+    { max: 100, r: 245, g: 140, b: 25,  a: 175 },  // 50–100
+    { max: 250, r: 150, g: 50,  b: 210, a: 180 },  // 100–250
+    { max: Infinity, r: 220, g: 35, b: 40, a: 185 } // ≥250
   ];
 
   function colorForRate(mmh) {
@@ -329,17 +337,38 @@
     return [last.r, last.g, last.b, last.a];
   }
 
-  /** 累计已停用 */
   function colorForAccum(mm) {
-    return [0, 0, 0, 0];
+    const x = +mm || 0;
+    if (x < 1.5) return [0, 0, 0, 0];
+    for (let i = 0; i < ACCUM_BINS.length; i++) {
+      const b = ACCUM_BINS[i];
+      if (x < b.max) return [b.r, b.g, b.b, b.a];
+    }
+    const last = ACCUM_BINS[ACCUM_BINS.length - 1];
+    return [last.r, last.g, last.b, last.a];
   }
 
   function colorForMm(mm, maxMm, alphaScale) {
-    const c = colorForRate(mm);
+    const c = colorForAccum(mm);
     if (alphaScale != null && alphaScale !== 1 && c[3] > 0) {
       c[3] = Math.round(c[3] * alphaScale);
     }
     return c;
+  }
+
+  function binIndexForAccum(mm) {
+    const x = +mm || 0;
+    if (x < 1.5) return 0;
+    for (let i = 0; i < ACCUM_BINS.length; i++) {
+      if (x < ACCUM_BINS[i].max) return i + 1;
+    }
+    return ACCUM_BINS.length;
+  }
+
+  function colorForAccumBin(bin) {
+    if (bin <= 0) return [0, 0, 0, 0];
+    const b = ACCUM_BINS[Math.min(ACCUM_BINS.length, bin) - 1];
+    return [b.r, b.g, b.b, b.a];
   }
 
   /**
@@ -454,9 +483,16 @@
     }
   };
 
-  /** 图例：仅瞬时雨强（累计已移除） */
+  /** 图例：累计降水 mm（路径结束后显示） */
   function accumLegendItems() {
-    return [];
+    return [
+      { hex: 'rgba(70,200,90,0.85)', text: '<10 mm' },
+      { hex: 'rgba(50,120,230,0.85)', text: '10–25 mm' },
+      { hex: 'rgba(245,215,30,0.88)', text: '25–50 mm' },
+      { hex: 'rgba(245,140,25,0.9)', text: '50–100 mm' },
+      { hex: 'rgba(150,50,210,0.9)', text: '100–250 mm' },
+      { hex: 'rgba(220,35,40,0.92)', text: '≥250 mm' }
+    ];
   }
 
   function rateLegendItems() {
@@ -673,9 +709,38 @@
   }
 
   function paintAccumImageData(imgData, w, h, bounds, grid) {
-    // 累计层已移除：保持透明
+    const latMin = bounds[0][0];
+    const lonMin = bounds[0][1];
+    const latMax = bounds[1][0];
+    const lonMax = bounds[1][1];
     const data = imgData.data;
-    data.fill(0);
+    const deg = grid.deg;
+    for (let y = 0; y < h; y++) {
+      const lat = latMax - (y + 0.5) / h * (latMax - latMin);
+      const jf = (lat - grid.lat0) / deg;
+      const j0 = Math.floor(jf);
+      const tj = jf - j0;
+      for (let x = 0; x < w; x++) {
+        const lon = lonMin + (x + 0.5) / w * (lonMax - lonMin);
+        const if_ = (lon - grid.lon0) / deg;
+        const i0 = Math.floor(if_);
+        const ti = if_ - i0;
+        let mm = 0;
+        if (i0 >= 0 && j0 >= 0 && i0 + 1 < grid.nlon && j0 + 1 < grid.nlat) {
+          const v00 = grid.data[grid.idx(i0, j0)];
+          const v10 = grid.data[grid.idx(i0 + 1, j0)];
+          const v01 = grid.data[grid.idx(i0, j0 + 1)];
+          const v11 = grid.data[grid.idx(i0 + 1, j0 + 1)];
+          mm = lerp(lerp(v00, v10, ti), lerp(v01, v11, ti), tj);
+        }
+        const p = (y * w + x) * 4;
+        const c = colorForAccum(mm);
+        data[p] = c[0];
+        data[p + 1] = c[1];
+        data[p + 2] = c[2];
+        data[p + 3] = c[3];
+      }
+    }
     return imgData;
   }
 
@@ -690,10 +755,13 @@
     binIndexForRate: binIndexForRate,
     colorForAccum: colorForAccum,
     colorForMm: colorForMm,
+    binIndexForAccum: binIndexForAccum,
+    colorForAccumBin: colorForAccumBin,
     accumLegendItems: accumLegendItems,
     rateLegendItems: rateLegendItems,
     paintRateImageData: paintRateImageData,
     paintAccumImageData: paintAccumImageData,
+    ACCUM_BINS: ACCUM_BINS,
     isRecurvingNorth: isRecurvingNorth,
     mountainSideFactor: mountainSideFactor,
     rainbandNorthMmH: rainbandNorthMmH,

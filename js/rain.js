@@ -40,6 +40,42 @@
     return 150;
   }
 
+  /** TY / 十二级 vmax 下限 (m/s) — 雨场影响范围基准 */
+  const RAIN_EXTENT_TY_VMAX = 32.7;
+  /** over=1 约在十七级门槛 56.1 m/s；scale=1/(1+K·over) → G17≈0.67×TY */
+  const RAIN_EXTENT_OVER_REF = 56.1 - 32.7;
+  const RAIN_EXTENT_SHRINK_K = 0.5;
+
+  /**
+   * 雨场足迹半径（度）。≤十二级/TY 跟风圈；强于 TY 时以外缘相对 TY 基准收缩，
+   * 避免 STY/超强把累计雨痕刷成大片（峰值仍由 peakRainMmH 抬升）。
+   * 返回 { meanR7, meanR12 }，保持 R12/R7 比例。
+   */
+  function rainFootprintRadii(vmaxMs) {
+    const vmax = +vmaxMs || 0;
+    let meanR7 = G.windRadiusDeg(vmax) * 1.2;
+    let meanR12 = meanR7 * 0.34;
+    if (G.windRadiiForGrades) {
+      const rings = G.windRadiiForGrades(vmax);
+      for (let i = 0; i < rings.length; i++) {
+        if (rings[i].grade === 7) meanR7 = rings[i].radiusDeg;
+        if (rings[i].grade === 12) meanR12 = rings[i].radiusDeg;
+      }
+    }
+    if (vmax < RAIN_EXTENT_TY_VMAX) {
+      meanR12 = Math.max(0.15, meanR7 * 0.28);
+    } else if (vmax > RAIN_EXTENT_TY_VMAX) {
+      const tyR7 = G.windRadiusDeg(RAIN_EXTENT_TY_VMAX) * 1.2;
+      const over = (vmax - RAIN_EXTENT_TY_VMAX) / RAIN_EXTENT_OVER_REF;
+      const scale = 1 / (1 + RAIN_EXTENT_SHRINK_K * Math.max(0, over));
+      const targetR7 = tyR7 * scale;
+      const k = targetR7 / Math.max(1e-6, meanR7);
+      meanR7 = targetR7;
+      meanR12 = Math.max(0.12, meanR12 * k);
+    }
+    return { meanR7: meanR7, meanR12: meanR12 };
+  }
+
   /**
    * 径向廓线（无眼）：中心→R12 近峰值；R12→R7 衰减；R7 外继续衰减。
    * rNorm = dist / localR7；r12frac = localR12 / localR7
@@ -263,15 +299,9 @@
     const hdg = G.motionHeadingRad(u, v);
     // 雨场几何跟 7 级满振幅包络；不另用移速乘子改峰值
     const amp7 = G.windAsymAmp(speed, vmax);
-    const rings = G.windRadiiForGrades(vmax);
-    let meanR7 = G.windRadiusDeg(vmax) * 1.2;
-    let meanR12 = meanR7 * 0.34;
-    for (let i = 0; i < rings.length; i++) {
-      if (rings[i].grade === 7) meanR7 = rings[i].radiusDeg;
-      if (rings[i].grade === 12) meanR12 = rings[i].radiusDeg;
-    }
-    // 未达 12 级时眼墙环取内圈比例
-    if (vmax < 32.7) meanR12 = Math.max(0.15, meanR7 * 0.28);
+    const fp = rainFootprintRadii(vmax);
+    const meanR7 = fp.meanR7;
+    const meanR12 = fp.meanR12;
 
     const cosLat = Math.cos(lat0 * Math.PI / 180);
     const dlat = lat - lat0;
@@ -428,8 +458,7 @@
     const v = +storm.v || 0;
     const speed = Math.hypot(u, v);
     const amp7 = G.windAsymAmp(speed, vmax);
-    const meanR7 = (G.windRadiiForGrades(vmax).find(function (r) { return r.grade === 7; }) ||
-      { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
+    const meanR7 = rainFootprintRadii(vmax).meanR7;
     const maxR = meanR7 * (1 + amp7) * 0.72 + 0.05;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
     const bandExtra = recurveN ? (NORTH_RIDGE_MID + 1.2) : 0; // 分离北带脊~4.8° + 北缘熄灭（随 N–S 收）
@@ -653,15 +682,7 @@
     let coreR = 0.4;
     if (storm && G) {
       const vmax = +storm.vmax || 0;
-      const rings = G.windRadiiForGrades(vmax);
-      let meanR7 = G.windRadiusDeg(vmax) * 1.2;
-      let meanR12 = meanR7 * 0.34;
-      for (let i = 0; i < rings.length; i++) {
-        if (rings[i].grade === 7) meanR7 = rings[i].radiusDeg;
-        if (rings[i].grade === 12) meanR12 = rings[i].radiusDeg;
-      }
-      if (vmax < 32.7) meanR12 = Math.max(0.15, meanR7 * 0.28);
-      coreR = meanR12;
+      coreR = rainFootprintRadii(vmax).meanR12;
     }
     const lat0 = storm ? +storm.lat : 0;
     const lon0 = storm ? +storm.lon : 0;
@@ -749,6 +770,7 @@
   global.TyRain = {
     peakRainMmH: peakRainMmH,
     rainRateAt: rainRateAt,
+    rainFootprintRadii: rainFootprintRadii,
     shellRateMmH: shellRateMmH,
     rainLocalR7: rainLocalR7,
     AccumGrid: AccumGrid,

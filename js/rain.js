@@ -1,7 +1,7 @@
 /**
  * 台风降水场：运行中只积分累计格、不画瞬时雨墙；路径结束后再画累计降水（mm）雷达阶梯填色。
  * 累计色标（绿→蓝→黄→橙→紫→红，绝对 mm）：同族阶梯带；雨强采样算法不变。
- * 外圈平滑余弦非对称（大风侧肥，非象限阶梯）；山地迎/背风 7:3；折向=分离北侧弱雨带（轻雨桥）；无移速雨因子；无眼干区。
+ * 外圈平滑余弦非对称（大风侧肥，非象限阶梯）；山地迎风强增强/背风弱；折向=分离北侧弱雨带（轻雨桥）；无移速雨因子；无眼干区。
  */
 (function (global) {
   'use strict';
@@ -57,7 +57,7 @@
       return lerp(1, 0.14, Math.pow(s, 1.25));
     }
     // 主场外缘更快衰减（收紧累计雨痕；与 shellRateMmH 外圈一致）
-    return 0.14 * Math.exp(-(rNorm - 1) / 0.38);
+    return 0.14 * Math.exp(-(rNorm - 1) / 0.23);
   }
 
   /**
@@ -103,8 +103,8 @@
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
     if (!isRecurvingNorth(headingRad)) return 0;
     const dNorth = lat - r7NorthLat; // degrees relative to R7 north edge
-    // 仅从 R7 北缘稍北起叶；北侧在脊外 ~1.50° 熄灭（N–S 再收一档；主场收窄后对比显粗）
-    if (dNorth < 0.05 || dNorth > NORTH_RIDGE_MID + 1.50) return 0;
+    // 仅从 R7 北缘稍北起叶；北侧在脊外 ~1.25° 熄灭（N–S 再收一档）
+    if (dNorth < 0.05 || dNorth > NORTH_RIDGE_MID + 1.25) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
     // 轻微弯弧 + 软抖动，避免完美椭圆/体育场轮廓
@@ -119,10 +119,10 @@
       Math.sin(dLon * 0.9 - 0.4);
     // 非对称径向门：北侧紧、南侧长尾 → 脊分离；南足轻雨桥（span 再收细）
     const mid = NORTH_RIDGE_MID;
-    const span = dN < mid ? 1.50 : 0.46;
+    const span = dN < mid ? 1.25 : 0.36;
     const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
     const edgeFade = clamp01((dNorth - 0.15) / 0.85);
-    const northCap = clamp01((mid + 1.25 - dNorth) / 0.85);
+    const northCap = clamp01((mid + 1.05 - dNorth) / 0.85);
     let band = NORTH_BAND_PEAK * radGate * lonGate * wobble * edgeFade * northCap;
     // 桥区（脊以南较远处）封顶，确保黄/橙/紫/红绝不跨缝
     if (dNorth < mid - 1.15 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
@@ -151,15 +151,15 @@
       { d: 0.08 * r7, v: Math.min(p * 0.92, 95) },
       { d: purpleW, v: purpleMid },
       { d: 0.34 * r7, v: 40 },
-      { d: 0.48 * r7, v: 18 },
-      { d: 0.62 * r7, v: 7 },
-      { d: 0.78 * r7, v: 1.6 },
-      { d: 0.98 * r7, v: 0.2 }
+      { d: 0.46 * r7, v: 18 },
+      { d: 0.54 * r7, v: 7 },
+      { d: 0.66 * r7, v: 1.6 },
+      { d: 0.85 * r7, v: 0.2 }
     ];
     let rate;
     if (d >= pts[pts.length - 1].d) {
       const last = pts[pts.length - 1];
-      rate = last.v * Math.exp(-(d - last.d) / (0.26 * r7));
+      rate = last.v * Math.exp(-(d - last.d) / (0.15 * r7));
     } else {
       rate = 0;
       for (let i = 0; i < pts.length - 1; i++) {
@@ -179,7 +179,8 @@
 
   /**
    * 山地迎风/背风：朝风暴中心方向一步仍是山 → 背风；否则迎风。
-   * 比例约 70:30（迎风保持≈1，背风≈0.43）；非山地 = 1。
+   * 迎风强增强（≈2.8×）、背风仍弱（≈0.40）；非山地 = 1。
+   * 过山时雨量主要落在迎风坡（面积更窄），背风侧明显偏弱。
    */
   function isMountainFast(lon, lat, grid) {
     if (grid && grid.mtn) {
@@ -226,9 +227,9 @@
     const tLat = lat + (dLat / dist) * step;
     const tLon = lon + ((stormLon - lon) / dist) * step;
     const wAhead = mountainWeightSoft(tLon, tLat, grid);
-    // 迎风偏 1，背风偏 3/7；按软权重混合，无方块边
+    // 迎风大幅增强，背风仍弱；按软权重混合，无方块边
     const windward = wAhead < 0.45;
-    const side = windward ? 1 : (3 / 7);
+    const side = windward ? 2.8 : 0.40;
     return 1 + (side - 1) * wMtn;
   }
 
@@ -429,9 +430,9 @@
     const amp7 = G.windAsymAmp(speed, vmax);
     const meanR7 = (G.windRadiiForGrades(vmax).find(function (r) { return r.grade === 7; }) ||
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
-    const maxR = meanR7 * (1 + amp7) * 1.02 + 0.35;
+    const maxR = meanR7 * (1 + amp7) * 0.92 + 0.18;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 2.4) : 0; // 分离北带脊~4.8° + 北缘熄灭（随 N–S 收）
+    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 2.0) : 0; // 分离北带脊~4.8° + 北缘熄灭（随 N–S 收）
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);

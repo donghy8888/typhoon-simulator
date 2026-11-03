@@ -56,8 +56,8 @@
       const s = t * t * (3 - 2 * t);
       return lerp(1, 0.14, Math.pow(s, 1.25));
     }
-    // 主场外缘更快衰减（收紧累计雨痕；与 shellRateMmH 外圈一致）
-    return 0.14 * Math.exp(-(rNorm - 1) / 0.14);
+    // 主场外缘更快衰减（再收紧累计雨痕；与 shellRateMmH 外圈一致）
+    return 0.14 * Math.exp(-(rNorm - 1) / 0.09);
   }
 
   /**
@@ -103,26 +103,26 @@
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
     if (!isRecurvingNorth(headingRad)) return 0;
     const dNorth = lat - r7NorthLat; // degrees relative to R7 north edge
-    // 仅从 R7 北缘稍北起叶；北侧在脊外 ~1.00° 熄灭（N–S 再收一档）
-    if (dNorth < 0.05 || dNorth > NORTH_RIDGE_MID + 1.00) return 0;
+    // 仅从 R7 北缘稍北起叶；北侧在脊外 ~0.70° 熄灭（N–S 大幅收细）
+    if (dNorth < 0.05 || dNorth > NORTH_RIDGE_MID + 0.70) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
     // 轻微弯弧 + 软抖动，避免完美椭圆/体育场轮廓
     const arc = 0.10 * Math.sin(dLon * 0.58) + 0.05 * Math.sin(dLon * 1.38 + 0.85);
     const dN = dNorth - arc;
-    // E–W 半宽：略拉长横带，西略宽；软高斯+外缘跌落（无硬截断墙）
-    const halfW = dLon < 0 ? 5.0 : 4.3;
+    // E–W 半宽：再拉长横带，西略宽；软高斯+外缘跌落（无硬截断墙）
+    const halfW = dLon < 0 ? 5.8 : 5.0;
     const u = Math.abs(dLon) / Math.max(0.4, halfW);
     const lonGate = Math.exp(-1.15 * u * u) * Math.exp(-0.70 * Math.pow(u, 3.4));
     if (lonGate < 0.02) return 0;
     const wobble = 1.0 + 0.045 * Math.sin(dLon * 2.05 + dNorth * 2.9) *
       Math.sin(dLon * 0.9 - 0.4);
-    // 非对称径向门：北侧紧、南侧长尾 → 脊分离；南足轻雨桥（span 再收细）
+    // 非对称径向门：北侧紧、南侧长尾 → 脊分离；南足轻雨桥（span 大幅收细）
     const mid = NORTH_RIDGE_MID;
-    const span = dN < mid ? 1.00 : 0.28;
+    const span = dN < mid ? 0.70 : 0.18;
     const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
     const edgeFade = clamp01((dNorth - 0.15) / 0.85);
-    const northCap = clamp01((mid + 0.85 - dNorth) / 0.85);
+    const northCap = clamp01((mid + 0.55 - dNorth) / 0.85);
     let band = NORTH_BAND_PEAK * radGate * lonGate * wobble * edgeFade * northCap;
     // 桥区（脊以南较远处）封顶，确保黄/橙/紫/红绝不跨缝
     if (dNorth < mid - 1.15 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
@@ -151,15 +151,15 @@
       { d: 0.08 * r7, v: Math.min(p * 0.92, 95) },
       { d: purpleW, v: purpleMid },
       { d: 0.34 * r7, v: 40 },
-      { d: 0.42 * r7, v: 18 },
-      { d: 0.48 * r7, v: 7 },
-      { d: 0.58 * r7, v: 1.6 },
-      { d: 0.74 * r7, v: 0.2 }
+      { d: 0.38 * r7, v: 18 },
+      { d: 0.42 * r7, v: 7 },
+      { d: 0.50 * r7, v: 1.6 },
+      { d: 0.63 * r7, v: 0.2 }
     ];
     let rate;
     if (d >= pts[pts.length - 1].d) {
       const last = pts[pts.length - 1];
-      rate = last.v * Math.exp(-(d - last.d) / (0.09 * r7));
+      rate = last.v * Math.exp(-(d - last.d) / (0.06 * r7));
     } else {
       rate = 0;
       for (let i = 0; i < pts.length - 1; i++) {
@@ -430,14 +430,14 @@
     const amp7 = G.windAsymAmp(speed, vmax);
     const meanR7 = (G.windRadiiForGrades(vmax).find(function (r) { return r.grade === 7; }) ||
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
-    const maxR = meanR7 * (1 + amp7) * 0.82 + 0.10;
+    const maxR = meanR7 * (1 + amp7) * 0.72 + 0.05;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 1.6) : 0; // 分离北带脊~4.8° + 北缘熄灭（随 N–S 收）
+    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 1.2) : 0; // 分离北带脊~4.8° + 北缘熄灭（随 N–S 收）
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
     const cos = Math.max(0.2, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4 + (recurveN ? 3.5 : 0)) / cos; // 北带中等 E–W 半宽
+    const lonPad = (maxR + 4 + (recurveN ? 4.5 : 0)) / cos; // 北带更长 E–W 半宽
     const lonMin = Math.max(this.lon0, storm.lon - lonPad);
     const lonMax = Math.min(G.DOMAIN.lonMax, storm.lon + lonPad);
 

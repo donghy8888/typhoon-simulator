@@ -56,7 +56,8 @@
       const s = t * t * (3 - 2 * t);
       return lerp(1, 0.14, Math.pow(s, 1.25));
     }
-    return 0.14 * Math.exp(-(rNorm - 1) / 0.62);
+    // 主场外缘更快衰减（收紧累计雨痕；与 shellRateMmH 外圈一致）
+    return 0.14 * Math.exp(-(rNorm - 1) / 0.38);
   }
 
   /**
@@ -150,15 +151,15 @@
       { d: 0.08 * r7, v: Math.min(p * 0.92, 95) },
       { d: purpleW, v: purpleMid },
       { d: 0.34 * r7, v: 40 },
-      { d: 0.50 * r7, v: 18 },
-      { d: 0.70 * r7, v: 7 },
-      { d: 0.95 * r7, v: 1.6 },
-      { d: 1.40 * r7, v: 0.2 }
+      { d: 0.48 * r7, v: 18 },
+      { d: 0.62 * r7, v: 7 },
+      { d: 0.78 * r7, v: 1.6 },
+      { d: 0.98 * r7, v: 0.2 }
     ];
     let rate;
     if (d >= pts[pts.length - 1].d) {
       const last = pts[pts.length - 1];
-      rate = last.v * Math.exp(-(d - last.d) / (0.45 * r7));
+      rate = last.v * Math.exp(-(d - last.d) / (0.26 * r7));
     } else {
       rate = 0;
       for (let i = 0; i < pts.length - 1; i++) {
@@ -428,7 +429,7 @@
     const amp7 = G.windAsymAmp(speed, vmax);
     const meanR7 = (G.windRadiiForGrades(vmax).find(function (r) { return r.grade === 7; }) ||
       { radiusDeg: G.windRadiusDeg(vmax) * 1.2 }).radiusDeg;
-    const maxR = meanR7 * (1 + amp7) * 1.15 + 0.8;
+    const maxR = meanR7 * (1 + amp7) * 1.02 + 0.35;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
     const bandExtra = recurveN ? (NORTH_RIDGE_MID + 2.8) : 0; // 分离北带脊~4.8° + 北缘熄灭
 

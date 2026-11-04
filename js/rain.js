@@ -139,21 +139,21 @@
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
     if (!isRecurvingNorth(headingRad)) return 0;
     const dNorth = lat - r7NorthLat; // degrees relative to R7 north edge
-    // 稍晚起叶 + 脊外 ~0.42° 熄灭 → N–S 更细；与主体仍分离
+    // 稍晚起叶 + 脊外 ~0.42° 熄灭 → N–S 保持细；与主体仍分离
     if (dNorth < 0.12 || dNorth > NORTH_RIDGE_MID + 0.42) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
     // 轻微弯弧 + 软抖动，避免完美椭圆/体育场轮廓
-    const arc = 0.10 * Math.sin(dLon * 0.58) + 0.05 * Math.sin(dLon * 1.38 + 0.85);
+    const arc = 0.10 * Math.sin(dLon * 0.45) + 0.05 * Math.sin(dLon * 1.05 + 0.85);
     const dN = dNorth - arc;
-    // E–W 半宽：再拉长横带，西略宽；软高斯+外缘跌落（无硬截断墙）
-    const halfW = dLon < 0 ? 6.6 : 5.8;
+    // E–W 半宽：大幅拉长横带（西略宽）；软高斯+更缓外缘跌落
+    const halfW = dLon < 0 ? 11.5 : 10.0;
     const u = Math.abs(dLon) / Math.max(0.4, halfW);
-    const lonGate = Math.exp(-1.05 * u * u) * Math.exp(-0.55 * Math.pow(u, 3.4));
+    const lonGate = Math.exp(-0.85 * u * u) * Math.exp(-0.35 * Math.pow(u, 3.2));
     if (lonGate < 0.02) return 0;
-    const wobble = 1.0 + 0.045 * Math.sin(dLon * 2.05 + dNorth * 2.9) *
-      Math.sin(dLon * 0.9 - 0.4);
-    // 非对称径向门：北侧更紧、南侧更短 → 细叶；南足轻雨桥
+    const wobble = 1.0 + 0.045 * Math.sin(dLon * 1.55 + dNorth * 2.9) *
+      Math.sin(dLon * 0.7 - 0.4);
+    // 非对称径向门：北侧更紧、南侧更短 → 细叶；南足轻雨桥（N–S 不加厚）
     const mid = NORTH_RIDGE_MID;
     const span = dN < mid ? 0.48 : 0.12;
     const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
@@ -214,9 +214,11 @@
   }
 
   /**
-   * 山地迎风/背风：朝风暴中心方向一步仍是山 → 背风；否则迎风。
-   * 迎风极强增强（≈5.0×）、背风极弱（≈0.18）；非山地 = 1。
-   * 过山时雨量主要落在迎风坡（面积更窄），背风侧大幅偏弱。
+   * 山地迎风/背风（坡向相对风暴）：
+   * 比较「朝风暴」与「背风暴」两侧山地权重——向风暴侧变低 = 迎风坡；变高 = 背风坡。
+   * 旧逻辑「朝风暴一步仍是山→背风」在宽脊（台湾中央山脉 elev≥700m）上会把大半脊误判背风，
+   * 迎风麓地又不在掩码内，导致中央山脉迎风坡看不到抬升。
+   * 迎风 ≈5.0×、背风 ≈0.18；迎风麓地（平原贴山、山在背风暴侧）亦软抬升；非山地远场 = 1。
    */
   function isMountainFast(lon, lat, grid) {
     if (grid && grid.mtn) {
@@ -252,21 +254,50 @@
   }
 
   function mountainSideFactor(lon, lat, stormLon, stormLat, grid) {
-    const wMtn = mountainWeightSoft(lon, lat, grid);
-    if (wMtn <= 1e-3) return 1;
     const cosLat = Math.cos(lat * Math.PI / 180);
     const dLat = stormLat - lat;
-    const dLon = (stormLon - lon) * Math.max(0.2, cosLat);
+    const dLonRaw = stormLon - lon;
+    const dLon = dLonRaw * Math.max(0.2, cosLat);
     const dist = Math.hypot(dLat, dLon);
     if (dist < 1e-4) return 1;
-    const step = 0.18; // ~20 km
-    const tLat = lat + (dLat / dist) * step;
-    const tLon = lon + ((stormLon - lon) / dist) * step;
-    const wAhead = mountainWeightSoft(tLon, tLat, grid);
-    // 迎风极强增强，背风极弱；按软权重混合，无方块边
-    const windward = wAhead < 0.45;
+
+    // ~30 km 主步长（分辨中央山脉东西坡）+ 半步局部边沿
+    const step = 0.28;
+    const step2 = 0.14;
+    const ux = dLonRaw / dist;
+    const uy = dLat / dist;
+    const tLon = lon + ux * step;
+    const tLat = lat + uy * step;
+    const aLon = lon - ux * step;
+    const aLat = lat - uy * step;
+    const t2Lon = lon + ux * step2;
+    const t2Lat = lat + uy * step2;
+    const a2Lon = lon - ux * step2;
+    const a2Lat = lat - uy * step2;
+
+    const w0 = mountainWeightSoft(lon, lat, grid);
+    const wT = 0.6 * mountainWeightSoft(tLon, tLat, grid) +
+      0.4 * mountainWeightSoft(t2Lon, t2Lat, grid);
+    const wA = 0.6 * mountainWeightSoft(aLon, aLat, grid) +
+      0.4 * mountainWeightSoft(a2Lon, a2Lat, grid);
+
+    // 迎风麓地：点不在山，但背风暴侧贴山、朝风暴侧开阔（台湾东岸典型）
+    if (w0 <= 1e-3) {
+      if (wA > 0.35 && wT < 0.25) {
+        const prox = clamp01(wA);
+        const side = 5.0;
+        return 1 + (side - 1) * prox * 0.85;
+      }
+      return 1;
+    }
+
+    // 在山上：山地权重向风暴降低 = 迎风坡；升高 = 背风坡
+    const score = (wA - wT) + 0.35 * (w0 - wT);
+    let windward;
+    if (Math.abs(score) < 0.08) windward = wT <= wA;
+    else windward = score > 0;
     const side = windward ? 5.0 : 0.18;
-    return 1 + (side - 1) * wMtn;
+    return 1 + (side - 1) * w0;
   }
 
   /**
@@ -325,9 +356,9 @@
     const band = rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg);
     rate = mergeNorthBand(rate, band);
 
-    // 山地软调制：R12 内核不打洞
+    // 山地软调制：R12 内核只抹平背风抑制（避免红核被挖洞），迎风抬升仍保留
     let mtn = mountainSideFactor(lon, lat, lon0, lat0, grid);
-    if (coreW > 0) mtn = mtn + (1 - mtn) * coreW;
+    if (coreW > 0 && mtn < 1) mtn = mtn + (1 - mtn) * coreW;
     rate *= mtn;
 
     if (rate < 0.15) return 0;
@@ -466,7 +497,7 @@
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
     const cos = Math.max(0.2, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4 + (recurveN ? 5.5 : 0)) / cos; // 北带更长 E–W 半宽
+    const lonPad = (maxR + 4 + (recurveN ? 10.5 : 0)) / cos; // 北带大幅拉长 E–W
     const lonMin = Math.max(this.lon0, storm.lon - lonPad);
     const lonMax = Math.min(G.DOMAIN.lonMax, storm.lon + lonPad);
 

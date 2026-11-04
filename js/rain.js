@@ -42,13 +42,13 @@
 
   /** TY / 十二级 vmax 下限 (m/s) — 雨场影响范围基准 */
   const RAIN_EXTENT_TY_VMAX = 32.7;
-  /** over=1 约在十七级门槛 56.1 m/s；scale=1/(1+K·over) → G17≈0.67×TY */
+  /** over=1 约在十七级门槛 56.1 m/s；scale=1+K·over → G17≈1.20×TY（不再收缩） */
   const RAIN_EXTENT_OVER_REF = 56.1 - 32.7;
-  const RAIN_EXTENT_SHRINK_K = 0.5;
+  const RAIN_EXTENT_GROW_K = 0.2;
 
   /**
-   * 雨场足迹半径（度）。≤十二级/TY 跟风圈；强于 TY 时以外缘相对 TY 基准收缩，
-   * 避免 STY/超强把累计雨痕刷成大片（峰值仍由 peakRainMmH 抬升）。
+   * 雨场足迹半径（度）。≤十二级/TY 跟风圈；强于 TY 时相对 TY 基准轻微放大
+   * （scale=1+K·over，连续、无断崖；远小于风圈随 vmax 的膨胀）。峰值仍由 peakRainMmH 抬升。
    * 返回 { meanR7, meanR12 }，保持 R12/R7 比例。
    */
   function rainFootprintRadii(vmaxMs) {
@@ -67,7 +67,7 @@
     } else if (vmax > RAIN_EXTENT_TY_VMAX) {
       const tyR7 = G.windRadiusDeg(RAIN_EXTENT_TY_VMAX) * 1.2;
       const over = (vmax - RAIN_EXTENT_TY_VMAX) / RAIN_EXTENT_OVER_REF;
-      const scale = 1 / (1 + RAIN_EXTENT_SHRINK_K * Math.max(0, over));
+      const scale = 1 + RAIN_EXTENT_GROW_K * Math.max(0, over);
       const targetR7 = tyR7 * scale;
       const k = targetR7 / Math.max(1e-6, meanR7);
       meanR7 = targetR7;
@@ -139,29 +139,29 @@
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
     if (!isRecurvingNorth(headingRad)) return 0;
     const dNorth = lat - r7NorthLat; // degrees relative to R7 north edge
-    // 仅从 R7 北缘稍北起叶；北侧在脊外 ~0.70° 熄灭（N–S 大幅收细）
-    if (dNorth < 0.05 || dNorth > NORTH_RIDGE_MID + 0.70) return 0;
+    // 稍晚起叶 + 脊外 ~0.42° 熄灭 → N–S 更细；与主体仍分离
+    if (dNorth < 0.12 || dNorth > NORTH_RIDGE_MID + 0.42) return 0;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
     const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
     // 轻微弯弧 + 软抖动，避免完美椭圆/体育场轮廓
     const arc = 0.10 * Math.sin(dLon * 0.58) + 0.05 * Math.sin(dLon * 1.38 + 0.85);
     const dN = dNorth - arc;
     // E–W 半宽：再拉长横带，西略宽；软高斯+外缘跌落（无硬截断墙）
-    const halfW = dLon < 0 ? 5.8 : 5.0;
+    const halfW = dLon < 0 ? 6.6 : 5.8;
     const u = Math.abs(dLon) / Math.max(0.4, halfW);
-    const lonGate = Math.exp(-1.15 * u * u) * Math.exp(-0.70 * Math.pow(u, 3.4));
+    const lonGate = Math.exp(-1.05 * u * u) * Math.exp(-0.55 * Math.pow(u, 3.4));
     if (lonGate < 0.02) return 0;
     const wobble = 1.0 + 0.045 * Math.sin(dLon * 2.05 + dNorth * 2.9) *
       Math.sin(dLon * 0.9 - 0.4);
-    // 非对称径向门：北侧紧、南侧长尾 → 脊分离；南足轻雨桥（span 大幅收细）
+    // 非对称径向门：北侧更紧、南侧更短 → 细叶；南足轻雨桥
     const mid = NORTH_RIDGE_MID;
-    const span = dN < mid ? 0.70 : 0.18;
+    const span = dN < mid ? 0.48 : 0.12;
     const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
-    const edgeFade = clamp01((dNorth - 0.15) / 0.85);
-    const northCap = clamp01((mid + 0.55 - dNorth) / 0.85);
+    const edgeFade = clamp01((dNorth - 0.20) / 0.90);
+    const northCap = clamp01((mid + 0.32 - dNorth) / 0.70);
     let band = NORTH_BAND_PEAK * radGate * lonGate * wobble * edgeFade * northCap;
     // 桥区（脊以南较远处）封顶，确保黄/橙/紫/红绝不跨缝
-    if (dNorth < mid - 1.15 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
+    if (dNorth < mid - 1.25 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
     return band;
   }
 
@@ -461,12 +461,12 @@
     const meanR7 = rainFootprintRadii(vmax).meanR7;
     const maxR = meanR7 * (1 + amp7) * 0.72 + 0.05;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 1.2) : 0; // 分离北带脊~4.8° + 北缘熄灭（随 N–S 收）
+    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 0.85) : 0; // 分离北带脊~4.8° + 更紧北缘熄灭
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
     const cos = Math.max(0.2, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4 + (recurveN ? 4.5 : 0)) / cos; // 北带更长 E–W 半宽
+    const lonPad = (maxR + 4 + (recurveN ? 5.5 : 0)) / cos; // 北带更长 E–W 半宽
     const lonMin = Math.max(this.lon0, storm.lon - lonPad);
     const lonMax = Math.min(G.DOMAIN.lonMax, storm.lon + lonPad);
 

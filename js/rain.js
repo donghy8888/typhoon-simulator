@@ -539,6 +539,8 @@
 
   /** 北带累计封顶小时数：10 mm/h × 4 h ≈ 40 mm（黄档内，仍是「弱」带） */
   const NORTH_BAND_ACCUM_HOURS = 4;
+  /** 累计北带椭圆轴放大（可见 ≥1.5 mm 面积取旧/新几何平均） */
+  const NORTH_BAND_ACCUM_SIZE = 1.29;
 
   /**
    * 北带在累计图里只画一次：以最近一次北带中心（折向点附近）为锚点，画单个 E–W 椭圆
@@ -563,9 +565,13 @@
     const b = this.band;
     if (!(b.w > 1e-6)) return;
     const cLat = b.lat / b.w, cLon = b.lon / b.w, sc = b.sc / b.w;
-    const ea = NORTH_ELL_A * sc, eb = NORTH_ELL_B * sc;
+    // 累计图可见面积 = 旧逐小时(j)与单次锚定(l)的几何平均 → 轴长 ×1.29；
+    // 峰值固定（只要北带出现过 ≥0.5 h），不随移速/持续时数忽大忽小；强度只轻微缩放
+    const scA = 1 + (sc - 1) * 0.4;
+    const ea = NORTH_ELL_A * NORTH_BAND_ACCUM_SIZE * scA, eb = NORTH_ELL_B * NORTH_BAND_ACCUM_SIZE * scA;
     const cos = Math.max(0.2, Math.cos(cLat * Math.PI / 180));
-    const amp = NORTH_BAND_PEAK * Math.min(b.w, NORTH_BAND_ACCUM_HOURS);
+    if (b.w < 0.5) { this.bandBox = null; return; }
+    const amp = NORTH_BAND_PEAK * NORTH_BAND_ACCUM_HOURS;
     const box = { latMin: cLat - 1.5 * eb, latMax: cLat + 1.5 * eb, lonMin: cLon - 1.5 * ea / cos, lonMax: cLon + 1.5 * ea / cos };
     each(box, function (i, j, k, lat, lon) {
       const dx = (lon - cLon) * cos, dy = lat - cLat;

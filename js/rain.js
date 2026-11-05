@@ -136,32 +136,32 @@
    * 与主体壳软合并：南足仅绿/毛毛雨–浅蓝桥（≤~BRIDGE_CAP），重核（黄+）不连通。
    * 软门控，禁止硬 Math.max 并集轮廓角。
    */
-  function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad) {
+  /** 北带椭圆半轴（1 mm/h 等值线，度）：十二级参考尺寸 = 02f/02g 中点 */
+  const NORTH_ELL_A = 7.0;
+  const NORTH_ELL_B = 0.62;
+  /** 强度缩放：仅大小温和变化，形状（长宽比）恒定。32.7 m/s → 1.0 */
+  function northBandScale(vmax) {
+    const v = +vmax || 0;
+    return Math.max(0.85, Math.min(1.15, 1 + 0.25 * (v - 32.7) / 24.3));
+  }
+
+  /**
+   * 折向时的分离北侧弱雨带：单一光滑 E–W 椭圆（无经/纬分离门控、无平台、无矩形角）。
+   * d² = (dx/a)² + (dy/b)²；rate = PEAK·exp(-ln10·d²)，d=1 即 1 mm/h 边界。
+   * 中心在 R7 北缘以北 NORTH_RIDGE_MID；a、b 同比例随强度温和缩放。
+   */
+  function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad, vmax) {
     if (!isRecurvingNorth(headingRad)) return 0;
-    const dNorth = lat - r7NorthLat; // degrees relative to R7 north edge
-    // 整体缩小足迹：E–W + N–S 一起收；仍为分离横带
-    if (dNorth < 0.11 || dNorth > NORTH_RIDGE_MID + 0.565) return 0;
+    const sc = northBandScale(vmax);
+    const dy = (lat - r7NorthLat) - NORTH_RIDGE_MID;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
-    const dLon = (lon - stormLon) * Math.max(0.2, cosLat);
-    // 轻微弯弧 + 软抖动，避免完美椭圆/体育场轮廓
-    const arc = 0.095 * Math.sin(dLon * 0.575) + 0.045 * Math.sin(dLon * 1.275 + 0.85);
-    const dN = dNorth - arc;
-    // E–W 半宽：02f/02g 精确中点（西略宽）
-    const halfW = dLon < 0 ? 6.4 : 5.65;
-    const u = Math.abs(dLon) / Math.max(0.4, halfW);
-    const lonGate = Math.exp(-1.10 * u * u) * Math.exp(-0.60 * Math.pow(u, 3.4));
-    if (lonGate < 0.02) return 0;
-    const wobble = 1.0 + 0.045 * Math.sin(dLon * 2.0 + dNorth * 2.9) *
-      Math.sin(dLon * 0.875 - 0.4);
-    // N–S 一并缩小（仍保持横带形态）；南足轻雨桥
-    const mid = NORTH_RIDGE_MID;
-    const span = dN < mid ? 0.635 : 0.18;
-    const radGate = Math.exp(-Math.pow((dN - mid) / span, 2));
-    const edgeFade = clamp01((dNorth - 0.165) / 0.825);
-    const northCap = clamp01((mid + 0.44 - dNorth) / 0.76);
-    let band = NORTH_BAND_PEAK * radGate * lonGate * wobble * edgeFade * northCap;
-    // 桥区（脊以南较远处）封顶，确保黄/橙/紫/红绝不跨缝
-    if (dNorth < mid - 1.225 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
+    const dx = (lon - stormLon) * Math.max(0.2, cosLat);
+    const ea = NORTH_ELL_A * sc;
+    const eb = NORTH_ELL_B * sc;
+    const d2 = (dx / ea) * (dx / ea) + (dy / eb) * (dy / eb);
+    if (d2 > 2.25) return 0;
+    let band = NORTH_BAND_PEAK * Math.exp(-2.302585 * d2);
+    if (lat - r7NorthLat < NORTH_RIDGE_MID - 1.225 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
     return band;
   }
 
@@ -353,7 +353,7 @@
 
     // 北侧折向弱雨带：hypot soft envelope（禁 Math.max 硬并集 → 东西 G角）
     const r7North = lat0 + rainLocalR7(meanR7, hdg, 0, amp7);
-    const band = rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg);
+    const band = rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg, vmax);
     rate = mergeNorthBand(rate, band);
 
     // 山地软调制：R12 内核只抹平背风抑制（避免红核被挖洞），迎风抬升仍保留
@@ -492,12 +492,12 @@
     const meanR7 = rainFootprintRadii(vmax).meanR7;
     const maxR = meanR7 * (1 + amp7) * 0.72 + 0.05;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 1.025) : 0; // 分离北带脊~4.8°；02f/02g 中点
+    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 1.5 * NORTH_ELL_B * 1.15 + 0.1) : 0; // 椭圆北带最大外缘
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
     const cos = Math.max(0.2, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4 + (recurveN ? 5.5 : 0)) / cos; // 北带 E–W：02f/02g 中点
+    const lonPad = (maxR + 4 + (recurveN ? Math.max(5.5, 1.5 * NORTH_ELL_A * 1.15 - 4) : 0)) / cos; // 椭圆北带 E–W 外缘
     const lonMin = Math.max(this.lon0, storm.lon - lonPad);
     const lonMax = Math.min(G.DOMAIN.lonMax, storm.lon + lonPad);
 
@@ -823,6 +823,7 @@
     mergeNorthBand: mergeNorthBand,
     NORTH_RIDGE_MID: NORTH_RIDGE_MID,
     NORTH_BAND_PEAK: NORTH_BAND_PEAK,
-    NORTH_BRIDGE_CAP: NORTH_BRIDGE_CAP
+    NORTH_BRIDGE_CAP: NORTH_BRIDGE_CAP,
+    northBandScale: northBandScale
   };
 })(typeof window !== 'undefined' ? window : globalThis);

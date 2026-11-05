@@ -113,7 +113,7 @@
   }
 
   /** 折向北侧弱雨带脊：相对 R7 北缘 ~4.8°（略南移；仍远于 3° 轻推） */
-  const NORTH_RIDGE_MID = 4.8;
+  const NORTH_RIDGE_MID = 3.6;
   /** 北带峰值 ~10 mm/h（蓝档内）；永不抬到黄/橙，故重核不会与主体桥接 */
   const NORTH_BAND_PEAK = 10;
   /** 可选轻雨桥上限（绿/蓝）；桥区超过此值则软封顶 */
@@ -265,6 +265,28 @@
     return isMountainFast(lon, lat, grid) ? 1 : 0;
   }
 
+  /** 台湾地形高度（m），TAIWAN_ELEV 0.05° 格双线性；域外/无数据 = 0 */
+  function taiwanElevM(lon, lat) {
+    const T = global.TAIWAN_ELEV;
+    if (!T) return 0;
+    const u = (lon - T.lon0) / T.d;
+    const v = (lat - T.lat0) / T.d;
+    const i0 = Math.floor(u), j0 = Math.floor(v);
+    if (i0 < 0 || j0 < 0 || i0 >= T.nlon - 1 || j0 >= T.nlat - 1) return 0;
+    const fx = u - i0, fy = v - j0;
+    const e = function (i, j) { return T.dm[j * T.nlon + i] * 10; };
+    return (e(i0, j0) * (1 - fx) + e(i0 + 1, j0) * fx) * (1 - fy) +
+      (e(i0, j0 + 1) * (1 - fx) + e(i0 + 1, j0 + 1) * fx) * fy;
+  }
+  /** 0.22° 累计格内高度：取格心周围 ±0.08° 九点最大值（山脊不被平滑掉） */
+  function taiwanCellElevM(lon, lat) {
+    let m = 0;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      m = Math.max(m, taiwanElevM(lon + a * 0.08, lat + b * 0.08));
+    }
+    return m;
+  }
+
   function mountainSideFactor(lon, lat, stormLon, stormLat, grid) {
     const cosLat = Math.cos(lat * Math.PI / 180);
     const dLat = stormLat - lat;
@@ -308,7 +330,12 @@
     let windward;
     if (Math.abs(score) < 0.08) windward = wT <= wA;
     else windward = score > 0;
-    const side = windward ? 5.0 : 0.18;
+    let side = windward ? 5.0 : 0.18;
+    // 迎风抬升随高度增长（台湾）：上部迎风坡/主脊最大，而非仅坡度最陡的中坡
+    if (windward) {
+      const el = taiwanCellElevM(lon, lat);
+      if (el > 0) side = 5.0 * (0.75 + 0.5 * clamp01((el - 700) / 2300));
+    }
     return 1 + (side - 1) * w0;
   }
 
@@ -365,7 +392,7 @@
 
     // 北侧折向弱雨带：hypot soft envelope（禁 Math.max 硬并集 → 东西 G角）
     const r7North = lat0 + rainLocalR7(meanR7, hdg, 0, amp7);
-    const band = rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg, vmax);
+    const band = (opts && opts.noBand) ? 0 : rainbandNorthMmH(lat, lon, lat0, lon0, r7North, hdg, vmax);
     rate = mergeNorthBand(rate, band);
 
     // 山地软调制：R12 内核只抹平背风抑制（避免红核被挖洞），迎风抬升仍保留
@@ -400,7 +427,7 @@
     { max: 100, r: 245, g: 140, b: 25,  a: 175 },  // 50–100
     { max: 250, r: 150, g: 50,  b: 210, a: 180 },  // 100–250
     { max: 400, r: 220, g: 35, b: 40, a: 185 },     // 250–400
-    { max: Infinity, r: 120, g: 0, b: 12, a: 205 }  // ≥400 深红（仅台湾中央山脉迎风坡）
+    { max: Infinity, r: 122, g: 0, b: 25, a: 255 }  // ≥400 深红 #7a0019 不透明（仅台湾中央山脉高处迎风坡）
   ];
 
   function colorForRate(mmh) {
@@ -466,8 +493,11 @@
     let v = accumSoft(raw);
     if (inTaiwanCmrBox(lat, lon) && flat > 1e-6) {
       const ratio = raw / flat; // 迎风 >1（最高 ~5），背风 <1
-      const w = clamp01((ratio - 1.3) / 1.7);
-      v *= 1 + 0.7 * w;
+      const w = clamp01((ratio - 1.6) / 1.6);
+      // 高度权重：<1500 m 不抬升，≥2700 m 全额 → 深红只落在高处迎风坡/主脊
+      const el = taiwanCellElevM(lon, lat);
+      const ew = clamp01((el - 1500) / 1200);
+      v *= 1 + 0.6 * w * ew;
     }
     return v;
   }
@@ -489,6 +519,8 @@
     this._mtnReady = false;
     this.maxVal = 0;
     this.hoursIntegrated = 0;
+    this.band = { w: 0, lat: 0, lon: 0, sc: 0 }; // 北带锚定：fade·h 加权中心
+    this.bandBox = null;
   }
 
   AccumGrid.prototype.idx = function (i, j) {
@@ -501,6 +533,63 @@
     if (this.flat) this.flat.fill(0);
     this.maxVal = 0;
     this.hoursIntegrated = 0;
+    this.band = { w: 0, lat: 0, lon: 0, sc: 0 };
+    this.bandBox = null;
+  };
+
+  /** 北带累计封顶小时数：10 mm/h × 4 h ≈ 40 mm（黄档内，仍是「弱」带） */
+  const NORTH_BAND_ACCUM_HOURS = 4;
+
+  /**
+   * 北带在累计图里只画一次：以最近一次北带中心（折向点附近）为锚点，画单个 E–W 椭圆
+   * （逐小时沿北上路径叠加会拖成南北长条）。
+   */
+  AccumGrid.prototype._applyBand = function () {
+    const self = this;
+    function each(box, fn) {
+      if (!box) return;
+      const i0 = Math.max(0, Math.floor((box.lonMin - self.lon0) / self.deg));
+      const i1 = Math.min(self.nlon - 1, Math.ceil((box.lonMax - self.lon0) / self.deg));
+      const j0 = Math.max(0, Math.floor((box.latMin - self.lat0) / self.deg));
+      const j1 = Math.min(self.nlat - 1, Math.ceil((box.latMax - self.lat0) / self.deg));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) fn(i, j, self.idx(i, j), self.lat0 + j * self.deg, self.lon0 + i * self.deg);
+      }
+    }
+    each(this.bandBox, function (i, j, k, lat, lon) {
+      self.data[k] = self.raw[k] > 0 ? accumDisplayMm(self.raw[k], self.flat[k], lat, lon) : 0;
+    });
+    this.bandBox = null;
+    const b = this.band;
+    if (!(b.w > 1e-6)) return;
+    const cLat = b.lat / b.w, cLon = b.lon / b.w, sc = b.sc / b.w;
+    const ea = NORTH_ELL_A * sc, eb = NORTH_ELL_B * sc;
+    const cos = Math.max(0.2, Math.cos(cLat * Math.PI / 180));
+    const amp = NORTH_BAND_PEAK * Math.min(b.w, NORTH_BAND_ACCUM_HOURS);
+    const box = { latMin: cLat - 1.5 * eb, latMax: cLat + 1.5 * eb, lonMin: cLon - 1.5 * ea / cos, lonMax: cLon + 1.5 * ea / cos };
+    each(box, function (i, j, k, lat, lon) {
+      const dx = (lon - cLon) * cos, dy = lat - cLat;
+      const d2 = (dx / ea) * (dx / ea) + (dy / eb) * (dy / eb);
+      if (d2 > 2.25) return;
+      self.data[k] += amp * Math.exp(-2.302585 * d2);
+      if (self.data[k] > self.maxVal) self.maxVal = self.data[k];
+    });
+    this.bandBox = box;
+  };
+
+  /** 用与风圈相同的路径移向 UV（windMotionUVFromTrack）累加 track[i] 这一段 */
+  AccumGrid.prototype.addTrackPoint = function (track, i, dtHours) {
+    const b = track[i];
+    if (!b) return;
+    let u = b.u, v = b.v;
+    const uv = G.windMotionUVFromTrack ? G.windMotionUVFromTrack(track, i) : null;
+    if (uv && Math.hypot(uv.u, uv.v) >= 0.25) {
+      const sp = Math.hypot(uv.u, uv.v);
+      const ph = Math.hypot(+b.u || 0, +b.v || 0);
+      const k = (sp < 1.2 && ph > sp + 0.15) ? ph / sp : 1;
+      u = uv.u * k; v = uv.v * k;
+    }
+    this.addStormHour({ lat: b.lat, lon: b.lon, vmax: b.vmax, u: u, v: v }, dtHours);
   };
 
   AccumGrid.prototype.ensureMountainMask = function () {
@@ -557,7 +646,7 @@
     };
 
     const out = { mtn: 1 };
-    const opt = { grid: this, out: out };
+    const opt = { grid: this, out: out, noBand: true };
     for (let j = j0; j <= j1; j++) {
       const lat = this.lat0 + j * this.deg;
       for (let i = i0; i <= i1; i++) {
@@ -574,6 +663,21 @@
       }
     }
     this.hoursIntegrated += dtHours;
+    // 北带：只记锚点权重，不逐小时铺（防南北拖条）
+    const hdgB = G.motionHeadingRad(u, v);
+    if (isRecurvingNorth(hdgB)) {
+      const fade = northBandHeadingFade(hdgB);
+      if (fade > 0) {
+        const w = fade * dtHours;
+        const r7N = storm.lat + rainLocalR7(meanR7, hdgB, 0, amp7);
+        // 锚点 = 最近一次北带中心（折向点/最北处之北），只累权重 → 单个 E–W 椭圆
+        this.band.w += w;
+        this.band.lat = (r7N + NORTH_RIDGE_MID) * this.band.w;
+        this.band.lon = storm.lon * this.band.w;
+        this.band.sc = northBandScale(vmax) * this.band.w;
+      }
+    }
+    this._applyBand();
   };
 
   /** 从 track[0..endIdx] 重建累计（回看用） */
@@ -587,7 +691,7 @@
       let dt = (b.t != null && a.t != null) ? (+b.t - +a.t) : 1;
       if (!(dt > 0)) dt = 1;
       // 用段末状态代表该小时
-      this.addStormHour(b, dt);
+      this.addTrackPoint(track, i, dt);
     }
   };
 
@@ -600,7 +704,7 @@
       { hex: 'rgba(245,140,25,0.9)', text: '50–100 mm' },
       { hex: 'rgba(150,50,210,0.9)', text: '100–250 mm' },
       { hex: 'rgba(220,35,40,0.92)', text: '250–400 mm' },
-      { hex: 'rgba(120,0,12,0.95)', text: '≥400 mm' }
+      { hex: '#7a0019', text: '≥400 mm' }
     ];
   }
 

@@ -1119,6 +1119,9 @@
 
   /** 图例：仅路径结束后显示「累计降水」mm 色阶 */
   function setRainLegendVisible(on) {
+    // 累计降水上图时山地层大幅淡化（仅留淡轮廓），避免棕色山地与深红混色
+    const mp = map.getPane('mountains');
+    if (mp) mp.style.opacity = on ? '0.28' : '';
     const sec = document.querySelectorAll('.legend-rain-sec');
     sec.forEach(function (el) { el.hidden = !on; });
     const box = document.getElementById('rainRateLegend');
@@ -1181,7 +1184,7 @@
     }
     const maxR = r7 * (1 + amp) * 1.25 + 1.0;
     const recurveN = R.isRecurvingNorth(G.motionHeadingRad(u, v));
-    const band = recurveN ? (R.NORTH_RIDGE_MID + 2.9) : 0; // 分离北带脊~4.8° + 熄灭裕量
+    const band = recurveN ? (R.NORTH_RIDGE_MID + 2.9) : 0; // 分离北带脊~3.6° + 熄灭裕量
     const cos = Math.max(0.25, Math.cos(storm.lat * Math.PI / 180));
     const lonPad = (maxR + 4 + (recurveN ? 3.8 : 0)) / cos;
     return {
@@ -1283,7 +1286,7 @@
       const b = track[i];
       let dt = (b.t != null && a.t != null) ? (+b.t - +a.t) : 1;
       if (!(dt > 0)) dt = 1;
-      rainState.accum.addStormHour(b, dt);
+      rainState.accum.addTrackPoint(track, i, dt);
     }
     rainState.trackSynced = track.length;
   }

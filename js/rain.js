@@ -427,7 +427,7 @@
     { max: 100, r: 245, g: 140, b: 25,  a: 175 },  // 50–100
     { max: 250, r: 150, g: 50,  b: 210, a: 180 },  // 100–250
     { max: 400, r: 220, g: 35, b: 40, a: 185 },     // 250–400
-    { max: Infinity, r: 122, g: 0, b: 25, a: 255 }  // ≥400 深红 #7a0019 不透明（仅台湾中央山脉高处迎风坡）
+    { max: Infinity, r: 110, g: 0, b: 70, a: 185 }  // ≥400 酒红品红 #6e0046 半透明（同红档 a=185；仅台湾中央山脉高处迎风坡）
   ];
 
   function colorForRate(mmh) {
@@ -704,7 +704,7 @@
       { hex: 'rgba(245,140,25,0.9)', text: '50–100 mm' },
       { hex: 'rgba(150,50,210,0.9)', text: '100–250 mm' },
       { hex: 'rgba(220,35,40,0.92)', text: '250–400 mm' },
-      { hex: '#7a0019', text: '≥400 mm' }
+      { hex: 'rgba(110,0,70,0.92)', text: '≥400 mm' }
     ];
   }
 
@@ -945,6 +945,24 @@
         data[p + 2] = c[2];
         data[p + 3] = c[3];
       }
+    }
+    // ≥400 深红区细描边（更深酒红，半透明 a=220）：与红档/淡山地分界更清楚
+    const top = ACCUM_BINS[ACCUM_BINS.length - 1];
+    const isDeep = function (q) {
+      return data[q] === top.r && data[q + 1] === top.g && data[q + 2] === top.b && data[q + 3] === top.a;
+    };
+    const edge = [];
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = (y * w + x) * 4;
+        if (!isDeep(p)) continue;
+        if ((x > 0 && !isDeep(p - 4)) || (x < w - 1 && !isDeep(p + 4)) ||
+          (y > 0 && !isDeep(p - w * 4)) || (y < h - 1 && !isDeep(p + w * 4))) edge.push(p);
+      }
+    }
+    for (let k = 0; k < edge.length; k++) {
+      const p = edge[k];
+      data[p] = 55; data[p + 1] = 0; data[p + 2] = 35; data[p + 3] = 220;
     }
     return imgData;
   }

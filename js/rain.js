@@ -136,9 +136,19 @@
    * 与主体壳软合并：南足仅绿/毛毛雨–浅蓝桥（≤~BRIDGE_CAP），重核（黄+）不连通。
    * 软门控，禁止硬 Math.max 并集轮廓角。
    */
+  /** 北带仅在折向北段（N/NNE）出现；航向偏东 >20° 起渐隐，≥40°（NE/ENE）完全消失 */
+  function northBandHeadingFade(headingRad) {
+    let h = +headingRad || 0;
+    h = Math.atan2(Math.sin(h), Math.cos(h)) * 180 / Math.PI;
+    if (h <= 20) return 1;
+    if (h >= 40) return 0;
+    const t = (h - 20) / 20;
+    return 1 - t * t * (3 - 2 * t);
+  }
+
   /** 北带椭圆半轴（1 mm/h 等值线，度）：十二级参考尺寸 = 02f/02g 中点 */
-  const NORTH_ELL_A = 7.0;
-  const NORTH_ELL_B = 0.62;
+  const NORTH_ELL_A = 3.3;
+  const NORTH_ELL_B = 1.3;
   /** 强度缩放：仅大小温和变化，形状（长宽比）恒定。32.7 m/s → 1.0 */
   function northBandScale(vmax) {
     const v = +vmax || 0;
@@ -152,6 +162,8 @@
    */
   function rainbandNorthMmH(lat, lon, stormLat, stormLon, r7NorthLat, headingRad, vmax) {
     if (!isRecurvingNorth(headingRad)) return 0;
+    const fade = northBandHeadingFade(headingRad);
+    if (fade <= 0) return 0;
     const sc = northBandScale(vmax);
     const dy = (lat - r7NorthLat) - NORTH_RIDGE_MID;
     const cosLat = Math.cos(stormLat * Math.PI / 180);
@@ -160,7 +172,7 @@
     const eb = NORTH_ELL_B * sc;
     const d2 = (dx / ea) * (dx / ea) + (dy / eb) * (dy / eb);
     if (d2 > 2.25) return 0;
-    let band = NORTH_BAND_PEAK * Math.exp(-2.302585 * d2);
+    let band = NORTH_BAND_PEAK * fade * Math.exp(-2.302585 * d2);
     if (lat - r7NorthLat < NORTH_RIDGE_MID - 1.225 && band > NORTH_BRIDGE_CAP) band = NORTH_BRIDGE_CAP;
     return band;
   }
@@ -360,6 +372,7 @@
     let mtn = mountainSideFactor(lon, lat, lon0, lat0, grid);
     if (coreW > 0 && mtn < 1) mtn = mtn + (1 - mtn) * coreW;
     rate *= mtn;
+    if (opts && opts.out) opts.out.mtn = mtn;
 
     if (rate < 0.15) return 0;
     return rate;
@@ -386,7 +399,8 @@
     { max: 50,  r: 245, g: 215, b: 30,  a: 168 },  // 25–50
     { max: 100, r: 245, g: 140, b: 25,  a: 175 },  // 50–100
     { max: 250, r: 150, g: 50,  b: 210, a: 180 },  // 100–250
-    { max: Infinity, r: 220, g: 35, b: 40, a: 185 } // ≥250
+    { max: 400, r: 220, g: 35, b: 40, a: 185 },     // 250–400
+    { max: Infinity, r: 120, g: 0, b: 12, a: 205 }  // ≥400 深红（仅台湾中央山脉迎风坡）
   ];
 
   function colorForRate(mmh) {
@@ -435,6 +449,30 @@
   }
 
   /**
+   * 累计显示值（mm）：普通海面/平地/其它山地软饱和，渐近 ~380（<400 深红阈值）；
+   * 仅台湾中央山脉（含东岸迎风麓）且迎风增幅明显时额外抬升，才可能 ≥400 深红。
+   * <120 mm 恒等，不改低档分布。
+   */
+  const ACCUM_SOFT_KNEE = 120;
+  const ACCUM_SOFT_SPAN = 260; // 渐近 = KNEE + SPAN = 380
+  function accumSoft(x) {
+    if (x <= ACCUM_SOFT_KNEE) return x;
+    return ACCUM_SOFT_KNEE + ACCUM_SOFT_SPAN * (1 - Math.exp(-(x - ACCUM_SOFT_KNEE) / ACCUM_SOFT_SPAN));
+  }
+  function inTaiwanCmrBox(lat, lon) {
+    return lon >= 120.4 && lon <= 122.05 && lat >= 21.9 && lat <= 25.35;
+  }
+  function accumDisplayMm(raw, flat, lat, lon) {
+    let v = accumSoft(raw);
+    if (inTaiwanCmrBox(lat, lon) && flat > 1e-6) {
+      const ratio = raw / flat; // 迎风 >1（最高 ~5），背风 <1
+      const w = clamp01((ratio - 1.3) / 1.7);
+      v *= 1 + 0.7 * w;
+    }
+    return v;
+  }
+
+  /**
    * 累计格点：覆盖 DOMAIN，分辨率 deg。
    * 连续填色靠细格 + canvas 拉伸，避免 coarse tile 块感。
    */
@@ -445,6 +483,8 @@
     this.nlon = Math.ceil((G.DOMAIN.lonMax - G.DOMAIN.lonMin) / this.deg) + 1;
     this.nlat = Math.ceil((G.DOMAIN.latMax - G.DOMAIN.latMin) / this.deg) + 1;
     this.data = new Float32Array(this.nlon * this.nlat);
+    this.raw = new Float32Array(this.nlon * this.nlat);  // 含山地调制原始累计
+    this.flat = new Float32Array(this.nlon * this.nlat); // 去山地调制累计
     this.mtn = null; // Int8: 0 sea/plain, 1 windward-ish cache unused; bitmask mountain
     this._mtnReady = false;
     this.maxVal = 0;
@@ -457,6 +497,8 @@
 
   AccumGrid.prototype.clear = function () {
     this.data.fill(0);
+    if (this.raw) this.raw.fill(0);
+    if (this.flat) this.flat.fill(0);
     this.maxVal = 0;
     this.hoursIntegrated = 0;
   };
@@ -514,15 +556,19 @@
       v: storm.v
     };
 
+    const out = { mtn: 1 };
+    const opt = { grid: this, out: out };
     for (let j = j0; j <= j1; j++) {
       const lat = this.lat0 + j * this.deg;
       for (let i = i0; i <= i1; i++) {
         const lon = this.lon0 + i * this.deg;
-        const rate = rainRateAt(lat, lon, s, { grid: this });
+        out.mtn = 1;
+        const rate = rainRateAt(lat, lon, s, opt);
         if (rate <= 0) continue;
         const k = this.idx(i, j);
-        const add = rate * dtHours;
-        const nv = this.data[k] + add;
+        this.raw[k] += rate * dtHours;
+        this.flat[k] += rate / Math.max(0.05, out.mtn) * dtHours;
+        const nv = accumDisplayMm(this.raw[k], this.flat[k], lat, lon);
         this.data[k] = nv;
         if (nv > this.maxVal) this.maxVal = nv;
       }
@@ -553,7 +599,8 @@
       { hex: 'rgba(245,215,30,0.88)', text: '25–50 mm' },
       { hex: 'rgba(245,140,25,0.9)', text: '50–100 mm' },
       { hex: 'rgba(150,50,210,0.9)', text: '100–250 mm' },
-      { hex: 'rgba(220,35,40,0.92)', text: '≥250 mm' }
+      { hex: 'rgba(220,35,40,0.92)', text: '250–400 mm' },
+      { hex: 'rgba(120,0,12,0.95)', text: '≥400 mm' }
     ];
   }
 

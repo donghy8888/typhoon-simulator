@@ -541,6 +541,31 @@
   const NORTH_BAND_ACCUM_HOURS = 4;
   /** 累计北带椭圆轴放大（可见 ≥1.5 mm 面积取旧/新几何平均） */
   const NORTH_BAND_ACCUM_SIZE = 1.29;
+  /**
+   * 累计北带线尺度 vs 北带活跃期峰值强度（相对十二级 33 m/s = 1）：
+   * 八级18→0.75、十级25→0.85、十二级33→1、十四级43→1.15、十七级57+→1.3；夹 0.7–1.35。
+   */
+  /** 大台风北带中心北移系数（°/单位尺度增量）；scale 1.3 → +K·0.3° */
+  const NORTH_BAND_BIG_SHIFT = 2.0;
+  const NB_SCALE_PTS = [[18, 0.75], [25, 0.85], [33, 1.0], [43, 1.15], [57, 1.3]];
+  function northBandAccumScale(vmax) {
+    const v = +vmax || 33;
+    const P = NB_SCALE_PTS;
+    let f;
+    if (v <= P[0][0]) f = P[0][1] - (P[0][0] - v) * (0.1 / 7);
+    else if (v >= P[P.length - 1][0]) f = P[P.length - 1][1];
+    else {
+      for (let i = 0; i < P.length - 1; i++) {
+        if (v <= P[i + 1][0]) {
+          const t = (v - P[i][0]) / (P[i + 1][0] - P[i][0]);
+          const s = t * t * (3 - 2 * t);
+          f = P[i][1] + (P[i + 1][1] - P[i][1]) * (0.5 * t + 0.5 * s);
+          break;
+        }
+      }
+    }
+    return Math.max(0.7, Math.min(1.35, f));
+  }
 
   /**
    * 北带在累计图里只画一次：以最近一次北带中心（折向点附近）为锚点，画单个 E–W 椭圆
@@ -564,10 +589,12 @@
     this.bandBox = null;
     const b = this.band;
     if (!(b.w > 1e-6)) return;
-    const cLat = b.lat / b.w, cLon = b.lon / b.w, sc = b.sc / b.w;
+    const scV = northBandAccumScale(b.vpk || 33);
+    // 大台风北带更大：中心仅按放大量略北移，保持与主雨分离（十二级及以下仍 3.6°）
+    const cLat = b.lat / b.w + NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1), cLon = b.lon / b.w, sc = b.sc / b.w;
     // 累计图可见面积 = 旧逐小时(j)与单次锚定(l)的几何平均 → 轴长 ×1.29；
     // 峰值固定（只要北带出现过 ≥0.5 h），不随移速/持续时数忽大忽小；强度只轻微缩放
-    const scA = 1 + (sc - 1) * 0.4;
+    const scA = scV;
     const ea = NORTH_ELL_A * NORTH_BAND_ACCUM_SIZE * scA, eb = NORTH_ELL_B * NORTH_BAND_ACCUM_SIZE * scA;
     const cos = Math.max(0.2, Math.cos(cLat * Math.PI / 180));
     if (b.w < 0.5) { this.bandBox = null; return; }
@@ -681,6 +708,7 @@
         this.band.lat = (r7N + NORTH_RIDGE_MID) * this.band.w;
         this.band.lon = storm.lon * this.band.w;
         this.band.sc = northBandScale(vmax) * this.band.w;
+        this.band.vpk = Math.max(this.band.vpk || 0, vmax);
       }
     }
     this._applyBand();

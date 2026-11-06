@@ -519,7 +519,8 @@
     this._mtnReady = false;
     this.maxVal = 0;
     this.hoursIntegrated = 0;
-    this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0 }; // 北带锚定
+    this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0, vpk: 0 }; // 北带权重/诊断
+    this.bandAcc = new Float32Array(this.nlon * this.nlat); // 北带逐小时累计（与 raw 分离）
     this.bandBox = null;
   }
 
@@ -531,20 +532,26 @@
     this.data.fill(0);
     if (this.raw) this.raw.fill(0);
     if (this.flat) this.flat.fill(0);
+    if (this.bandAcc) this.bandAcc.fill(0);
+    else this.bandAcc = new Float32Array(this.nlon * this.nlat);
     this.maxVal = 0;
     this.hoursIntegrated = 0;
-    this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0 };
+    this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0, vpk: 0 };
     this.bandBox = null;
   };
 
-  /** 北带累计封顶小时数：10 mm/h × 4 h ≈ 40 mm（黄档内，仍是「弱」带） */
-  const NORTH_BAND_ACCUM_HOURS = 4;
-  /** 累计北带椭圆轴放大（可见 ≥1.5 mm 面积取旧/新几何平均） */
-  const NORTH_BAND_ACCUM_SIZE = 1.29;
   /**
-   * 累计北带线尺度 vs 北带活跃期峰值强度（相对十二级 33 m/s = 1）：
-   * 八级18→0.75、十级25→0.85、十二级33→1、十四级43→1.15、十七级57+→1.3；夹 0.7–1.35。
+   * 累计北带：逐小时沿「当时」R7 北缘 + NORTH_RIDGE_MID 落薄 E–W 椭圆，路过处留下雨痕。
+   * 每小时南北更薄、雨强更低 → 1–2 日北上段仍读作东西向拉长的浅迹；平地峰值软封 ~40 mm。
+   * 线尺度随强度（northBandAccumScale）；大台风中心略北移保持与主雨分离。
    */
+  /** 累计单小时中心雨强 mm/h（×fade×地形）；低于瞬时 NORTH_BAND_PEAK，避免拖条过重 */
+  const NORTH_BAND_ACCUM_RATE = 9.5;
+  /** 累计椭圆相对瞬时轴：东西略放大、南北明显压薄 */
+  const NORTH_BAND_ACCUM_EW = 1.15;
+  const NORTH_BAND_ACCUM_NS = 0.55;
+  /** 平地北带单格软封顶（~40 mm 量级）；地形可再抬，非台湾仍 <300 */
+  const NORTH_BAND_FLAT_CAP = 42;
   /** 大台风北带中心北移系数（°/单位尺度增量）；scale 1.3 → +K·0.3° */
   const NORTH_BAND_BIG_SHIFT = 2.0;
   const NB_SCALE_PTS = [[18, 0.75], [25, 0.85], [33, 1.0], [43, 1.15], [57, 1.3]];
@@ -557,9 +564,9 @@
     else {
       for (let i = 0; i < P.length - 1; i++) {
         if (v <= P[i + 1][0]) {
-          const t = (v - P[i][0]) / (P[i + 1][0] - P[i][0]);
-          const s = t * t * (3 - 2 * t);
-          f = P[i][1] + (P[i + 1][1] - P[i][1]) * (0.5 * t + 0.5 * s);
+          const tt = (v - P[i][0]) / (P[i + 1][0] - P[i][0]);
+          const s = tt * tt * (3 - 2 * tt);
+          f = P[i][1] + (P[i + 1][1] - P[i][1]) * (0.5 * tt + 0.5 * s);
           break;
         }
       }
@@ -568,57 +575,84 @@
   }
 
   /**
-   * 北带在累计图里只画一次：以北带活跃期中心加权平均为锚点，画单个 E–W 椭圆
-   * （逐小时沿北上路径叠加会拖成南北长条）。
+   * 北带逐小时沉积：中心跟随当前风暴北侧偏移；航向 fade（≤20°=1，≥40°=0）。
+   * 写入 bandAcc，再合成到 data（主雨每小时会重写 data，故 band 必须独立累加）。
+   * 测试可通过 stub 本方法禁用北带。
    */
-  AccumGrid.prototype._applyBand = function () {
+  AccumGrid.prototype._applyBand = function (storm, dtHours, meanR7, amp7, hdg) {
+    if (!storm || !(dtHours > 0)) return;
+    const fade = northBandHeadingFade(hdg);
+    if (fade <= 0 || !isRecurvingNorth(hdg)) return;
+    const vmax = +storm.vmax || 33;
+    const scV = northBandAccumScale(vmax);
+    const r7N = storm.lat + rainLocalR7(meanR7, hdg, 0, amp7);
+    // 大台风略北移，保持与主雨断开
+    const cLat = r7N + NORTH_RIDGE_MID + NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1);
+    const cLon = storm.lon;
+    const ea = NORTH_ELL_A * NORTH_BAND_ACCUM_EW * scV;
+    const eb = NORTH_ELL_B * NORTH_BAND_ACCUM_NS * scV;
+    const cos = Math.max(0.2, Math.cos(cLat * Math.PI / 180));
+    const box = {
+      latMin: cLat - 1.5 * eb,
+      latMax: cLat + 1.5 * eb,
+      lonMin: cLon - 1.5 * ea / cos,
+      lonMax: cLon + 1.5 * ea / cos
+    };
+    if (!this.bandAcc) this.bandAcc = new Float32Array(this.nlon * this.nlat);
+    this.ensureMountainMask();
     const self = this;
-    function each(box, fn) {
-      if (!box) return;
-      const i0 = Math.max(0, Math.floor((box.lonMin - self.lon0) / self.deg));
-      const i1 = Math.min(self.nlon - 1, Math.ceil((box.lonMax - self.lon0) / self.deg));
-      const j0 = Math.max(0, Math.floor((box.latMin - self.lat0) / self.deg));
-      const j1 = Math.min(self.nlat - 1, Math.ceil((box.latMax - self.lat0) / self.deg));
-      for (let j = j0; j <= j1; j++) {
-        for (let i = i0; i <= i1; i++) fn(i, j, self.idx(i, j), self.lat0 + j * self.deg, self.lon0 + i * self.deg);
+    const amp = NORTH_BAND_ACCUM_RATE * fade * dtHours;
+    const sLat = storm.lat, sLon = storm.lon;
+    const i0 = Math.max(0, Math.floor((box.lonMin - self.lon0) / self.deg));
+    const i1 = Math.min(self.nlon - 1, Math.ceil((box.lonMax - self.lon0) / self.deg));
+    const j0 = Math.max(0, Math.floor((box.latMin - self.lat0) / self.deg));
+    const j1 = Math.min(self.nlat - 1, Math.ceil((box.latMax - self.lat0) / self.deg));
+    for (let j = j0; j <= j1; j++) {
+      const lat = self.lat0 + j * self.deg;
+      for (let i = i0; i <= i1; i++) {
+        const lon = self.lon0 + i * self.deg;
+        const dx = (lon - cLon) * cos, dy = lat - cLat;
+        // 靠风暴一侧（南足）更薄，保持与主雨断开；北侧用全 eb
+        const ebUse = dy < 0 ? eb * 0.62 : eb;
+        const d2 = (dx / ea) * (dx / ea) + (dy / ebUse) * (dy / ebUse);
+        if (d2 > 2.25) continue;
+        let add = amp * Math.exp(-2.302585 * d2);
+        // 轻雨桥：靠近 R7 北缘的南足封顶，避免与主核黄+相连
+        if (lat < r7N + NORTH_RIDGE_MID * 0.55 && add > NORTH_BRIDGE_CAP * dtHours * 0.5)
+          add = NORTH_BRIDGE_CAP * dtHours * 0.5;
+        const mtn = mountainSideFactor(lon, lat, sLon, sLat, self);
+        add *= mtn;
+        const k = self.idx(i, j);
+        let nv = self.bandAcc[k] + add;
+        // 平地硬封 ~40 mm；迎风地形可抬，非台湾硬顶 <300
+        if (mtn <= 1.05 && nv > NORTH_BAND_FLAT_CAP) nv = NORTH_BAND_FLAT_CAP;
+        if (!inTaiwanCmrBox(lat, lon) && nv > 299) nv = 299;
+        self.bandAcc[k] = nv;
+        const main = self.raw[k] > 0 ? accumDisplayMm(self.raw[k], self.flat[k], lat, lon) : 0;
+        let shown = main + nv;
+        if (!inTaiwanCmrBox(lat, lon) && shown >= 400) shown = 399;
+        self.data[k] = shown;
+        if (shown > self.maxVal) self.maxVal = shown;
       }
     }
-    each(this.bandBox, function (i, j, k, lat, lon) {
-      self.data[k] = self.raw[k] > 0 ? accumDisplayMm(self.raw[k], self.flat[k], lat, lon) : 0;
-    });
-    this.bandBox = null;
-    const b = this.band;
-    if (!(b.w > 1e-6)) return;
-    const scV = northBandAccumScale(b.vpk || 33);
-    const posW = b.posW > 0 ? b.posW : b.w;
-    // 大台风北带更大：中心仅按放大量略北移，保持与主雨分离（十二级及以下仍 3.6°）
-    const cLat = b.lat / posW + NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1), cLon = b.lon / posW, sc = b.sc / b.w;
-    // 累计图可见面积 = 旧逐小时(j)与单次锚定(l)的几何平均 → 轴长 ×1.29；
-    // 峰值固定（只要北带出现过 ≥0.5 h），不随移速/持续时数忽大忽小；强度只轻微缩放
-    const scA = scV;
-    const ea = NORTH_ELL_A * NORTH_BAND_ACCUM_SIZE * scA, eb = NORTH_ELL_B * NORTH_BAND_ACCUM_SIZE * scA;
-    const cos = Math.max(0.2, Math.cos(cLat * Math.PI / 180));
-    if (b.w < 0.5) { this.bandBox = null; return; }
-    const amp = NORTH_BAND_PEAK * NORTH_BAND_ACCUM_HOURS;
-    const box = { latMin: cLat - 1.5 * eb, latMax: cLat + 1.5 * eb, lonMin: cLon - 1.5 * ea / cos, lonMax: cLon + 1.5 * ea / cos };
-    // 与主雨同一套 mountainSideFactor：迎风抬升、背风抑制；平地/海面不变
-    // 非台湾：单格北带贡献封顶 <300（红档下沿），深红仅台湾中央山脉
-    const sLat = (b.sW > 0) ? (b.sLat / b.sW) : (cLat - NORTH_RIDGE_MID - 2.5);
-    const sLon = (b.sW > 0) ? (b.sLon / b.sW) : cLon;
-    self.ensureMountainMask();
-    each(box, function (i, j, k, lat, lon) {
-      const dx = (lon - cLon) * cos, dy = lat - cLat;
-      const d2 = (dx / ea) * (dx / ea) + (dy / eb) * (dy / eb);
-      if (d2 > 2.25) return;
-      let add = amp * Math.exp(-2.302585 * d2);
-      const mtn = mountainSideFactor(lon, lat, sLon, sLat, self);
-      add *= mtn;
-      if (!inTaiwanCmrBox(lat, lon) && add > 299) add = 299;
-      self.data[k] += add;
-      if (!inTaiwanCmrBox(lat, lon) && self.data[k] >= 400) self.data[k] = 399;
-      if (self.data[k] > self.maxVal) self.maxVal = self.data[k];
-    });
-    this.bandBox = box;
+    // 诊断：活跃权重与路径积分中心
+    const w = fade * dtHours;
+    this.band.w += w;
+    this.band.vpk = Math.max(this.band.vpk || 0, vmax);
+    this.band.lat += w * cLat;
+    this.band.lon += w * cLon;
+    this.band.sc += w * scV;
+    this.band.posW = (this.band.posW || 0) + w;
+    this.band.sLat = (this.band.sLat || 0) + w * sLat;
+    this.band.sLon = (this.band.sLon || 0) + w * sLon;
+    this.band.sW = (this.band.sW || 0) + w;
+    if (!this.bandBox) this.bandBox = box;
+    else {
+      this.bandBox.latMin = Math.min(this.bandBox.latMin, box.latMin);
+      this.bandBox.latMax = Math.max(this.bandBox.latMax, box.latMax);
+      this.bandBox.lonMin = Math.min(this.bandBox.lonMin, box.lonMin);
+      this.bandBox.lonMax = Math.max(this.bandBox.lonMax, box.lonMax);
+    }
   };
 
   /** 用与风圈相同的路径移向 UV（windMotionUVFromTrack）累加 track[i] 这一段 */
@@ -667,7 +701,7 @@
     const meanR7 = rainFootprintRadii(vmax).meanR7;
     const maxR = meanR7 * (1 + amp7) * 0.72 + 0.05;
     const recurveN = isRecurvingNorth(G.motionHeadingRad(u, v));
-    const bandExtra = recurveN ? (NORTH_RIDGE_MID + 1.5 * NORTH_ELL_B * 1.15 + 0.1) : 0; // 椭圆北带最大外缘
+    const bandExtra = recurveN ? (NORTH_RIDGE_MID + NORTH_BAND_BIG_SHIFT * 0.35 + 1.5 * NORTH_ELL_B * NORTH_BAND_ACCUM_NS * 1.35 + 0.15) : 0; // 累计薄北带外缘
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
     const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
@@ -702,46 +736,17 @@
         this.raw[k] += rate * dtHours;
         this.flat[k] += rate / Math.max(0.05, out.mtn) * dtHours;
         const nv = accumDisplayMm(this.raw[k], this.flat[k], lat, lon);
-        this.data[k] = nv;
-        if (nv > this.maxVal) this.maxVal = nv;
+        const bAdd = this.bandAcc ? this.bandAcc[k] : 0;
+        let shown = nv + bAdd;
+        if (!inTaiwanCmrBox(lat, lon) && shown >= 400) shown = 399;
+        this.data[k] = shown;
+        if (shown > this.maxVal) this.maxVal = shown;
       }
     }
     this.hoursIntegrated += dtHours;
-    // 北带：只记锚点权重，不逐小时铺（防南北拖条）
+    // 北带：逐小时在当前偏移位置沉积（fade 管折向后消失，避免 ENE 北侧大瓣）
     const hdgB = G.motionHeadingRad(u, v);
-    if (isRecurvingNorth(hdgB)) {
-      const fade = northBandHeadingFade(hdgB);
-      if (fade > 0) {
-        const w = fade * dtHours;
-        const r7N = storm.lat + rainLocalR7(meanR7, hdgB, 0, amp7);
-        // 锚点：航向 ≤20°（fade=1）时加权平均；>20° 起只累权重/强度、冻结位置
-        // （避免 NNE→ENE 末段把椭圆拖到 ENE 路径北侧造成北偏）
-        this.band.w += w;
-        this.band.vpk = Math.max(this.band.vpk || 0, vmax);
-        if (fade >= 0.999) {
-          this.band.lat += w * (r7N + NORTH_RIDGE_MID);
-          this.band.lon += w * storm.lon;
-          this.band.sc += w * northBandScale(vmax);
-          this.band.posW = (this.band.posW || 0) + w;
-          this.band.sLat = (this.band.sLat || 0) + w * storm.lat;
-          this.band.sLon = (this.band.sLon || 0) + w * storm.lon;
-          this.band.sW = (this.band.sW || 0) + w;
-        } else if (!(this.band.posW > 0)) {
-          // 从未有过满 fade：仍写入，避免空锚
-          this.band.lat += w * (r7N + NORTH_RIDGE_MID);
-          this.band.lon += w * storm.lon;
-          this.band.sc += w * northBandScale(vmax);
-          this.band.posW = (this.band.posW || 0) + w;
-          this.band.sLat = (this.band.sLat || 0) + w * storm.lat;
-          this.band.sLon = (this.band.sLon || 0) + w * storm.lon;
-          this.band.sW = (this.band.sW || 0) + w;
-        } else {
-          // 位置已冻：强度尺度仍可微更
-          this.band.sc += w * northBandScale(vmax);
-        }
-      }
-    }
-    this._applyBand();
+    this._applyBand(storm, dtHours, meanR7, amp7, hdgB);
   };
 
   /** 从 track[0..endIdx] 重建累计（回看用） */

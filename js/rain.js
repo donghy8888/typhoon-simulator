@@ -427,7 +427,7 @@
     { max: 100, r: 245, g: 140, b: 25,  a: 175 },  // 50–100
     { max: 250, r: 150, g: 50,  b: 210, a: 180 },  // 100–250
     { max: 400, r: 220, g: 35, b: 40, a: 185 },     // 250–400
-    { max: Infinity, r: 110, g: 0, b: 70, a: 185 }  // ≥400 酒红品红 #6e0046 半透明（同红档 a=185；仅台湾中央山脉高处迎风坡）
+    { max: Infinity, r: 200, g: 20, b: 110, a: 175 }  // ≥400 亮品红绯红 #c8146e 半透明（仅台湾中央山脉高处迎风坡）
   ];
 
   function colorForRate(mmh) {
@@ -519,7 +519,7 @@
     this._mtnReady = false;
     this.maxVal = 0;
     this.hoursIntegrated = 0;
-    this.band = { w: 0, lat: 0, lon: 0, sc: 0 }; // 北带锚定：fade·h 加权中心
+    this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0 }; // 北带锚定
     this.bandBox = null;
   }
 
@@ -533,7 +533,7 @@
     if (this.flat) this.flat.fill(0);
     this.maxVal = 0;
     this.hoursIntegrated = 0;
-    this.band = { w: 0, lat: 0, lon: 0, sc: 0 };
+    this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0 };
     this.bandBox = null;
   };
 
@@ -568,7 +568,7 @@
   }
 
   /**
-   * 北带在累计图里只画一次：以最近一次北带中心（折向点附近）为锚点，画单个 E–W 椭圆
+   * 北带在累计图里只画一次：以北带活跃期中心加权平均为锚点，画单个 E–W 椭圆
    * （逐小时沿北上路径叠加会拖成南北长条）。
    */
   AccumGrid.prototype._applyBand = function () {
@@ -590,8 +590,9 @@
     const b = this.band;
     if (!(b.w > 1e-6)) return;
     const scV = northBandAccumScale(b.vpk || 33);
+    const posW = b.posW > 0 ? b.posW : b.w;
     // 大台风北带更大：中心仅按放大量略北移，保持与主雨分离（十二级及以下仍 3.6°）
-    const cLat = b.lat / b.w + NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1), cLon = b.lon / b.w, sc = b.sc / b.w;
+    const cLat = b.lat / posW + NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1), cLon = b.lon / posW, sc = b.sc / b.w;
     // 累计图可见面积 = 旧逐小时(j)与单次锚定(l)的几何平均 → 轴长 ×1.29；
     // 峰值固定（只要北带出现过 ≥0.5 h），不随移速/持续时数忽大忽小；强度只轻微缩放
     const scA = scV;
@@ -600,11 +601,21 @@
     if (b.w < 0.5) { this.bandBox = null; return; }
     const amp = NORTH_BAND_PEAK * NORTH_BAND_ACCUM_HOURS;
     const box = { latMin: cLat - 1.5 * eb, latMax: cLat + 1.5 * eb, lonMin: cLon - 1.5 * ea / cos, lonMax: cLon + 1.5 * ea / cos };
+    // 与主雨同一套 mountainSideFactor：迎风抬升、背风抑制；平地/海面不变
+    // 非台湾：单格北带贡献封顶 <250（红档下沿），深红仅台湾中央山脉
+    const sLat = (b.sW > 0) ? (b.sLat / b.sW) : (cLat - NORTH_RIDGE_MID - 2.5);
+    const sLon = (b.sW > 0) ? (b.sLon / b.sW) : cLon;
+    self.ensureMountainMask();
     each(box, function (i, j, k, lat, lon) {
       const dx = (lon - cLon) * cos, dy = lat - cLat;
       const d2 = (dx / ea) * (dx / ea) + (dy / eb) * (dy / eb);
       if (d2 > 2.25) return;
-      self.data[k] += amp * Math.exp(-2.302585 * d2);
+      let add = amp * Math.exp(-2.302585 * d2);
+      const mtn = mountainSideFactor(lon, lat, sLon, sLat, self);
+      add *= mtn;
+      if (!inTaiwanCmrBox(lat, lon) && add > 249) add = 249;
+      self.data[k] += add;
+      if (!inTaiwanCmrBox(lat, lon) && self.data[k] >= 400) self.data[k] = 399;
       if (self.data[k] > self.maxVal) self.maxVal = self.data[k];
     });
     this.bandBox = box;
@@ -703,12 +714,31 @@
       if (fade > 0) {
         const w = fade * dtHours;
         const r7N = storm.lat + rainLocalR7(meanR7, hdgB, 0, amp7);
-        // 锚点 = 最近一次北带中心（折向点/最北处之北），只累权重 → 单个 E–W 椭圆
+        // 锚点：航向 ≤20°（fade=1）时加权平均；>20° 起只累权重/强度、冻结位置
+        // （避免 NNE→ENE 末段把椭圆拖到 ENE 路径北侧造成北偏）
         this.band.w += w;
-        this.band.lat = (r7N + NORTH_RIDGE_MID) * this.band.w;
-        this.band.lon = storm.lon * this.band.w;
-        this.band.sc = northBandScale(vmax) * this.band.w;
         this.band.vpk = Math.max(this.band.vpk || 0, vmax);
+        if (fade >= 0.999) {
+          this.band.lat += w * (r7N + NORTH_RIDGE_MID);
+          this.band.lon += w * storm.lon;
+          this.band.sc += w * northBandScale(vmax);
+          this.band.posW = (this.band.posW || 0) + w;
+          this.band.sLat = (this.band.sLat || 0) + w * storm.lat;
+          this.band.sLon = (this.band.sLon || 0) + w * storm.lon;
+          this.band.sW = (this.band.sW || 0) + w;
+        } else if (!(this.band.posW > 0)) {
+          // 从未有过满 fade：仍写入，避免空锚
+          this.band.lat += w * (r7N + NORTH_RIDGE_MID);
+          this.band.lon += w * storm.lon;
+          this.band.sc += w * northBandScale(vmax);
+          this.band.posW = (this.band.posW || 0) + w;
+          this.band.sLat = (this.band.sLat || 0) + w * storm.lat;
+          this.band.sLon = (this.band.sLon || 0) + w * storm.lon;
+          this.band.sW = (this.band.sW || 0) + w;
+        } else {
+          // 位置已冻：强度尺度仍可微更
+          this.band.sc += w * northBandScale(vmax);
+        }
       }
     }
     this._applyBand();
@@ -738,7 +768,7 @@
       { hex: 'rgba(245,140,25,0.9)', text: '50–100 mm' },
       { hex: 'rgba(150,50,210,0.9)', text: '100–250 mm' },
       { hex: 'rgba(220,35,40,0.92)', text: '250–400 mm' },
-      { hex: 'rgba(110,0,70,0.92)', text: '≥400 mm' }
+      { hex: 'rgba(200,20,110,0.9)', text: '≥400 mm' }
     ];
   }
 
@@ -996,7 +1026,7 @@
     }
     for (let k = 0; k < edge.length; k++) {
       const p = edge[k];
-      data[p] = 55; data[p + 1] = 0; data[p + 2] = 35; data[p + 3] = 220;
+      data[p] = 140; data[p + 1] = 0; data[p + 2] = 70; data[p + 3] = 200;
     }
     return imgData;
   }

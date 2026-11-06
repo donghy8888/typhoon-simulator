@@ -423,10 +423,10 @@
   const ACCUM_BINS = [
     { max: 10,  r: 70,  g: 200, b: 90,  a: 150 },  // <10
     { max: 25,  r: 50,  g: 120, b: 230, a: 160 },  // 10–25
-    { max: 50,  r: 245, g: 215, b: 30,  a: 168 },  // 25–50
-    { max: 100, r: 245, g: 140, b: 25,  a: 175 },  // 50–100
-    { max: 250, r: 150, g: 50,  b: 210, a: 180 },  // 100–250
-    { max: 400, r: 220, g: 35, b: 40, a: 185 },     // 250–400
+    { max: 100, r: 245, g: 215, b: 30,  a: 168 },  // 25–100
+    { max: 150, r: 245, g: 140, b: 25,  a: 175 },  // 100–150
+    { max: 300, r: 150, g: 50,  b: 210, a: 180 },  // 150–300
+    { max: 400, r: 220, g: 35, b: 40, a: 185 },     // 300–400
     { max: Infinity, r: 200, g: 20, b: 110, a: 175 }  // ≥400 亮品红绯红 #c8146e 半透明（仅台湾中央山脉高处迎风坡）
   ];
 
@@ -602,7 +602,7 @@
     const amp = NORTH_BAND_PEAK * NORTH_BAND_ACCUM_HOURS;
     const box = { latMin: cLat - 1.5 * eb, latMax: cLat + 1.5 * eb, lonMin: cLon - 1.5 * ea / cos, lonMax: cLon + 1.5 * ea / cos };
     // 与主雨同一套 mountainSideFactor：迎风抬升、背风抑制；平地/海面不变
-    // 非台湾：单格北带贡献封顶 <250（红档下沿），深红仅台湾中央山脉
+    // 非台湾：单格北带贡献封顶 <300（红档下沿），深红仅台湾中央山脉
     const sLat = (b.sW > 0) ? (b.sLat / b.sW) : (cLat - NORTH_RIDGE_MID - 2.5);
     const sLon = (b.sW > 0) ? (b.sLon / b.sW) : cLon;
     self.ensureMountainMask();
@@ -613,7 +613,7 @@
       let add = amp * Math.exp(-2.302585 * d2);
       const mtn = mountainSideFactor(lon, lat, sLon, sLat, self);
       add *= mtn;
-      if (!inTaiwanCmrBox(lat, lon) && add > 249) add = 249;
+      if (!inTaiwanCmrBox(lat, lon) && add > 299) add = 299;
       self.data[k] += add;
       if (!inTaiwanCmrBox(lat, lon) && self.data[k] >= 400) self.data[k] = 399;
       if (self.data[k] > self.maxVal) self.maxVal = self.data[k];
@@ -764,10 +764,10 @@
     return [
       { hex: 'rgba(70,200,90,0.85)', text: '<10 mm' },
       { hex: 'rgba(50,120,230,0.85)', text: '10–25 mm' },
-      { hex: 'rgba(245,215,30,0.88)', text: '25–50 mm' },
-      { hex: 'rgba(245,140,25,0.9)', text: '50–100 mm' },
-      { hex: 'rgba(150,50,210,0.9)', text: '100–250 mm' },
-      { hex: 'rgba(220,35,40,0.92)', text: '250–400 mm' },
+      { hex: 'rgba(245,215,30,0.88)', text: '25–100 mm' },
+      { hex: 'rgba(245,140,25,0.9)', text: '100–150 mm' },
+      { hex: 'rgba(150,50,210,0.9)', text: '150–300 mm' },
+      { hex: 'rgba(220,35,40,0.92)', text: '300–400 mm' },
       { hex: 'rgba(200,20,110,0.9)', text: '≥400 mm' }
     ];
   }

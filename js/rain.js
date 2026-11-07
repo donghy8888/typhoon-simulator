@@ -585,6 +585,9 @@
     // 转向后：一旦航向 ≥40°（东北）即永久关闭；转向开始（fade<1）冻结纬度，不再随风暴北移
     let hDeg = Math.atan2(Math.sin(+hdg || 0), Math.cos(+hdg || 0)) * 180 / Math.PI;
     if (this.bandFrozenLat != null && hDeg >= 40) this.bandOff = true;
+    // 一转向（航向 >20°，风圈峰向离开正东）即关北带：不做 20–40° 渐隐，免得北侧残留慢慢拖移，
+    // 雨从落下起就只按当时风圈非对称（大风侧）分布
+    if (hDeg > 20 && hDeg < 135) { this.bandOff = true; if (this.bandFrozenLat == null) this.bandFrozenLat = this.bandLastLat; }
     const fade = this.bandOff ? 0 : northBandHeadingFade(hdg);
     if (this.bandLog) this.bandLog.push({ lat: storm.lat, h: hDeg, fade: fade, cLat: null });
     if (fade <= 0 || !isRecurvingNorth(hdg)) return;

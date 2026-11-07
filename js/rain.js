@@ -538,7 +538,7 @@
     this.hoursIntegrated = 0;
     this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0, vpk: 0 };
     this.bandBox = null;
-    this.bandOffR7 = null; this.bandOffShift = null; this.bandOffLog = [];
+    this.bandFrozenLat = null; this.bandOff = false; this.bandLog = [];
   };
 
   /**
@@ -555,8 +555,6 @@
   const NORTH_BAND_FLAT_CAP = 42;
   /** 大台风北带中心北移系数（°/单位尺度增量）；scale 1.3 → +K·0.3° */
   const NORTH_BAND_BIG_SHIFT = 2.0;
-  const NORTH_BAND_OFF_TAU = 12;
-  const NORTH_BAND_OFF_MAXRATE = 0.02;
   const NB_SCALE_PTS = [[18, 0.75], [25, 0.85], [33, 1.0], [43, 1.15], [57, 1.3]];
   function northBandAccumScale(vmax) {
     const v = +vmax || 33;
@@ -584,25 +582,22 @@
    */
   AccumGrid.prototype._applyBand = function (storm, dtHours, meanR7, amp7, hdg) {
     if (!storm || !(dtHours > 0)) return;
-    const fade = northBandHeadingFade(hdg);
+    // 转向后：一旦航向 ≥40°（东北）即永久关闭；转向开始（fade<1）冻结纬度，不再随风暴北移
+    let hDeg = Math.atan2(Math.sin(+hdg || 0), Math.cos(+hdg || 0)) * 180 / Math.PI;
+    if (this.bandFrozenLat != null && hDeg >= 40) this.bandOff = true;
+    const fade = this.bandOff ? 0 : northBandHeadingFade(hdg);
+    if (this.bandLog) this.bandLog.push({ lat: storm.lat, h: hDeg, fade: fade, cLat: null });
     if (fade <= 0 || !isRecurvingNorth(hdg)) return;
     const vmax = +storm.vmax || 33;
     const scV = northBandAccumScale(vmax);
-    // 偏移平滑：R7 北半径与大台风北移量走指数平滑（τ≈12h）+ 增长限速，杜绝后段无故北跳
-    const tgtR7 = rainLocalR7(meanR7, hdg, 0, amp7);
-    const tgtSh = NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1);
-    if (this.bandOffR7 == null) { this.bandOffR7 = tgtR7; this.bandOffShift = tgtSh; }
-    else {
-      const a = 1 - Math.exp(-dtHours / NORTH_BAND_OFF_TAU);
-      const lim = NORTH_BAND_OFF_MAXRATE * dtHours;
-      const dR = Math.max(-lim, Math.min(lim, (tgtR7 - this.bandOffR7) * a));
-      const dS = Math.max(-lim, Math.min(lim, (tgtSh - this.bandOffShift) * a));
-      this.bandOffR7 += dR; this.bandOffShift += dS;
-    }
-    const r7N = storm.lat + this.bandOffR7;
+    const r7N = storm.lat + rainLocalR7(meanR7, hdg, 0, amp7);
     // 大台风略北移，保持与主雨断开
-    const cLat = r7N + NORTH_RIDGE_MID + this.bandOffShift;
-    if (this.bandOffLog) this.bandOffLog.push(cLat - storm.lat);
+    let cLat = r7N + NORTH_RIDGE_MID + NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1);
+    if (fade < 1 && hDeg > 0) {
+      if (this.bandFrozenLat == null) this.bandFrozenLat = this.bandLastLat != null ? this.bandLastLat : cLat;
+      cLat = this.bandFrozenLat;
+    } else this.bandLastLat = cLat;
+    if (this.bandLog && this.bandLog.length) this.bandLog[this.bandLog.length - 1].cLat = cLat;
     const cLon = storm.lon;
     const ea = NORTH_ELL_A * NORTH_BAND_ACCUM_EW * scV;
     const eb = NORTH_ELL_B * NORTH_BAND_ACCUM_NS * scV;
@@ -633,7 +628,7 @@
         if (d2 > 2.25) continue;
         let add = amp * Math.exp(-2.302585 * d2);
         // 轻雨桥：靠近 R7 北缘的南足封顶，避免与主核黄+相连
-        if (lat < r7N + NORTH_RIDGE_MID * 0.55 && add > NORTH_BRIDGE_CAP * dtHours * 0.5)
+        if (lat < Math.min(r7N, cLat - NORTH_RIDGE_MID) + NORTH_RIDGE_MID * 0.55 && add > NORTH_BRIDGE_CAP * dtHours * 0.5)
           add = NORTH_BRIDGE_CAP * dtHours * 0.5;
         const mtn = mountainSideFactor(lon, lat, sLon, sLat, self);
         add *= mtn;

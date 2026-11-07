@@ -355,11 +355,28 @@
    * 外圈非对称：连续余弦指向大风侧（更宽更强），不走四象限阶梯。
    * 折向北时叠加分离北侧弱雨带（hypot 软并，轻雨桥）；R12 内核仍为满盘红核+紫壳。
    */
+  /** 转向后（航向 ≥~30°）雨场整体向移向左侧（北侧）偏移，单位 meanR7；22°→30° 快速爬升 */
+  const POST_TURN_LEFT_SHIFT = 0.33;
+  function postTurnLeftShift(storm) {
+    const u = +storm.u || 0, v = +storm.v || 0;
+    if (Math.hypot(u, v) < 0.3 || !G) return null;
+    const h = G.motionHeadingRad(u, v);
+    const hd = Math.atan2(Math.sin(h), Math.cos(h)) * 180 / Math.PI;
+    if (hd <= 22 || hd >= 135) return null;
+    let w = Math.min(1, (hd - 22) / 8);
+    w = w * w * (3 - 2 * w);
+    if (hd > 110) w *= (135 - hd) / 25;
+    const d = POST_TURN_LEFT_SHIFT * w * rainFootprintRadii(+storm.vmax || 0).meanR7;
+    const lh = h - Math.PI / 2;
+    const cos = Math.max(0.2, Math.cos((+storm.lat || 0) * Math.PI / 180));
+    return { dLat: d * Math.cos(lh), dLon: d * Math.sin(lh) / cos };
+  }
   function rainRateAt(lat, lon, storm, opts) {
     if (!storm || !G) return 0;
     const grid = opts && opts.grid;
-    const lat0 = +storm.lat;
-    const lon0 = +storm.lon;
+    const ptS = postTurnLeftShift(storm);
+    const lat0 = +storm.lat + (ptS ? ptS.dLat : 0);
+    const lon0 = +storm.lon + (ptS ? ptS.dLon : 0);
     const vmax = +storm.vmax || 0;
     if (vmax < 10) return 0;
 
@@ -717,7 +734,7 @@
     const bandExtra = recurveN ? (NORTH_RIDGE_MID + NORTH_BAND_BIG_SHIFT * 0.35 + 1.5 * NORTH_ELL_B * NORTH_BAND_ACCUM_NS * 1.35 + 0.15) : 0; // 累计薄北带外缘
 
     const latMin = Math.max(this.lat0, storm.lat - maxR - 0.5);
-    const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 0.5);
+    const latMax = Math.min(G.DOMAIN.latMax, storm.lat + maxR + bandExtra + 1.2);
     const cos = Math.max(0.2, Math.cos(storm.lat * Math.PI / 180));
     const lonPad = (maxR + 4 + (recurveN ? Math.max(5.5, 1.5 * NORTH_ELL_A * 1.15 - 4) : 0)) / cos; // 椭圆北带 E–W 外缘
     const lonMin = Math.max(this.lon0, storm.lon - lonPad);

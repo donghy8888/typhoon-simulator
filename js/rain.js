@@ -356,7 +356,7 @@
    * 折向北时叠加分离北侧弱雨带（hypot 软并，轻雨桥）；R12 内核仍为满盘红核+紫壳。
    */
   /** 转向后（航向 ≥~30°）雨场整体向移向左侧（北侧）偏移，单位 meanR7；22°→30° 快速爬升 */
-  const POST_TURN_LEFT_SHIFT = 0.33;
+  const POST_TURN_LEFT_SHIFT = 0.25;
   function postTurnLeftShift(storm) {
     const u = +storm.u || 0, v = +storm.v || 0;
     if (Math.hypot(u, v) < 0.3 || !G) return null;
@@ -369,7 +369,7 @@
     const d = POST_TURN_LEFT_SHIFT * w * rainFootprintRadii(+storm.vmax || 0).meanR7;
     const lh = h - Math.PI / 2;
     const cos = Math.max(0.2, Math.cos((+storm.lat || 0) * Math.PI / 180));
-    return { dLat: d * Math.cos(lh), dLon: d * Math.sin(lh) / cos };
+    return { dLat: d * Math.cos(lh), dLon: d * Math.sin(lh) / cos, w: w };
   }
   function rainRateAt(lat, lon, storm, opts) {
     if (!storm || !G) return 0;
@@ -397,7 +397,9 @@
     const ray = dist < 1e-9 ? 0 : Math.atan2(dlon, dlat);
 
     // 平滑余弦非对称（大风侧更肥）；主壳不再北突
-    const localR7 = rainLocalR7(meanR7, hdg, ray, amp7);
+    // 雨场偏大风侧幅度：转向前 ×0.8，转向后（同 postTurnLeftShift 爬升）×0.5；仍跟当时风圈峰向
+    const ptW = ptS ? ptS.w : 0;
+    const localR7 = rainLocalR7(meanR7, hdg, ray, amp7 * (0.8 - 0.3 * ptW));
 
     const peak = peakRainMmH(vmax);
     const coreW = dist <= meanR12 ? 1 : (dist < meanR12 + 0.18 * meanR7

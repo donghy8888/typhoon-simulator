@@ -557,7 +557,7 @@
     this.hoursIntegrated = 0;
     this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0, vpk: 0 };
     this.bandBox = null;
-    this.bandFrozenLat = null; this.bandOff = false; this.bandLog = [];
+    this.bandFrozenLat = null; this.bandFrozenLon = null; this.bandOff = false; this.bandLog = [];
   };
 
   /**
@@ -603,10 +603,11 @@
     if (!storm || !(dtHours > 0)) return;
     // 转向后：一旦航向 ≥40°（东北）即永久关闭；转向开始（fade<1）冻结纬度，不再随风暴北移
     let hDeg = Math.atan2(Math.sin(+hdg || 0), Math.cos(+hdg || 0)) * 180 / Math.PI;
-    if (this.bandFrozenLat != null && hDeg >= 40) this.bandOff = true;
-    // 一转向（航向 >20°，风圈峰向离开正东）即关北带：不做 20–40° 渐隐，免得北侧残留慢慢拖移，
-    // 雨从落下起就只按当时风圈非对称（大风侧）分布
-    if (hDeg > 20 && hDeg < 135) { this.bandOff = true; if (this.bandFrozenLat == null) this.bandFrozenLat = this.bandLastLat; }
+    // 航向 >20° 即永久关闭（t）
+    if (hDeg > 20 && hDeg < 135) this.bandOff = true;
+    const frozen = this.bandFrozenLat != null;
+    // 冻结后仅 −45°…20° 沉积；西摆回 <−45° 不解冻、不移动
+    if (frozen && !(hDeg > -45 && hDeg <= 20)) { if (this.bandLog) this.bandLog.push({ lat: storm.lat, h: hDeg, fade: 0, cLat: null }); return; }
     const fade = this.bandOff ? 0 : northBandHeadingFade(hdg);
     if (this.bandLog) this.bandLog.push({ lat: storm.lat, h: hDeg, fade: fade, cLat: null });
     if (fade <= 0 || !isRecurvingNorth(hdg)) return;
@@ -615,12 +616,11 @@
     const r7N = storm.lat + rainLocalR7(meanR7, hdg, 0, amp7);
     // 大台风略北移，保持与主雨断开
     let cLat = r7N + NORTH_RIDGE_MID + NORTH_BAND_BIG_SHIFT * Math.max(0, scV - 1);
-    if (fade < 1 && hDeg > 0) {
-      if (this.bandFrozenLat == null) this.bandFrozenLat = this.bandLastLat != null ? this.bandLastLat : cLat;
-      cLat = this.bandFrozenLat;
-    } else this.bandLastLat = cLat;
+    let cLon = storm.lon;
+    // 航向首次北于 −45°（西北→北转向）即冻结中心经纬，此后绝不随风暴北移
+    if (!frozen && hDeg > -45) { this.bandFrozenLat = cLat; this.bandFrozenLon = cLon; }
+    if (this.bandFrozenLat != null) { cLat = this.bandFrozenLat; cLon = this.bandFrozenLon; }
     if (this.bandLog && this.bandLog.length) this.bandLog[this.bandLog.length - 1].cLat = cLat;
-    const cLon = storm.lon;
     const ea = NORTH_ELL_A * NORTH_BAND_ACCUM_EW * scV;
     const eb = NORTH_ELL_B * NORTH_BAND_ACCUM_NS * scV;
     const cos = Math.max(0.2, Math.cos(cLat * Math.PI / 180));

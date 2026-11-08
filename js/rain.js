@@ -441,13 +441,16 @@
 
   // 累计降水绝对分档上界（mm）：同色族雷达阶梯
   const ACCUM_BINS = [
-    { max: 10,  r: 70,  g: 200, b: 90,  a: 150 },  // <10
-    { max: 25,  r: 50,  g: 120, b: 230, a: 160 },  // 10–25
-    { max: 100, r: 245, g: 215, b: 30,  a: 168 },  // 25–100
-    { max: 150, r: 245, g: 140, b: 25,  a: 175 },  // 100–150
-    { max: 300, r: 150, g: 50,  b: 210, a: 180 },  // 150–300
-    { max: 400, r: 220, g: 35, b: 40, a: 185 },     // 300–400
-    { max: Infinity, r: 200, g: 20, b: 110, a: 175 }  // ≥400 亮品红绯红 #c8146e 半透明（仅台湾中央山脉高处迎风坡）
+    { max: 10,  r: 70,  g: 200, b: 90,  a: 150 },  // <10 绿
+    { max: 25,  r: 50,  g: 120, b: 230, a: 160 },  // 10–25 蓝
+    { max: 50,  r: 250, g: 235, b: 90,  a: 165 },  // 25–50 浅黄
+    { max: 100, r: 235, g: 195, b: 20,  a: 170 },  // 50–100 深黄
+    { max: 150, r: 245, g: 140, b: 25,  a: 175 },  // 100–150 橙
+    { max: 200, r: 190, g: 110, b: 235, a: 178 },  // 150–200 浅紫
+    { max: 300, r: 130, g: 40,  b: 200, a: 182 },  // 200–300 深紫
+    { max: 400, r: 220, g: 35,  b: 40,  a: 185 },  // 300–400 红
+    { max: 600, r: 160, g: 15,  b: 30,  a: 185 },  // 400–600 深红
+    { max: Infinity, r: 120, g: 10, b: 90, a: 190 } // ≥600 暗紫红（台湾中央山脉高处迎风坡）
   ];
 
   function colorForRate(mmh) {
@@ -508,6 +511,23 @@
   }
   function inTaiwanCmrBox(lat, lon) {
     return lon >= 120.4 && lon <= 122.05 && lat >= 21.9 && lat <= 25.35;
+  }
+  /** 深红（≥400）只在撞上山地的迎风坡：累计雨量里地形抬升占比明显（raw/flat ≥1.6）；平地/背风封顶 399 */
+  function windwardMtnCell(raw, flat) {
+    return flat > 1e-6 && raw / flat >= 1.6;
+  }
+  /** ≥600 暗紫红只许：台湾中央山脉、日本纪伊半岛/四国/九州南部多雨山区（迎风坡） */
+  function extremeRainBox(lat, lon) {
+    if (inTaiwanCmrBox(lat, lon)) return true;
+    if (lon >= 135.3 && lon <= 136.6 && lat >= 33.4 && lat <= 34.6) return true; // 纪伊半岛
+    if (lon >= 132.4 && lon <= 134.8 && lat >= 32.7 && lat <= 34.2) return true; // 四国
+    if (lon >= 130.6 && lon <= 131.9 && lat >= 31.3 && lat <= 32.9) return true; // 九州南部
+    return false;
+  }
+  function capShownMm(shown, raw, flat, lat, lon) {
+    if (shown >= 400 && !windwardMtnCell(raw, flat)) return 399;
+    if (shown >= 600 && !extremeRainBox(lat, lon)) return 599;
+    return shown;
   }
   function accumDisplayMm(raw, flat, lat, lon) {
     let v = accumSoft(raw);
@@ -663,7 +683,7 @@
         self.bandAcc[k] = nv;
         const main = self.raw[k] > 0 ? accumDisplayMm(self.raw[k], self.flat[k], lat, lon) : 0;
         let shown = main + nv;
-        if (!inTaiwanCmrBox(lat, lon) && shown >= 400) shown = 399;
+        shown = capShownMm(shown, self.raw[k], self.flat[k], lat, lon);
         self.data[k] = shown;
         if (shown > self.maxVal) self.maxVal = shown;
       }
@@ -771,7 +791,7 @@
         const nv = accumDisplayMm(this.raw[k], this.flat[k], lat, lon);
         const bAdd = this.bandAcc ? this.bandAcc[k] : 0;
         let shown = nv + bAdd;
-        if (!inTaiwanCmrBox(lat, lon) && shown >= 400) shown = 399;
+        shown = capShownMm(shown, this.raw[k], this.flat[k], lat, lon);
         this.data[k] = shown;
         if (shown > this.maxVal) this.maxVal = shown;
       }
@@ -799,15 +819,10 @@
 
   /** 图例：累计降水 mm（路径结束后显示） */
   function accumLegendItems() {
-    return [
-      { hex: 'rgba(70,200,90,0.85)', text: '<10 mm' },
-      { hex: 'rgba(50,120,230,0.85)', text: '10–25 mm' },
-      { hex: 'rgba(245,215,30,0.88)', text: '25–100 mm' },
-      { hex: 'rgba(245,140,25,0.9)', text: '100–150 mm' },
-      { hex: 'rgba(150,50,210,0.9)', text: '150–300 mm' },
-      { hex: 'rgba(220,35,40,0.92)', text: '300–400 mm' },
-      { hex: 'rgba(200,20,110,0.9)', text: '≥400 mm' }
-    ];
+    const T = ['<10 mm', '10–25 mm', '25–50 mm', '50–100 mm', '100–150 mm', '150–200 mm', '200–300 mm', '300–400 mm', '400–600 mm', '≥600 mm'];
+    return ACCUM_BINS.map(function (bn, n) {
+      return { hex: 'rgba(' + bn.r + ',' + bn.g + ',' + bn.b + ',0.9)', text: T[n] };
+    });
   }
 
   function rateLegendItems() {
@@ -1057,9 +1072,13 @@
       }
     }
     // ≥400 深红区细描边（更深酒红，半透明 a=220）：与红档/淡山地分界更清楚
-    const top = ACCUM_BINS[ACCUM_BINS.length - 1];
+    const deepBins = ACCUM_BINS.filter(function (bn) { return bn.max > 400; });
     const isDeep = function (q) {
-      return data[q] === top.r && data[q + 1] === top.g && data[q + 2] === top.b && data[q + 3] === top.a;
+      for (let n = 0; n < deepBins.length; n++) {
+        const t = deepBins[n];
+        if (data[q] === t.r && data[q + 1] === t.g && data[q + 2] === t.b && data[q + 3] === t.a) return true;
+      }
+      return false;
     };
     const edge = [];
     for (let y = 0; y < h; y++) {

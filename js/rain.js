@@ -356,7 +356,8 @@
    * 折向北时叠加分离北侧弱雨带（hypot 软并，轻雨桥）；R12 内核仍为满盘红核+紫壳。
    */
   /** 转向后（航向 ≥~30°）雨场整体向移向左侧（北侧）偏移，单位 meanR7；22°→30° 快速爬升 */
-  const POST_TURN_LEFT_SHIFT = 0.25;
+  /** 固定度数（负=向右/南侧），不随风圈半径或纬度变化 */
+  const POST_TURN_LEFT_SHIFT_DEG = -0.12;
   function postTurnLeftShift(storm) {
     const u = +storm.u || 0, v = +storm.v || 0;
     if (Math.hypot(u, v) < 0.3 || !G) return null;
@@ -366,7 +367,7 @@
     let w = Math.min(1, (hd - 22) / 8);
     w = w * w * (3 - 2 * w);
     if (hd > 110) w *= (135 - hd) / 25;
-    const d = POST_TURN_LEFT_SHIFT * w * rainFootprintRadii(+storm.vmax || 0).meanR7;
+    const d = POST_TURN_LEFT_SHIFT_DEG * w;
     const lh = h - Math.PI / 2;
     const cos = Math.max(0.2, Math.cos((+storm.lat || 0) * Math.PI / 180));
     return { dLat: d * Math.cos(lh), dLon: d * Math.sin(lh) / cos, w: w };

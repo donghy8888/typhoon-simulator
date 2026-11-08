@@ -799,7 +799,7 @@ body.mode-history .match-chip { display: none !important; }
   image-rendering: auto;
 }
 .ty-rain-accum {
-  opacity: 0.68;
+  opacity: 0.55;
 }
 .ty-rain-rate {
   display: none !important;

@@ -973,7 +973,7 @@
     const cosLat = Math.cos(lat0 * Math.PI / 180);
 
     for (let y = 0; y < h; y++) {
-      const lat = latMax - (y + 0.5) / h * (latMax - latMin);
+      const lat = mercRowLat(latMin, latMax, (y + 0.5) / h);
       for (let x = 0; x < w; x++) {
         const lon = lonMin + (x + 0.5) / w * (lonMax - lonMin);
         const i = y * w + x;
@@ -1015,6 +1015,14 @@
     return imgData;
   }
 
+  /** 画布贴在墨卡托地图上：像素行按墨卡托 y 等分（非纬度等分），否则中纬雨区被整体画偏北 */
+  function mercY(lat) { return Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)); }
+  function mercRowLat(latMin, latMax, f) {
+    const yN = mercY(latMax), yS = mercY(latMin);
+    const y = yN - f * (yN - yS);
+    return (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
+  }
+
   function paintAccumImageData(imgData, w, h, bounds, grid) {
     const latMin = bounds[0][0];
     const lonMin = bounds[0][1];
@@ -1023,7 +1031,7 @@
     const data = imgData.data;
     const deg = grid.deg;
     for (let y = 0; y < h; y++) {
-      const lat = latMax - (y + 0.5) / h * (latMax - latMin);
+      const lat = mercRowLat(latMin, latMax, (y + 0.5) / h);
       const jf = (lat - grid.lat0) / deg;
       const j0 = Math.floor(jf);
       const tj = jf - j0;

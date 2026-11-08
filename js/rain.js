@@ -569,8 +569,8 @@
   /** 累计单小时中心雨强 mm/h（×fade×地形）；低于瞬时 NORTH_BAND_PEAK，避免拖条过重 */
   const NORTH_BAND_ACCUM_RATE = 9.5;
   /** 累计椭圆相对瞬时轴：东西略放大、南北明显压薄 */
-  const NORTH_BAND_ACCUM_EW = 1.15;
-  const NORTH_BAND_ACCUM_NS = 0.55;
+  const NORTH_BAND_ACCUM_EW = 1.25;
+  const NORTH_BAND_ACCUM_NS = 0.60;
   /** 平地北带单格软封顶（~40 mm 量级）；地形可再抬，非台湾仍 <300 */
   const NORTH_BAND_FLAT_CAP = 42;
   /** 大台风北带中心北移系数（°/单位尺度增量）；scale 1.3 → +K·0.3° */

@@ -265,7 +265,9 @@
       steerU: -3,
       steerV: 1.5,
       westerlyU: 8,
-      betaStrength: 1
+      betaStrength: 1,
+      steerMonth: currentFugenMonth(),
+      steerPattern: currentSteerPattern()
     };
   }
 
@@ -1795,8 +1797,35 @@
     return el ? Number(el.value) || 7 : 7;
   }
 
+  /** 黄线以南直行段的真实 500 hPa 风型（随月份） */
+  function currentSteerPattern() {
+    const el = document.getElementById('steerPattern');
+    return (el && el.value) ? el.value : 'clim';
+  }
+  function fillSteerPatternOptions() {
+    const el = document.getElementById('steerPattern');
+    if (!el) return;
+    const prev = el.value || 'clim';
+    const SP = window.STEER_PATTERNS;
+    const list = (SP && SP.months[String(currentFugenMonth())]) || [];
+    el.innerHTML = '';
+    list.forEach(function (p) {
+      const o = document.createElement('option');
+      o.value = p.key;
+      o.textContent = p.name;
+      el.appendChild(o);
+    });
+    el.value = list.some(function (p) { return p.key === prev; }) ? prev : 'clim';
+  }
+  fillSteerPatternOptions();
+  document.getElementById('steerPattern').onchange = function () {
+    redrawSteer();
+    updateStatus();
+  };
+
   function applyFugenMonth(keepSelection) {
     const month = currentFugenMonth();
+    fillSteerPatternOptions();
     state.fugen = G.fugenForMonth(month);
     state.ridgeLatOffset = 0;
     if (!keepSelection) state.selectedFugen = null;

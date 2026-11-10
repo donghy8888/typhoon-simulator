@@ -125,6 +125,44 @@
   const CLEAR_LAT_MIN = 0;
   const CLEAR_NORTHOF_MIN = 0.0;
 
+
+  /**
+   * 真实 500 hPa 风型（STEER_PATTERNS）：仅黄线以南、转向收束前的直行段，
+   * 把引导方向转向该处真实去向（偏西/偏西北），保持速度大小；不改副高、转向弧与黄线以北。
+   */
+  const PAT_DIR_MIN = -10 * Math.PI / 180;
+  const PAT_DIR_MAX = 55 * Math.PI / 180;
+  function patternUVAt(lon, lat, cfg) {
+    const P = (typeof window !== 'undefined') ? window.STEER_PATTERNS : null;
+    if (!P || !cfg || !cfg.steerMonth || !cfg.steerPattern) return null;
+    const list = P.months[String(cfg.steerMonth)];
+    if (!list) return null;
+    let pat = null;
+    for (let i = 0; i < list.length; i++) if (list[i].key === cfg.steerPattern) { pat = list[i]; break; }
+    if (!pat) return null;
+    const fx = clamp((lon - P.lon0) / P.d, 0, P.nx - 1.0001);
+    const fy = clamp((lat - P.lat0) / P.d, 0, P.ny - 1.0001);
+    const i0 = Math.floor(fx), j0 = Math.floor(fy), tx = fx - i0, ty = fy - j0;
+    const idx = (j, i) => j * P.nx + i;
+    const bl = (a) => (a[idx(j0, i0)] * (1 - tx) + a[idx(j0, i0 + 1)] * tx) * (1 - ty) +
+      (a[idx(j0 + 1, i0)] * (1 - tx) + a[idx(j0 + 1, i0 + 1)] * tx) * ty;
+    return { u: bl(pat.u), v: bl(pat.v) };
+  }
+  function applySteerPattern(u, v, lon, lat, cfg) {
+    const p = patternUVAt(lon, lat, cfg);
+    if (!p) return { u, v };
+    const spd = Math.hypot(p.u, p.v);
+    // 弱引导区（<3 m/s）方向不明确：按风速渐退回原模型方向
+    let w = clamp(spd / 3, 0, 1);
+    if (p.u > 0) w *= 0.5;
+    if (w < 1e-3) return { u, v };
+    const tgt = clamp(Math.atan2(p.v, -p.u), PAT_DIR_MIN, PAT_DIR_MAX);
+    const mag = Math.hypot(u, v);
+    const a0 = Math.atan2(v, -u);
+    const a = a0 + w * (tgt - a0);
+    return { u: -Math.cos(a) * mag, v: Math.sin(a) * mag };
+  }
+
   function approachNorthUV(northOf, band, spdW) {
     const u = 0;
     let v = Math.max(5.8, spdW * 0.72);
@@ -274,6 +312,7 @@
         if (u > -4.7 && te > 0.18) u = -4.7 - 1.6 * te; // 西分量主导
         if (v > 4.5) v = 4.5;
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2); // |u|≥v → WNW not NNW
+        ({ u, v } = applySteerPattern(u, v, lon, lat, cfg)); // 真实风型：直行段偏西/偏西北
         // 黄南收束：跨度同 28w（WNW_EASE）；wnwEaseFade 前载 → 中弧在黄南
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
         const easeS = wnwEaseFade(ease);
@@ -703,6 +742,7 @@
         if (u < -6.8) u = -6.8;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2);
+        ({ u, v } = applySteerPattern(u, v, lon, lat, cfg)); // 真实风型：直行段偏西/偏西北
         // 30b：WNW_EASE≈6.4（相对 30a 稍南一丁点）；wnwEaseFade 前载中弧在黄南
         // 到黄线 u→0；黄→绿纯北；绿北立刻 ENE（弧不得过绿）
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);
@@ -947,7 +987,9 @@
       steerU: m.cfgPerturb ? m.cfgPerturb.steerU : baseCfg.steerU,
       steerV: m.cfgPerturb ? m.cfgPerturb.steerV : baseCfg.steerV,
       westerlyU: m.cfgPerturb ? m.cfgPerturb.westerlyU : baseCfg.westerlyU,
-      betaStrength: m.cfgPerturb ? m.cfgPerturb.betaStrength : baseCfg.betaStrength
+      betaStrength: m.cfgPerturb ? m.cfgPerturb.betaStrength : baseCfg.betaStrength,
+      steerMonth: baseCfg.steerMonth,
+      steerPattern: baseCfg.steerPattern
     };
 
     if (m.arcLat0 === undefined) m.arcLat0 = null;

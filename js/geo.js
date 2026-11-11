@@ -171,8 +171,10 @@
    *   8 月：北缘 → 华北南缘；西界盖广东
    *   9 月：北缘南撤江南
    */
-  function fugenForMonth(month) {
+  function fugenForMonth(month, dekad) {
     const mo = Number(month) || 7;
+    const DK = (typeof window !== 'undefined') ? window.STEER_DEKADS : null;
+    const dkRec = (DK && dekad) ? DK.dekads[mo + '-' + dekad] : null;
     // 域内黄线以南整片实体：西/东贴 DOMAIN、南界贴 0°N；北缘弯脊（禁直线）；单块 wnp_slab
     // east 略过 lonMax：射线法在右边界偶发漏判，保证 180°E 仍实体内
     let west = DOMAIN.lonMin, east = DOMAIN.lonMax + 0.5, south = DOMAIN.latMin, westMid = 18.0, ridge;
@@ -216,6 +218,10 @@
         [154, 34.5],
         [180.5, 32.2]
       ];
+    }
+    // 旬：黄线用该旬真实副高（NCEP 旬平均 u=0 脊线距平平移后的转向线）
+    if (dkRec && dkRec.fugen && Array.isArray(dkRec.fugen.ridge) && dkRec.fugen.ridge.length >= 2) {
+      ridge = dkRec.fugen.ridge.map(function (q) { return [q[0], q[1]]; });
     }
     return [
       {

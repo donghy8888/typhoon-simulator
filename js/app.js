@@ -16,7 +16,7 @@
     speed: 20,
     members: [],
     hole: null,
-    fugen: G.fugenForMonth(7),
+    fugen: G.fugenForMonth(7, 2),
     sstRegions: G.defaultSstRegions(), // 固定默认背景场，无侧栏调节
     lastPlace: { lon: 140, lat: 15 },
     selectedFugen: null,
@@ -267,6 +267,7 @@
       westerlyU: 8,
       betaStrength: 1,
       steerMonth: currentFugenMonth(),
+      steerDekad: currentFugenDekad(),
       steerPattern: currentSteerPattern()
     };
   }
@@ -1797,7 +1798,11 @@
     return el ? Number(el.value) || 7 : 7;
   }
 
-  /** 黄线以南直行段的真实 500 hPa 风型（随月份） */
+  function currentFugenDekad() {
+    const el = document.getElementById('fugenDekad');
+    return el ? Number(el.value) || 2 : 2;
+  }
+  /** 黄线以南直行段的真实 500 hPa 风型（随月份与旬） */
   function currentSteerPattern() {
     const el = document.getElementById('steerPattern');
     return (el && el.value) ? el.value : 'clim';
@@ -1806,8 +1811,10 @@
     const el = document.getElementById('steerPattern');
     if (!el) return;
     const prev = el.value || 'clim';
+    const DK = window.STEER_DEKADS;
     const SP = window.STEER_PATTERNS;
-    const list = (SP && SP.months[String(currentFugenMonth())]) || [];
+    const rec = DK && DK.dekads[currentFugenMonth() + '-' + currentFugenDekad()];
+    const list = rec ? rec.patterns : ((SP && SP.months[String(currentFugenMonth())]) || []);
     el.innerHTML = '';
     list.forEach(function (p) {
       const o = document.createElement('option');
@@ -1826,7 +1833,7 @@
   function applyFugenMonth(keepSelection) {
     const month = currentFugenMonth();
     fillSteerPatternOptions();
-    state.fugen = G.fugenForMonth(month);
+    state.fugen = G.fugenForMonth(month, currentFugenDekad());
     state.ridgeLatOffset = 0;
     if (!keepSelection) state.selectedFugen = null;
     state.hole = null;
@@ -1842,6 +1849,10 @@
 
   document.getElementById('fugenMonth').onchange = function () {
     // 换月只刷新副高/绿黄线，不自动开跑
+    applyFugenMonth(false);
+  };
+
+  document.getElementById('fugenDekad').onchange = function () {
     applyFugenMonth(false);
   };
 

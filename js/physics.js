@@ -133,9 +133,15 @@
   const PAT_DIR_MIN = -10 * Math.PI / 180;
   const PAT_DIR_MAX = 55 * Math.PI / 180;
   function patternUVAt(lon, lat, cfg) {
-    const P = (typeof window !== 'undefined') ? window.STEER_PATTERNS : null;
-    if (!P || !cfg || !cfg.steerMonth || !cfg.steerPattern) return null;
-    const list = P.months[String(cfg.steerMonth)];
+    if (!cfg || !cfg.steerMonth || !cfg.steerPattern) return null;
+    const W = (typeof window !== 'undefined') ? window : {};
+    let P = null, list = null;
+    const DK = W.STEER_DEKADS;
+    if (DK && cfg.steerDekad && DK.dekads[cfg.steerMonth + '-' + cfg.steerDekad]) {
+      P = DK; list = DK.dekads[cfg.steerMonth + '-' + cfg.steerDekad].patterns;
+    } else if (W.STEER_PATTERNS) {
+      P = W.STEER_PATTERNS; list = P.months[String(cfg.steerMonth)];
+    }
     if (!list) return null;
     let pat = null;
     for (let i = 0; i < list.length; i++) if (list[i].key === cfg.steerPattern) { pat = list[i]; break; }
@@ -152,8 +158,8 @@
     const p = patternUVAt(lon, lat, cfg);
     if (!p) return { u, v };
     const spd = Math.hypot(p.u, p.v);
-    // 弱引导区（<3 m/s）方向不明确：按风速渐退回原模型方向
-    let w = clamp(spd / 3, 0, 1);
+    // 弱引导区（<1.5 m/s）方向不明确：按风速渐退回原模型方向
+    let w = clamp(spd / 1.5, 0, 1);
     if (p.u > 0) w *= 0.5;
     if (w < 1e-3) return { u, v };
     const tgt = clamp(Math.atan2(p.v, -p.u), PAT_DIR_MIN, PAT_DIR_MAX);
@@ -989,6 +995,7 @@
       westerlyU: m.cfgPerturb ? m.cfgPerturb.westerlyU : baseCfg.westerlyU,
       betaStrength: m.cfgPerturb ? m.cfgPerturb.betaStrength : baseCfg.betaStrength,
       steerMonth: baseCfg.steerMonth,
+      steerDekad: baseCfg.steerDekad,
       steerPattern: baseCfg.steerPattern
     };
 

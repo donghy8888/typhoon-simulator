@@ -235,8 +235,9 @@
       ridge = dkRec.fugen.ridge.map(function (q) { return [q[0], q[1]]; });
     }
     // 副高偏北型：黄线只往北挪（该年脊线比本旬气候偏北多少就北移多少，绝不南移）
-    if (patKey === 'north_shift' && dkRec && Array.isArray(dkRec.patterns)) {
-      const pn = dkRec.patterns.find(function (q) { return q.key === 'north_shift'; });
+    if ((patKey === 'north_shift' || /^y\d{4}$/.test(String(patKey || ''))) && dkRec && Array.isArray(dkRec.patterns)) {
+      // 副高偏北型 / 真实年份：黄线只往北挪
+      const pn = dkRec.patterns.find(function (q) { return q.key === patKey; });
       const pc = dkRec.patterns.find(function (q) { return q.key === 'clim'; });
       if (pn && pc && pn.ridge && pc.ridge && pn.ridge.length === pc.ridge.length) {
         const dl = pn.ridge.map(function (q, i) { return [q[0], Math.max(0, q[1] - pc.ridge[i][1])]; });

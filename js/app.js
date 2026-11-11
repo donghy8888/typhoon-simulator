@@ -1814,14 +1814,43 @@
     const el = document.getElementById('steerPattern');
     return (el && el.value) ? el.value : 'clim';
   }
+  // 真实年份（STEER_YEARS）并入各旬风型列表，key = 'y' + 年份
+  (function mergeSteerYears() {
+    const DK = window.STEER_DEKADS, SY = window.STEER_YEARS;
+    if (!DK || !SY) return;
+    Object.keys(SY).forEach(function (yr) {
+      const recs = SY[yr].dekads || {};
+      Object.keys(recs).forEach(function (k) {
+        const d = recs[k], dk = DK.dekads[k];
+        if (!dk || !d.u || !d.v) return;
+        const key = 'y' + yr;
+        if (dk.patterns.some(function (q) { return q.key === key; })) return;
+        dk.patterns.push({ key: key, name: d.name || (yr + '年真实'), year: Number(yr), u: d.u, v: d.v, ridge: d.ridge, west_5880: d.west_5880 });
+      });
+    });
+  })();
+  function currentSteerYear() {
+    const el = document.getElementById('steerYear');
+    return el ? el.value : '';
+  }
   function fillSteerPatternOptions() {
     const el = document.getElementById('steerPattern');
     if (!el) return;
-    const prev = el.value || 'clim';
     const DK = window.STEER_DEKADS;
     const SP = window.STEER_PATTERNS;
     const rec = DK && DK.dekads[currentFugenMonth() + '-' + currentFugenDekad()];
-    const list = rec ? rec.patterns : ((SP && SP.months[String(currentFugenMonth())]) || []);
+    const all = rec ? rec.patterns : ((SP && SP.months[String(currentFugenMonth())]) || []);
+    const yr = currentSteerYear();
+    let list;
+    if (yr) {
+      list = all.filter(function (p) { return p.key === 'y' + yr; });
+      if (!list.length) list = all.filter(function (p) { return p.key === 'clim'; }).map(function (p) {
+        return { key: p.key, name: yr + '年该旬暂无数据，用气候平均' };
+      });
+    } else {
+      list = all.filter(function (p) { return !/^y\d{4}$/.test(p.key); });
+    }
+    const prev = yr ? (list[0] && list[0].key) : (el.value || 'clim');
     el.innerHTML = '';
     list.forEach(function (p) {
       const o = document.createElement('option');
@@ -1829,7 +1858,7 @@
       o.textContent = p.name;
       el.appendChild(o);
     });
-    el.value = list.some(function (p) { return p.key === prev; }) ? prev : 'clim';
+    el.value = list.some(function (p) { return p.key === prev; }) ? prev : (list[0] ? list[0].key : 'clim');
   }
   fillSteerPatternOptions();
   document.getElementById('steerPattern').onchange = function () {
@@ -1862,6 +1891,11 @@
   document.getElementById('fugenDekad').onchange = function () {
     applyFugenMonth(false);
   };
+  if (document.getElementById('steerYear')) {
+    document.getElementById('steerYear').onchange = function () {
+      applyFugenMonth(false);
+    };
+  }
 
   document.getElementById('btnResetFugen').onclick = () => {
     applyFugenMonth(false);

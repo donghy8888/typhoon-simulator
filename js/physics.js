@@ -130,7 +130,7 @@
    * 真实 500 hPa 风型（STEER_PATTERNS）：仅黄线以南、转向收束前的直行段，
    * 把引导方向转向该处真实去向（偏西/偏西北），保持速度大小；不改副高、转向弧与黄线以北。
    */
-  const PAT_DIR_MIN = -10 * Math.PI / 180;
+  const PAT_DIR_MIN = 0;
   const PAT_DIR_MAX = 55 * Math.PI / 180;
   function patternUVAt(lon, lat, cfg) {
     if (!cfg || !cfg.steerMonth || !cfg.steerPattern) return null;
@@ -154,15 +154,35 @@
       (a[idx(j0 + 1, i0)] * (1 - tx) + a[idx(j0 + 1, i0 + 1)] * tx) * ty;
     return { u: bl(pat.u), v: bl(pat.v) };
   }
+  // 空间平滑：±2 格（约 ±5°）加权平均，去掉逐格跳动
+  function patternSmoothUV(lon, lat, cfg) {
+    let su = 0, sv = 0, sw = 0;
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const p = patternUVAt(lon + dx * 2.5, lat + dy * 2.5, cfg);
+        if (!p) return null;
+        const w = 1 / (1 + dx * dx + dy * dy);
+        su += p.u * w; sv += p.v * w; sw += w;
+      }
+    }
+    return { u: su / sw, v: sv / sw };
+  }
+  /**
+   * 只转「引导风」方向（β 漂移在外面转完后再加）：
+   * 黄线以南直行段只允许偏西(0°)~偏西北(55°)；
+   * 真实风往东/方向乱（去向超出 西南偏西-30°~北 90°，或 u≥0）→ 不用，保持原 WNW；
+   * 略偏西南(-30°~0°) → 按正西；绝不往西南、往东。
+   */
   function applySteerPattern(u, v, lon, lat, cfg) {
-    const p = patternUVAt(lon, lat, cfg);
+    const p = patternSmoothUV(lon, lat, cfg);
     if (!p) return { u, v };
+    if (p.u >= -0.3) return { u, v }; // 往东或几乎无东西分量：不用
     const spd = Math.hypot(p.u, p.v);
-    // 弱引导区（<1.5 m/s）方向不明确：按风速渐退回原模型方向
-    let w = clamp(spd / 1.5, 0, 1);
-    if (p.u > 0) w *= 0.5;
+    const w = clamp(spd / 1.5, 0, 1);
     if (w < 1e-3) return { u, v };
-    const tgt = clamp(Math.atan2(p.v, -p.u), PAT_DIR_MIN, PAT_DIR_MAX);
+    const raw = Math.atan2(p.v, -p.u);
+    if (raw < -30 * Math.PI / 180 || raw > Math.PI / 2) return { u, v };
+    const tgt = clamp(raw, PAT_DIR_MIN, PAT_DIR_MAX);
     const mag = Math.hypot(u, v);
     const a0 = Math.atan2(v, -u);
     const a = a0 + w * (tgt - a0);
@@ -748,7 +768,9 @@
         if (u < -6.8) u = -6.8;
         v = Math.min(Math.max(v * 0.72 + 0.5, 3.2), 4.4);
         if (Math.abs(u) < v * 1.2) u = -Math.max(v * 1.2, 4.2);
-        ({ u, v } = applySteerPattern(u, v, lon, lat, cfg)); // 真实风型：直行段偏西/偏西北
+        ({ u, v } = applySteerPattern(u, v, lon, lat, cfg)); // 真实风型：只转引导风
+        // β 漂移转完方向后再叠加（偏西北），不被风型抹掉
+        u += beta.u; v += beta.v;
         // 30b：WNW_EASE≈6.4（相对 30a 稍南一丁点）；wnwEaseFade 前载中弧在黄南
         // 到黄线 u→0；黄→绿纯北；绿北立刻 ENE（弧不得过绿）
         const ease = clamp((-band - northOf) / WNW_EASE_DEG, 0, 1);

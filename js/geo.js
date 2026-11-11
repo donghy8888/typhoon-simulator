@@ -220,7 +220,8 @@
       ];
     }
     // 旬：黄线用该旬真实副高（NCEP 旬平均 u=0 脊线距平平移后的转向线）
-    if (dkRec && dkRec.fugen && Array.isArray(dkRec.fugen.ridge) && dkRec.fugen.ridge.length >= 2) {
+    // 用户要求黄线不随旬/风型移动：保持每月原线（dkRec 仅供风场）
+    if (false && dkRec && dkRec.fugen && Array.isArray(dkRec.fugen.ridge) && dkRec.fugen.ridge.length >= 2) {
       ridge = dkRec.fugen.ridge.map(function (q) { return [q[0], q[1]]; });
     }
     return [

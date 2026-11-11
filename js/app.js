@@ -803,7 +803,7 @@
     const baseSegs = [];
     for (let lat = 5; lat <= 45; lat += stepLat) {
       for (let lon = 105; lon <= 175; lon += stepLon) {
-        if (G.inFugenSolid(lon, lat, state.fugen, state.hole)) continue;
+        // 副高区内（黄线以南）也画引导箭头：台风在这里就是顺着它走
         const st = P.steeringAt(lon, lat, cfg, state.fugen, state.hole);
         const beta = P.betaDrift(lat, cfg.betaStrength);
         const u = st.u + beta.u * 0.5;
@@ -812,7 +812,8 @@
         if (spd < 0.25) continue;
         const inWest = G.inWesterlyBelt(lon, lat, state.fugen, state.hole);
         // 箭头更长更大
-        const scale = 0.55 + Math.min(0.35, spd * 0.03);
+        // 副高区内风弱，箭头放大以便看清方向
+        const scale = (0.55 + Math.min(0.35, spd * 0.03)) * (inWest ? 1 : 1.9);
         const coslat = Math.cos(lat * Math.PI / 180) || 0.2;
         const endLat = lat + v * scale * 0.22;
         const endLon = lon + u * scale * 0.22 / coslat;

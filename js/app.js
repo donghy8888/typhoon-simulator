@@ -846,13 +846,21 @@
 
   // —— 风暴与路径 ——
   function stormIcon() {
+    // 气象台路径图通用台风符号：中心圆 + 上下两条反向弯钩（北半球逆时针）
+    const svg = '<svg width="26" height="26" viewBox="-13 -13 26 26" xmlns="http://www.w3.org/2000/svg">' +
+      '<g fill="none" stroke="#c0392b" stroke-width="2.4" stroke-linecap="round">' +
+      '<circle r="4.6" fill="rgba(255,255,255,0.85)"/>' +
+      '<path d="M4.4 -1.6 C5.6 -7.5 1.5 -11.5 -5.5 -11"/>' +
+      '<path d="M-4.4 1.6 C-5.6 7.5 -1.5 11.5 5.5 11"/>' +
+      '</g><circle r="1.6" fill="#c0392b"/></svg>';
     return L.divIcon({
       className: '',
-      html: '<div style="width:20px;height:20px;border:2px solid #c0392b;border-radius:50%;background:rgba(231,76,60,0.4);text-align:center;line-height:16px;font-size:12px;color:#922;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,.25)">台</div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10]
+      html: '<div style="width:26px;height:26px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))">' + svg + '</div>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 13]
     });
   }
+
 
   /** 登陆点小红旗（无文字、无 tooltip/popup） */
   function landfallFlagIcon() {

@@ -1283,6 +1283,12 @@
   /** 直播推进：把新 track 点累加进格点 */
   function syncRainAccumLive(track) {
     if (!R || !rainState.accum || !track || track.length < 2) return;
+    if (!rainState.accum.yellowEdgeAt && P && P.ridgeGuidingEdgeLat) {
+      rainState.accum.yellowEdgeAt = function (lon) {
+        const e = P.ridgeGuidingEdgeLat(lon, state.fugen, state.hole);
+        return e == null ? null : e - G.APPROACH_NORTH_BAND_DEG;
+      };
+    }
     let i = Math.max(1, rainState.trackSynced);
     for (; i < track.length; i++) {
       const a = track[i - 1];
@@ -1826,14 +1832,14 @@
   }
   fillSteerPatternOptions();
   document.getElementById('steerPattern').onchange = function () {
-    redrawSteer();
-    updateStatus();
+    // 副高偏北型会把黄线往北挪；切换风型时重算副高
+    applyFugenMonth(false);
   };
 
   function applyFugenMonth(keepSelection) {
     const month = currentFugenMonth();
     fillSteerPatternOptions();
-    state.fugen = G.fugenForMonth(month, currentFugenDekad());
+    state.fugen = G.fugenForMonth(month, currentFugenDekad(), currentSteerPattern());
     state.ridgeLatOffset = 0;
     if (!keepSelection) state.selectedFugen = null;
     state.hole = null;

@@ -171,7 +171,7 @@
    *   8 月：北缘 → 华北南缘；西界盖广东
    *   9 月：北缘南撤江南
    */
-  function fugenForMonth(month, dekad) {
+  function fugenForMonth(month, dekad, patKey) {
     const mo = Number(month) || 7;
     const DK = (typeof window !== 'undefined') ? window.STEER_DEKADS : null;
     const dkRec = (DK && dekad) ? DK.dekads[mo + '-' + dekad] : null;
@@ -223,6 +223,25 @@
     // 用户要求黄线不随旬/风型移动：保持每月原线（dkRec 仅供风场）
     if (false && dkRec && dkRec.fugen && Array.isArray(dkRec.fugen.ridge) && dkRec.fugen.ridge.length >= 2) {
       ridge = dkRec.fugen.ridge.map(function (q) { return [q[0], q[1]]; });
+    }
+    // 副高偏北型：黄线只往北挪（该年脊线比本旬气候偏北多少就北移多少，绝不南移）
+    if (patKey === 'north_shift' && dkRec && Array.isArray(dkRec.patterns)) {
+      const pn = dkRec.patterns.find(function (q) { return q.key === 'north_shift'; });
+      const pc = dkRec.patterns.find(function (q) { return q.key === 'clim'; });
+      if (pn && pc && pn.ridge && pc.ridge && pn.ridge.length === pc.ridge.length) {
+        const dl = pn.ridge.map(function (q, i) { return [q[0], Math.max(0, q[1] - pc.ridge[i][1])]; });
+        const dAt = function (lon) {
+          if (lon <= dl[0][0]) return dl[0][1];
+          for (let i = 1; i < dl.length; i++) {
+            if (lon <= dl[i][0]) {
+              const t = (lon - dl[i - 1][0]) / (dl[i][0] - dl[i - 1][0]);
+              return dl[i - 1][1] + t * (dl[i][1] - dl[i - 1][1]);
+            }
+          }
+          return dl[dl.length - 1][1];
+        };
+        ridge = ridge.map(function (q) { return [q[0], Math.min(44, q[1] + dAt(q[0]))]; });
+      }
     }
     return [
       {

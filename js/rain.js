@@ -342,6 +342,9 @@
   /**
    * WNW→N 折向：航向接近北向时启用分离北侧弱雨带（脊 ~NORTH_RIDGE_MID，峰值 ~10 mm/h）。
    */
+  /** 黄线南北折收束区宽度（°）：与 physics WNW_EASE_DEG(6.4)+黄线带(0.15) 同 */
+  const YELLOW_TURN_ZONE = 6.6;
+
   function isRecurvingNorth(headingRad) {
     let h = +headingRad || 0;
     h = Math.atan2(Math.sin(h), Math.cos(h));
@@ -578,7 +581,7 @@
     this.hoursIntegrated = 0;
     this.band = { w: 0, lat: 0, lon: 0, sc: 0, sLat: 0, sLon: 0, sW: 0, posW: 0, vpk: 0 };
     this.bandBox = null;
-    this.bandFrozenLat = null; this.bandFrozenLon = null; this.bandOff = false; this.bandLog = [];
+    this.bandFrozenLat = null; this.bandFrozenLon = null; this.bandOff = false; this.bandArmed = false; this.bandLog = [];
   };
 
   /**
@@ -629,6 +632,15 @@
     const frozen = this.bandFrozenLat != null;
     // 冻结后仅 −45°…20° 沉积；西摆回 <−45° 不解冻、不移动
     if (frozen && !(hDeg > -45 && hDeg <= 20)) { if (this.bandLog) this.bandLog.push({ lat: storm.lat, h: hDeg, fade: 0, cLat: null }); return; }
+    // 只在过黄线那次北折出现：须进入黄线南的北折收束区（黄线南 YELLOW_TURN_ZONE° 内）才启用；
+    // 黄线以南直行段航向再偏北（真实风型/β 漂移）也不出北带。一旦启用保持，直到 bandOff。
+    if (!this.bandArmed && typeof this.yellowEdgeAt === 'function') {
+      const edge = this.yellowEdgeAt(storm.lon);
+      if (edge != null && isFinite(edge) && storm.lat >= edge - YELLOW_TURN_ZONE) this.bandArmed = true;
+    } else if (typeof this.yellowEdgeAt !== 'function') {
+      this.bandArmed = true;
+    }
+    if (!this.bandArmed) { if (this.bandLog) this.bandLog.push({ lat: storm.lat, h: hDeg, fade: 0, cLat: null }); return; }
     const fade = this.bandOff ? 0 : northBandHeadingFade(hdg);
     if (this.bandLog) this.bandLog.push({ lat: storm.lat, h: hDeg, fade: fade, cLat: null });
     if (fade <= 0 || !isRecurvingNorth(hdg)) return;

@@ -791,19 +791,3 @@ body.mode-history .match-chip { display: none !important; }
   font-size: 12px;
   min-height: 24px;
 }
-
-
-/* 降水：仅路径结束后的累计填色；运行时不上图 */
-.ty-rain-canvas {
-  pointer-events: none !important;
-  image-rendering: auto;
-}
-.ty-rain-accum {
-  opacity: 0.42;
-}
-.ty-rain-rate {
-  display: none !important;
-}
-.leaflet-rain-pane {
-  pointer-events: none;
-}

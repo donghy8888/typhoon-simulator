@@ -6,7 +6,6 @@
 
   const G = window.TyGeo;
   const P = window.TyPhysics;
-  const R = window.TyRain;
 
   // —— 状态 ——
   const state = {
@@ -85,11 +84,6 @@
   map.getPane('tracks').style.zIndex = 470;
   // 保留点击：历史路径选台、强度点 tooltip
 
-  // 降水连续填色 pane：低于 tracks(470)，路径始终压在雨面上
-  map.createPane('rain');
-  map.getPane('rain').style.zIndex = 460;
-  map.getPane('rain').style.pointerEvents = 'none';
-
   const mountainRenderer = L.svg({ pane: 'mountains' });
 
   const layerGroups = {
@@ -129,17 +123,6 @@
     landfallFlags: []
   };
 
-  // —— 降水：仅瞬时雨强雷达阶梯 canvas（硬分档）；累计已移除 ——
-  const rainState = {
-    accum: R ? new R.AccumGrid(0.22) : null, // 路径积分累计格；结束后上图
-    trackSynced: 0,
-    rateCanvas: null,
-    accumCanvas: null,
-    scrubTimer: null,
-    showRate: false,  // 运行时不画瞬时雨强
-    showAccum: true   // 仅路径结束后画累计
-  };
-
   function clearStormRefs() {
     layerGroups.track.clearLayers();
     layerGroups.storm.clearLayers();
@@ -149,7 +132,6 @@
     stormRefs.marker = null;
     stormRefs.landfallFlags = [];
     state._simMarkDtH = null;
-    resetRainField();
   }
 
   function simMarkDtHours() {
@@ -1088,296 +1070,6 @@
     updateStatus();
   }
 
-  function ensureRainCanvases() {
-    if (!R) return;
-    const pane = map.getPane('rain');
-    if (!pane) return;
-    if (!rainState.accumCanvas) {
-      const c = document.createElement('canvas');
-      c.className = 'ty-rain-canvas ty-rain-accum';
-      c.style.position = 'absolute';
-      c.style.pointerEvents = 'none';
-      c.style.imageRendering = 'auto';
-      c.style.opacity = '0.78';
-      pane.appendChild(c);
-      rainState.accumCanvas = c;
-    }
-    // 瞬时雨墙已停用：若旧会话残留则隐藏/移除
-    if (rainState.rateCanvas) {
-      if (rainState.rateCanvas.parentNode) rainState.rateCanvas.parentNode.removeChild(rainState.rateCanvas);
-      rainState.rateCanvas = null;
-    }
-  }
-
-  function resetRainField() {
-    if (rainState.accum) rainState.accum.clear();
-    rainState.trackSynced = 0;
-    if (rainState.scrubTimer) {
-      clearTimeout(rainState.scrubTimer);
-      rainState.scrubTimer = null;
-    }
-    if (rainState.rateCanvas) {
-      const ctx = rainState.rateCanvas.getContext('2d');
-      if (ctx) ctx.clearRect(0, 0, rainState.rateCanvas.width, rainState.rateCanvas.height);
-      rainState.rateCanvas.style.display = 'none';
-    }
-    if (rainState.accumCanvas) {
-      const ctx = rainState.accumCanvas.getContext('2d');
-      if (ctx) ctx.clearRect(0, 0, rainState.accumCanvas.width, rainState.accumCanvas.height);
-      rainState.accumCanvas.style.display = 'none';
-    }
-    setRainLegendVisible(false);
-  }
-
-  /** 图例：仅路径结束后显示「累计降水」mm 色阶 */
-  function setRainLegendVisible(on) {
-    // 累计降水上图时山地层大幅淡化（仅留淡轮廓），避免棕色山地与深红混色
-    const mp = map.getPane('mountains');
-    if (mp) mp.style.opacity = on ? '0.28' : '';
-    const sec = document.querySelectorAll('.legend-rain-sec');
-    sec.forEach(function (el) { el.hidden = !on; });
-    const box = document.getElementById('rainRateLegend');
-    if (!box) return;
-    box.hidden = !on;
-    if (!on || !R || typeof R.accumLegendItems !== 'function') return;
-    const items = R.accumLegendItems();
-    box.innerHTML = items.map(function (it) {
-      return '<div><span class="swatch" style="background:' + it.hex + '"></span>' + it.text + '</div>';
-    }).join('');
-    const title = document.getElementById('rainLegendTitle');
-    if (title) title.textContent = '累计降水';
-  }
-
-  function placeRainCanvas(canvas, southWest, northEast, pxW, pxH, imageData) {
-    if (!canvas) return;
-    const swLat = southWest.lat;
-    const swLon = southWest.lon;
-    const neLat = northEast.lat;
-    const neLon = northEast.lon;
-    const topLeft = map.latLngToLayerPoint([neLat, swLon]);
-    const botRight = map.latLngToLayerPoint([swLat, neLon]);
-    const wCss = Math.max(1, botRight.x - topLeft.x);
-    const hCss = Math.max(1, botRight.y - topLeft.y);
-    canvas.width = pxW;
-    canvas.height = pxH;
-    canvas.style.width = wCss + 'px';
-    canvas.style.height = hCss + 'px';
-    canvas.style.display = '';
-    L.DomUtil.setPosition(canvas, topLeft);
-    const ctx = canvas.getContext('2d');
-    // 阶梯色避免拉伸插值把档界抹成泥色渐变
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, pxW, pxH);
-    ctx.putImageData(imageData, 0, 0);
-  }
-
-
-  function rainStormFromView(view, envUV) {
-    if (!view) return null;
-    return {
-      lat: view.lat,
-      lon: view.lon,
-      vmax: view.vmax,
-      u: envUV ? envUV.u : (view.u || 0),
-      v: envUV ? envUV.v : (view.v || 0)
-    };
-  }
-
-  function rainLocalBounds(storm) {
-    if (!storm || !R) return null;
-    const u = storm.u || 0;
-    const v = storm.v || 0;
-    const speed = Math.hypot(u, v);
-    const amp = G.windAsymAmp(speed, storm.vmax);
-    const rings = G.windRadiiForGrades(storm.vmax);
-    let r7 = G.windRadiusDeg(storm.vmax) * 1.2;
-    for (let i = 0; i < rings.length; i++) {
-      if (rings[i].grade === 7) r7 = rings[i].radiusDeg;
-    }
-    const maxR = r7 * (1 + amp) * 1.25 + 1.0;
-    const recurveN = R.isRecurvingNorth(G.motionHeadingRad(u, v));
-    const band = recurveN ? (R.NORTH_RIDGE_MID + 2.9) : 0; // 分离北带脊~3.6° + 熄灭裕量
-    const cos = Math.max(0.25, Math.cos(storm.lat * Math.PI / 180));
-    const lonPad = (maxR + 4 + (recurveN ? 3.8 : 0)) / cos;
-    return {
-      sw: { lat: Math.max(G.DOMAIN.latMin, storm.lat - maxR - 0.6), lon: Math.max(G.DOMAIN.lonMin, storm.lon - lonPad) },
-      ne: { lat: Math.min(G.DOMAIN.latMax, storm.lat + maxR + band + 0.6), lon: Math.min(G.DOMAIN.lonMax, storm.lon + lonPad) }
-    };
-  }
-
-  function paintRainRate(storm) {
-    if (!R || !storm || state.mode === 'history') {
-      if (rainState.rateCanvas) rainState.rateCanvas.style.display = 'none';
-      return;
-    }
-    ensureRainCanvases();
-    const box = rainLocalBounds(storm);
-    if (!box) {
-      rainState.rateCanvas.style.display = 'none';
-      return;
-    }
-    const dlat = box.ne.lat - box.sw.lat;
-    const dlon = box.ne.lon - box.sw.lon;
-    if (!(dlat > 0.05 && dlon > 0.05)) {
-      rainState.rateCanvas.style.display = 'none';
-      return;
-    }
-    // 连续空间场 + 硬分档色：采样贴近屏幕像素，档界保持锐利嵌套等值带
-    const topLeft = map.latLngToLayerPoint([box.ne.lat, box.sw.lon]);
-    const botRight = map.latLngToLayerPoint([box.sw.lat, box.ne.lon]);
-    const cssW = Math.max(1, botRight.x - topLeft.x);
-    const cssH = Math.max(1, botRight.y - topLeft.y);
-    const pxW = Math.max(140, Math.min(480, Math.round(cssW)));
-    const pxH = Math.max(140, Math.min(480, Math.round(cssH)));
-    if (rainState.accum) rainState.accum.ensureMountainMask();
-    const img = rainState.rateCanvas.getContext('2d').createImageData(pxW, pxH);
-    R.paintRateImageData(img, pxW, pxH, [[box.sw.lat, box.sw.lon], [box.ne.lat, box.ne.lon]], storm, rainState.accum);
-    placeRainCanvas(rainState.rateCanvas, box.sw, box.ne, pxW, pxH, img);
-  }
-
-  function accumPaintBounds(grid) {
-    if (!grid || grid.maxVal < 1) return null;
-    let iMin = grid.nlon, iMax = -1, jMin = grid.nlat, jMax = -1;
-    for (let j = 0; j < grid.nlat; j++) {
-      for (let i = 0; i < grid.nlon; i++) {
-        if (grid.data[grid.idx(i, j)] >= 1.5) {
-          if (i < iMin) iMin = i;
-          if (i > iMax) iMax = i;
-          if (j < jMin) jMin = j;
-          if (j > jMax) jMax = j;
-        }
-      }
-    }
-    if (iMax < 0) return null;
-    const pad = 2;
-    iMin = Math.max(0, iMin - pad);
-    jMin = Math.max(0, jMin - pad);
-    iMax = Math.min(grid.nlon - 1, iMax + pad);
-    jMax = Math.min(grid.nlat - 1, jMax + pad);
-    return {
-      sw: { lat: grid.lat0 + jMin * grid.deg, lon: grid.lon0 + iMin * grid.deg },
-      ne: { lat: grid.lat0 + jMax * grid.deg, lon: grid.lon0 + iMax * grid.deg }
-    };
-  }
-
-  function paintRainAccum() {
-    if (!R || !rainState.accum || state.mode === 'history') {
-      if (rainState.accumCanvas) rainState.accumCanvas.style.display = 'none';
-      return;
-    }
-    ensureRainCanvases();
-    const box = accumPaintBounds(rainState.accum);
-    if (!box) {
-      rainState.accumCanvas.style.display = 'none';
-      return;
-    }
-    const dlat = box.ne.lat - box.sw.lat;
-    const dlon = box.ne.lon - box.sw.lon;
-    if (!(dlat > 0.05 && dlon > 0.05)) {
-      rainState.accumCanvas.style.display = 'none';
-      return;
-    }
-    const topLeft = map.latLngToLayerPoint([box.ne.lat, box.sw.lon]);
-    const botRight = map.latLngToLayerPoint([box.sw.lat, box.ne.lon]);
-    const cssW = Math.max(1, botRight.x - topLeft.x);
-    const cssH = Math.max(1, botRight.y - topLeft.y);
-    const pxW = Math.max(160, Math.min(560, Math.round(cssW)));
-    const pxH = Math.max(160, Math.min(560, Math.round(cssH)));
-    const ctx = rainState.accumCanvas.getContext('2d');
-    const img = ctx.createImageData(pxW, pxH);
-    R.paintAccumImageData(img, pxW, pxH, [[box.sw.lat, box.sw.lon], [box.ne.lat, box.ne.lon]], rainState.accum);
-    placeRainCanvas(rainState.accumCanvas, box.sw, box.ne, pxW, pxH, img);
-  }
-
-  /** 直播推进：把新 track 点累加进格点 */
-  function syncRainAccumLive(track) {
-    if (!R || !rainState.accum || !track || track.length < 2) return;
-    if (!rainState.accum.yellowEdgeAt && P && P.ridgeGuidingEdgeLat) {
-      rainState.accum.yellowEdgeAt = function (lon) {
-        const e = P.ridgeGuidingEdgeLat(lon, state.fugen, state.hole);
-        return e == null ? null : e - G.APPROACH_NORTH_BAND_DEG;
-      };
-    }
-    let i = Math.max(1, rainState.trackSynced);
-    for (; i < track.length; i++) {
-      const a = track[i - 1];
-      const b = track[i];
-      let dt = (b.t != null && a.t != null) ? (+b.t - +a.t) : 1;
-      if (!(dt > 0)) dt = 1;
-      rainState.accum.addTrackPoint(track, i, dt);
-    }
-    rainState.trackSynced = track.length;
-  }
-
-  function scheduleRainScrubRebuild(track, idx) {
-    if (!R || !rainState.accum) return;
-    if (rainState.scrubTimer) clearTimeout(rainState.scrubTimer);
-    rainState.scrubTimer = setTimeout(function () {
-      rainState.scrubTimer = null;
-      rainState.accum.rebuildFromTrack(track, idx);
-      rainState.trackSynced = Math.min(track.length, idx + 1);
-      paintRainAccum();
-    }, 80);
-  }
-
-  function updateRainDisplay(opts) {
-    opts = opts || {};
-    if (!R || state.mode === 'history') {
-      resetRainField();
-      return;
-    }
-    if (!state.members.length) {
-      resetRainField();
-      return;
-    }
-    const main = state.members[0];
-    const track = main.track || [];
-    if (!track.length) {
-      resetRainField();
-      return;
-    }
-    const liveIdx = track.length - 1;
-    const scrubbing = state.scrubIndex != null;
-    const idx = scrubbing
-      ? Math.max(0, Math.min(liveIdx, state.scrubIndex))
-      : liveIdx;
-    const view = track[idx];
-
-    // 始终隐藏瞬时雨墙（运行时不显示降水量）
-    if (rainState.rateCanvas) rainState.rateCanvas.style.display = 'none';
-
-    const finished = !main.alive;
-
-    // 运行中：只静默积分累计格，不上图
-    if (!finished) {
-      if (!scrubbing && (opts.justStepped || rainState.trackSynced < track.length)) {
-        syncRainAccumLive(track);
-      }
-      if (rainState.accumCanvas) rainState.accumCanvas.style.display = 'none';
-      setRainLegendVisible(false);
-      return;
-    }
-
-    // 路径结束：有风圈可视时（或已消亡终态）画累计降水
-    // 消亡瞬间 vmax 可能已 <7 级，showRings 为 false，仍应展示全程累计
-    if (scrubbing) {
-      scheduleRainScrubRebuild(track, idx);
-      setRainLegendVisible(true);
-      return;
-    }
-    if (rainState.trackSynced < track.length) {
-      // 补齐未同步段；若从未积分则整轨重建更稳
-      if (rainState.trackSynced <= 1) {
-        rainState.accum.rebuildFromTrack(track, liveIdx);
-        rainState.trackSynced = track.length;
-      } else {
-        syncRainAccumLive(track);
-      }
-    }
-    paintRainAccum();
-    setRainLegendVisible(true);
-  }
-
   /**
    * 风圈振幅+峰向用的平移 UV：优先路径折线（眼所见蓝线），
    * 其次轨迹上最近非零 u/v，再次引导气流，最后瞬时物理。
@@ -1420,7 +1112,7 @@
     return { u: +physU || 0, v: +physV || 0 };
   }
 
-    /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
+  /** tick 时原地更新：setLatLng / setLatLngs / setRadius，避免每小时 clear+重建 */
   function updateStormInPlace() {
     if (!state.members.length) {
       clearStormRefs();
@@ -1514,7 +1206,6 @@
       stormRefs.marker = L.marker([dLat, dLon], { icon: stormIcon(), pane: 'tracks' })
         .addTo(layerGroups.storm);
     }
-    updateRainDisplay({ justStepped: false });
     syncTimelineUI();
   }
 
@@ -1642,8 +1333,6 @@
     if (!state.members[0].alive) {
       stopSim();
       document.getElementById('clockBar').textContent += ' · 结束';
-      // 终态：补齐累计并上图（updateStormInPlace 已调过一次；再刷确保 finished 分支）
-      updateRainDisplay({ justStepped: true });
       runSimilarityMatch();
     }
   }
@@ -1722,12 +1411,6 @@
   }
 
   // —— 事件 ——
-  map.on('moveend zoomend viewreset', function () {
-    if (state.mode === 'sim' && state.members.length) {
-      updateRainDisplay({});
-    }
-  });
-
   map.on('zoomend', function () {
     if (state.mode === 'history') {
       if (!state.histData) return;
@@ -2402,7 +2085,6 @@
     document.getElementById('btnModeHistory').classList.remove('secondary');
     document.getElementById('btnModeHistory').classList.add('primary');
 
-    resetRainField();
     // 隐藏模拟风暴图层 + 副高/海温/引导（纪录模式不显示环境场）
     if (map.hasLayer(layerGroups.track)) map.removeLayer(layerGroups.track);
     if (map.hasLayer(layerGroups.storm)) map.removeLayer(layerGroups.storm);
@@ -2553,12 +2235,6 @@
       initialDraw();
       // 再补一次山地：部分浏览器首帧 pane 尺寸仍不稳
       requestAnimationFrame(redrawTerrain);
-      // 预热山地掩码，避免首小时降水累加卡顿
-      setTimeout(function () {
-        try {
-          if (rainState.accum) rainState.accum.ensureMountainMask();
-        } catch (e) { /* ignore */ }
-      }, 0);
     });
   });
 })();
